@@ -4,6 +4,9 @@ import { supabase, isShared } from './supabase.js'
 
 const LS_KEY = 'crowlogs.fights.v1'
 
+// Only the columns that exist on the `fights` table. Character info
+// (class/spec/faction/ilvl/talents) is NOT stored per-fight — it lives in the
+// `characters` cache and is merged in at read time (see lib/characters.js).
 const FIELDS = [
   'id',
   'raid',
@@ -18,11 +21,6 @@ const FIELDS = [
   'hits',
   'day',
   'started',
-  'class',
-  'spec',
-  'faction',
-  'ilvl',
-  'talents',
 ]
 
 function pick(rec) {
