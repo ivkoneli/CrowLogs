@@ -1,0 +1,22 @@
+{
+  "name": "crowlogs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Drop a World of Warcraft combat log and get DPS + fight duration in your browser.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.4.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

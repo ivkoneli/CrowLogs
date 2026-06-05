@@ -1,0 +1,29 @@
+name: Scrape armory (ilvl + talents)
+
+# Refreshes the Supabase `characters` cache from the Tauri armory.
+# Runs every 12h. Each run hits the armory, which slides the Tauri session's
+# 24h expiry forward — so a single pasted cookie stays valid indefinitely as long
+# as this keeps running (no daily re-paste, no password, no captcha).
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch: # manual "Run workflow" button
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/scrape-armory.mjs
+        env:
+          TAURI_USER: ${{ secrets.TAURI_USER }}
+          TAURI_PASS: ${{ secrets.TAURI_PASS }}
+          TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DEFAULT_REALM: '[EN] Evermoon'
