@@ -1,11 +1,13 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { logSummary } from '../lib/rankings.js'
-import { formatDps, formatNumber, formatDuration } from '../parser.js'
-import { classColor } from '../lib/classes.js'
-import FactionIcon from './FactionIcon.jsx'
+import { formatDuration } from '../parser.js'
+import { MeterHead, MeterRow } from './Meter.jsx'
 
 export default function LogPage({ fights, logId, onSelectPlayer, onBack }) {
   const log = useMemo(() => logSummary(fights, logId), [fights, logId])
+  const [active, setActive] = useState(0)
+  const enc = log.encounters[active] || log.encounters[0]
+  const maxDps = enc && enc.rows.length ? Math.max(...enc.rows.map((r) => r.dps), 1) : 1
 
   return (
     <div className="boss-page wide">
@@ -23,70 +25,58 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack }) {
         </p>
       </div>
 
-      {log.encounters.map((enc) => {
-        const maxDps = enc.rows.length ? Math.max(...enc.rows.map((r) => r.dps), 1) : 1
-        return (
-          <div key={enc.key} className="log-encounter">
-            <div className="encounter-head">
-              <h3>{enc.boss}</h3>
-              <span className="kicker">
-                {enc.difficulty} · {formatDuration(enc.duration)} · {enc.rows.length}{' '}
-                {enc.rows.length === 1 ? 'player' : 'players'}
-              </span>
-            </div>
-            <div className="table-scroll">
-              <table className="meter boss-meter">
-                <thead>
-                  <tr>
-                    <th className="rank">#</th>
-                    <th>Player</th>
-                    <th className="num">DPS</th>
-                    <th className="num">Damage</th>
-                    <th className="num">Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enc.rows.map((r, i) => (
-                    <tr key={r.player}>
-                      <td className="rank">{i + 1}</td>
-                      <td className="name-cell">
-                        <div className="bar-wrap">
-                          <div
-                            className="bar"
-                            style={{
-                              width: `${(r.dps / maxDps) * 100}%`,
-                              background: r.class
-                                ? `linear-gradient(90deg, ${classColor(r.class)}33, ${classColor(r.class)}cc)`
-                                : undefined,
-                            }}
-                          />
-                          <button
-                            className="name link"
-                            onClick={() => onSelectPlayer(r.player)}
-                            style={r.class ? { color: classColor(r.class) } : undefined}
-                          >
-                            {r.faction && <FactionIcon faction={r.faction} size={14} />}
-                            {r.player}
-                          </button>
-                          {r.spec && (
-                            <span className="spec-tag">
-                              {r.spec} {r.class}
-                            </span>
-                          )}
-                          {r.pet && <span className="pet-tag">pet</span>}
-                        </div>
-                      </td>
-                      <td className="num strong">{formatDps(r.dps)}</td>
-                      <td className="num">{formatNumber(r.damage)}</td>
-                      <td className="num muted">{formatDuration(r.duration)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {log.encounters.length > 1 && (
+        <div className="tabbar log-tabs">
+          {log.encounters.map((e, i) => (
+            <button
+              key={e.key}
+              className={`tab ${i === active ? 'active' : ''}`}
+              onClick={() => setActive(i)}
+            >
+              {e.boss}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {enc && (
+        <div className="log-encounter">
+          <div className="encounter-head">
+            <h3>{enc.boss}</h3>
+            <span className="kicker">
+              {enc.difficulty} · {formatDuration(enc.duration)} · {enc.rows.length}{' '}
+              {enc.rows.length === 1 ? 'player' : 'players'}
+            </span>
           </div>
-        )
-      })}
+          <div className="table-scroll">
+            <table className="meter boss-meter">
+              <MeterHead />
+              <tbody>
+                {enc.rows.map((r, i) => (
+                  <MeterRow
+                    key={r.player}
+                    rank={i + 1}
+                    dps={r.dps}
+                    maxDps={maxDps}
+                    name={r.player}
+                    klass={r.class}
+                    spec={r.spec}
+                    race={r.race}
+                    faction={r.faction}
+                    subLabel={r.spec ? `${r.spec} ${r.class}` : null}
+                    pet={r.pet}
+                    ilvl={r.ilvl}
+                    talents={r.talents}
+                    duration={r.duration}
+                    when={enc.day}
+                    onClick={() => onSelectPlayer(r.player)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -78,7 +78,7 @@ export default function App() {
       />
 
       <main
-        className={`content ${selection.view === 'boss' || selection.view === 'log' ? 'content-wide' : ''}`}
+        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'player' ? 'content-wide' : ''}`}
       >
         {loading && <div className="empty-state">Loading rankings…</div>}
         {loadError && <div className="error">Couldn’t load rankings: {loadError}</div>}

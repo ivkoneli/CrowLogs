@@ -1,75 +1,31 @@
 import { useMemo, useState } from 'react'
 import { bossRanking, realmsIn, realmOf, killCount, groupBySpec, difficultiesFor } from '../lib/rankings.js'
-import { formatDps, formatDuration } from '../parser.js'
 import { classColor, roleOf } from '../lib/classes.js'
 import FilterBar from './FilterBar.jsx'
-import TalentStrip from './TalentStrip.jsx'
-import FactionIcon from './FactionIcon.jsx'
-import { SpecRaceSlots, TrinketSlots } from './IconSlots.jsx'
+import { MeterHead, MeterRow } from './Meter.jsx'
 
 const EMPTY = { difficulty: null, class: null, spec: null, role: null, faction: null, realm: null }
 
-function Row({ r, rank, maxDps, onSelectPlayer }) {
-  return (
-    <tr className={r.demo ? 'is-demo' : ''}>
-      <td className="rank">{rank}</td>
-      <td className="name-cell">
-        <div className="bar-wrap">
-          <div
-            className="bar"
-            style={{
-              width: `${(r.dps / maxDps) * 100}%`,
-              background: r.class
-                ? `linear-gradient(90deg, ${classColor(r.class)}33, ${classColor(r.class)}cc)`
-                : undefined,
-            }}
-          />
-          <button
-            className="name link"
-            onClick={() => onSelectPlayer(r.player)}
-            style={r.class ? { color: classColor(r.class) } : undefined}
-          >
-            {r.faction && <FactionIcon faction={r.faction} size={14} />}
-            <SpecRaceSlots spec={r.spec} race={r.race} />
-            {r.player}
-          </button>
-          {r.spec && (
-            <span className="spec-tag">
-              {r.spec} {r.class}
-            </span>
-          )}
-          {r.pet && <span className="pet-tag">pet</span>}
-          {r.demo && <span className="pet-tag demo">demo</span>}
-        </div>
-      </td>
-      <td className="num strong">{formatDps(r.dps)}</td>
-      <td className="num ilvl">{r.ilvl ?? '—'}</td>
-      <td className="talents-col">
-        <TalentStrip talents={r.talents} />
-      </td>
-      <td className="talents-col">
-        <TrinketSlots />
-      </td>
-      <td className="num muted">{formatDuration(r.duration)}</td>
-      <td className="num muted">{r.day}</td>
-    </tr>
-  )
+// Map a ranking record to the shared MeterRow.
+function rowProps(r, rank, maxDps, onSelectPlayer) {
+  return {
+    rank,
+    dps: r.dps,
+    maxDps,
+    name: r.player,
+    klass: r.class,
+    spec: r.spec,
+    race: r.race,
+    faction: r.faction,
+    subLabel: r.spec ? `${r.spec} ${r.class}` : null,
+    pet: r.pet,
+    ilvl: r.ilvl,
+    talents: r.talents,
+    duration: r.duration,
+    when: r.day,
+    onClick: () => onSelectPlayer(r.player),
+  }
 }
-
-const HEAD = (
-  <thead>
-    <tr>
-      <th className="rank">#</th>
-      <th>Player</th>
-      <th className="num">DPS</th>
-      <th className="num">ilvl</th>
-      <th className="talents-col">Talents</th>
-      <th className="talents-col">Trinkets</th>
-      <th className="num">Duration</th>
-      <th className="num">When</th>
-    </tr>
-  </thead>
-)
 
 export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
   const [filter, setFilter] = useState(EMPTY)
@@ -134,10 +90,10 @@ export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
               </h3>
               <div className="table-scroll">
                 <table className="meter boss-meter">
-                  {HEAD}
+                  <MeterHead />
                   <tbody>
                     {g.rows.map((r, i) => (
-                      <Row key={r.player} r={r} rank={i + 1} maxDps={gMax} onSelectPlayer={onSelectPlayer} />
+                      <MeterRow key={r.player} {...rowProps(r, i + 1, gMax, onSelectPlayer)} />
                     ))}
                   </tbody>
                 </table>
@@ -148,10 +104,10 @@ export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
       ) : (
         <div className="table-scroll">
           <table className="meter boss-meter">
-            {HEAD}
+            <MeterHead />
             <tbody>
               {filtered.map((r, i) => (
-                <Row key={r.player} r={r} rank={i + 1} maxDps={maxDps} onSelectPlayer={onSelectPlayer} />
+                <MeterRow key={r.player} {...rowProps(r, i + 1, maxDps, onSelectPlayer)} />
               ))}
             </tbody>
           </table>

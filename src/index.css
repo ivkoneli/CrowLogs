@@ -552,6 +552,10 @@ code {
   color: #d9a441;
   font-weight: 600;
 }
+/* Boss name in a player's history list. */
+.name.link.boss-link {
+  color: #ff6b6b;
+}
 .talents-col {
   width: 1%;
   white-space: nowrap;
@@ -821,6 +825,128 @@ code {
   font-weight: 700;
 }
 
+/* ---------- player layout: scrollable rankings (left) + fixed gear (right) ---------- */
+.player-layout {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+.player-main {
+  flex: 1;
+  min-width: 0;
+}
+.player-gear {
+  width: 360px;
+  flex: none;
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.9rem 1rem 1rem;
+}
+.gear-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0.4rem 0 0.5rem;
+}
+.gear-head:first-child {
+  margin-top: 0;
+}
+.gear-ilvl {
+  color: #d9a441;
+  font-weight: 700;
+}
+.small {
+  font-size: 0.72rem;
+}
+.gear-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.gear-table th {
+  text-align: left;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+.gear-table th.num {
+  text-align: right;
+}
+.gear-table td {
+  padding: 0.28rem 0.4rem;
+  border-bottom: 1px solid rgba(42, 47, 58, 0.4);
+  vertical-align: middle;
+}
+.gear-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+.gear-name {
+  vertical-align: middle;
+}
+.gear-ilvl-cell {
+  color: #d9a441;
+  font-variant-numeric: tabular-nums;
+}
+.gear-slots {
+  display: inline-flex;
+  gap: 2px;
+}
+.gem-slot {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, #2b6cff55, #2b6cffcc);
+}
+.ench-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.ench-dot.ok {
+  background: #2ecc71;
+}
+.ench-dot.missing {
+  background: #e74c3c;
+}
+.artifact-strip {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.diff-subtabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem;
+  width: fit-content;
+}
+.player-main .player-card + .player-card {
+  margin-top: 1.25rem;
+}
+.log-tabs {
+  flex-wrap: wrap;
+}
+
 /* ---------- player card ---------- */
 .player-card {
   background: var(--panel);
@@ -899,6 +1025,15 @@ code {
   .content,
   .content.content-wide {
     padding: 1.25rem 1.25rem 3rem;
+  }
+  /* stack the gear panel under the rankings instead of beside them */
+  .player-layout {
+    flex-direction: column;
+  }
+  .player-gear {
+    width: 100%;
+    position: static;
+    max-height: none;
   }
 }
 

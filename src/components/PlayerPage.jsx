@@ -6,6 +6,10 @@ import { classColor } from '../lib/classes.js'
 import TalentStrip from './TalentStrip.jsx'
 import FactionIcon from './FactionIcon.jsx'
 import { SpecRaceSlots } from './IconSlots.jsx'
+import PlayerGear from './PlayerGear.jsx'
+
+// Difficulty sections inside the Rankings tab (hardest first).
+const DIFF_TABS = ['Mythic', 'Heroic', 'Normal', 'LFR']
 
 const rankClass = (rank) => {
   if (rank === 1) return 'gold'
@@ -14,14 +18,71 @@ const rankClass = (rank) => {
   return ''
 }
 
-export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, onUpdateProfile }) {
-  const [tab, setTab] = useState('rankings')
-  const [updating, setUpdating] = useState(false)
-  const [updateMsg, setUpdateMsg] = useState(null) // { ok, msg }
-  const raid = RAIDS[0] // Highmaul
-  const rows = playerSummary(fights, player, raid.name, raid.bosses, null)
+// One raid's per-boss ranking for the selected difficulty.
+function RaidRankCard({ fights, player, raid, difficulty, onSelectBoss }) {
+  const rows = playerSummary(fights, player, raid.name, raid.bosses, difficulty)
   const ranked = rows.filter((r) => r.record)
   const bestDps = ranked.length ? Math.max(...ranked.map((r) => r.record.dps)) : 0
+
+  return (
+    <div className="player-card">
+      <div className="card-head">
+        <h3>{raid.name}</h3>
+        <span className="muted">
+          {ranked.length} of {raid.bosses.length} bosses
+        </span>
+      </div>
+      <table className="meter">
+        <thead>
+          <tr>
+            <th>Boss</th>
+            <th className="num">DPS</th>
+            <th className="num">Rank</th>
+            <th className="num">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ boss, record, rank, total }) => (
+            <tr key={boss}>
+              <td className="name-cell">
+                <div className="bar-wrap">
+                  <div className="bar" style={{ width: record ? `${(record.dps / bestDps) * 100}%` : '0%' }} />
+                  <button className="name link" onClick={() => onSelectBoss(raid.name, boss)}>
+                    {boss}
+                  </button>
+                </div>
+              </td>
+              {record ? (
+                <>
+                  <td className="num strong">{formatDps(record.dps)}</td>
+                  <td className="num">
+                    <span className={`rank-pill ${rankClass(rank)}`}>
+                      #{rank}
+                      <span className="of">/ {total}</span>
+                    </span>
+                  </td>
+                  <td className="num muted">{formatDuration(record.duration)}</td>
+                </>
+              ) : (
+                <>
+                  <td className="num muted">—</td>
+                  <td className="num muted">—</td>
+                  <td className="num muted">no kill</td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, onUpdateProfile }) {
+  const [tab, setTab] = useState('rankings')
+  const [diff, setDiff] = useState('Mythic')
+  const [updating, setUpdating] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState(null) // { ok, msg }
   const profile = playerProfile(fights, player)
   const logs = useMemo(() => playerLogs(fights, player), [fights, player])
 
@@ -48,7 +109,8 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
   }
 
   return (
-    <div className="player-page">
+    <div className="player-page player-layout">
+      <div className="player-main">
       <div className="page-head">
         <span className="kicker">Player</span>
         <h2 style={profile.class ? { color: classColor(profile.class) } : undefined}>
@@ -82,109 +144,81 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
           )}
         </div>
         <div className="update-status">
-          {updateMsg && (
-            <span className={updateMsg.ok ? 'ok' : 'bad'}>{updateMsg.msg}</span>
-          )}
+          {updateMsg && <span className={updateMsg.ok ? 'ok' : 'bad'}>{updateMsg.msg}</span>}
         </div>
       </div>
 
       <div className="tabbar">
-        <button className={`tab ${tab === 'rankings' ? 'active' : ''}`} onClick={() => setTab('rankings')}>
-          {raid.name}
-        </button>
-        <button className={`tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
-          History {logs.length ? `(${logs.length})` : ''}
-        </button>
+            <button className={`tab ${tab === 'rankings' ? 'active' : ''}`} onClick={() => setTab('rankings')}>
+              Rankings
+            </button>
+            <button className={`tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
+              History {logs.length ? `(${logs.length})` : ''}
+            </button>
+          </div>
+
+          {tab === 'rankings' && (
+            <>
+              <div className="diff-subtabs">
+                {DIFF_TABS.map((d) => (
+                  <button
+                    key={d}
+                    className={`seg ${diff === d ? 'on' : ''}`}
+                    onClick={() => setDiff(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+              {RAIDS.map((raid) => (
+                <RaidRankCard
+                  key={raid.name}
+                  fights={fights}
+                  player={player}
+                  raid={raid}
+                  difficulty={diff}
+                  onSelectBoss={onSelectBoss}
+                />
+              ))}
+            </>
+          )}
+
+          {tab === 'history' && (
+            <div className="player-card">
+              {logs.length === 0 ? (
+                <div className="empty-state">
+                  <p>No logs recorded for {player} yet. Imported logs they appear in will show here.</p>
+                </div>
+              ) : (
+                <table className="meter">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Encounter</th>
+                      <th className="num">DPS</th>
+                      <th className="num">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log) => (
+                      <tr key={log.id} className="log-row" onClick={() => onSelectLog(log.logId)}>
+                        <td className="muted">{log.day}</td>
+                        <td className="name-cell">
+                          <button className="name link boss-link">{log.boss}</button>
+                          <span className="spec-tag">{log.difficulty}</span>
+                        </td>
+                        <td className="num strong">{formatDps(log.dps)}</td>
+                        <td className="num muted">{formatDuration(log.duration)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
       </div>
 
-      {tab === 'rankings' && (
-        <div className="player-card">
-          <div className="card-head">
-            <h3>{raid.name}</h3>
-            <span className="muted">
-              {ranked.length} of {raid.bosses.length} bosses
-            </span>
-          </div>
-          <table className="meter">
-            <thead>
-              <tr>
-                <th>Boss</th>
-                <th className="num">DPS</th>
-                <th className="num">Rank</th>
-                <th className="num">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ boss, record, rank, total }) => (
-                <tr key={boss}>
-                  <td className="name-cell">
-                    <div className="bar-wrap">
-                      <div className="bar" style={{ width: record ? `${(record.dps / bestDps) * 100}%` : '0%' }} />
-                      <button className="name link" onClick={() => onSelectBoss(raid.name, boss)}>
-                        {boss}
-                      </button>
-                    </div>
-                  </td>
-                  {record ? (
-                    <>
-                      <td className="num strong">{formatDps(record.dps)}</td>
-                      <td className="num">
-                        <span className={`rank-pill ${rankClass(rank)}`}>
-                          #{rank}
-                          <span className="of">/ {total}</span>
-                        </span>
-                      </td>
-                      <td className="num muted">{formatDuration(record.duration)}</td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="num muted">—</td>
-                      <td className="num muted">—</td>
-                      <td className="num muted">no kill</td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === 'history' && (
-        <div className="player-card">
-          {logs.length === 0 ? (
-            <div className="empty-state">
-              <p>No logs recorded for {player} yet. Imported logs they appear in will show here.</p>
-            </div>
-          ) : (
-            <table className="meter">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Encounter</th>
-                  <th className="num">DPS</th>
-                  <th className="num">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((log) => (
-                  <tr key={log.id} className="log-row" onClick={() => onSelectLog(log.logId)}>
-                    <td className="muted">{log.day}</td>
-                    <td className="name-cell">
-                      <button className="name link">{log.boss}</button>
-                      <span className="spec-tag">
-                        {log.difficulty} {log.raid}
-                      </span>
-                    </td>
-                    <td className="num strong">{formatDps(log.dps)}</td>
-                    <td className="num muted">{formatDuration(log.duration)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+      <PlayerGear profile={profile} />
     </div>
   )
 }
