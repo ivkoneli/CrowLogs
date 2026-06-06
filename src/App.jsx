@@ -3,10 +3,14 @@ import Sidebar from './components/Sidebar.jsx'
 import ImportPanel from './components/ImportPanel.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
+import LogPage from './components/LogPage.jsx'
 import { getFights, addFights, clearFights, isShared } from './lib/store.js'
 import { getCharacters, mergeCharacters } from './lib/characters.js'
 import { DEMO_FIGHTS } from './lib/demoData.js'
 import { DEFAULT_DIFFICULTY } from './lib/raids.js'
+
+// Highmaul is raid difficulty Mythic/Heroic — shown as tabs.
+const DIFF_TABS = ['Mythic', 'Heroic']
 
 const DEMO_DISMISS_KEY = 'crowlogs.demoDismissed'
 
@@ -44,18 +48,18 @@ export default function App() {
   }, [stored, demoDismissed, characters])
 
   const onImported = useCallback(
-    async (records) => {
+    async (records, logId) => {
       await addFights(records)
       await reload()
-      // Jump to the first imported encounter's boss page.
-      const first = records[0]
-      if (first) setSelection({ view: 'boss', raid: first.raid, boss: first.boss })
+      // Show the freshly parsed log's full breakdown.
+      if (logId) setSelection({ view: 'log', logId })
     },
     [reload],
   )
 
   const onSelectBoss = (raid, boss) => setSelection({ view: 'boss', raid, boss })
   const onSelectPlayer = (player) => setSelection({ view: 'player', player })
+  const onSelectLog = (logId) => setSelection({ view: 'log', logId })
   const onImport = () => setSelection({ view: 'import' })
 
   const dismissDemo = () => {
@@ -80,8 +84,21 @@ export default function App() {
         onImport={onImport}
       />
 
-      <main className={`content ${selection.view === 'boss' ? 'content-wide' : ''}`}>
+      <main
+        className={`content ${selection.view === 'boss' || selection.view === 'log' ? 'content-wide' : ''}`}
+      >
         <div className="topbar">
+          <div className="diff-tabs">
+            {DIFF_TABS.map((d) => (
+              <button
+                key={d}
+                className={`diff-tab ${difficulty === d ? 'active' : ''}`}
+                onClick={() => setDifficulty(d)}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
           <span className={`mode-pill ${isShared ? 'shared' : 'local'}`}>
             {isShared ? '🌐 Shared rankings' : '💾 Local (this browser)'}
           </span>
@@ -114,7 +131,6 @@ export default function App() {
             raid={selection.raid}
             boss={selection.boss}
             difficulty={difficulty}
-            onDifficulty={setDifficulty}
             onSelectPlayer={onSelectPlayer}
           />
         )}
@@ -124,6 +140,15 @@ export default function App() {
             player={selection.player}
             difficulty={difficulty}
             onSelectBoss={onSelectBoss}
+            onSelectLog={onSelectLog}
+          />
+        )}
+        {!loading && selection.view === 'log' && (
+          <LogPage
+            fights={fights}
+            logId={selection.logId}
+            onSelectPlayer={onSelectPlayer}
+            onBack={() => setSelection({ view: 'import' })}
           />
         )}
       </main>

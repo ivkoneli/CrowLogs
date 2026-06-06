@@ -123,6 +123,8 @@ const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 function parseSheet(html) {
   const ilvl = html.match(/(\d+)\s*ilvl/i)
   const faction = html.match(/type_(Alliance|Horde)/i)
+  const guildM = html.match(/gn=([^&"]+)/i)
+  const guild = guildM ? guildM[1].trim() : null
   const raceId = html.match(/RaceId\s*=\s*(\d+)/i)
   const span = html.match(/level-race-talent-class[^>]*>([\s\S]*?)<\/span>/i)
   const cls = html.match(/level-race-talent-class[^>]*color-c(\d+)/i)
@@ -139,27 +141,34 @@ function parseSheet(html) {
     if (klass && rest.endsWith(klass)) rest = rest.slice(0, -klass.length).trim()
     spec = rest || null
   }
-  return { ilvl: ilvl ? +ilvl[1] : null, faction: faction ? faction[1] : null, class: klass, race, spec, level }
+  return { ilvl: ilvl ? +ilvl[1] : null, faction: faction ? faction[1] : null, guild, class: klass, race, spec, level }
 }
 
 // Decode a talent build hash (e.g. "warrior&fury&c96M") into the chosen column
-// (1-3) per talent row. Tauri uses wowhead's scheme: the chars after the trailing
-// "c" are standard base64; each char packs 3 rows, 2 bits each, low-bits-first
-// (value 0 = none, 1/2/3 = column). Legion has 7 rows.
-// NOTE: verified against a Fury sample for the middle rows; rows 1 & 7 to be
-// confirmed — easy to recalibrate here if a known build disagrees.
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+// (1-3, 0 = none) per talent row. This ports wowhead/Tauri's TalentCalc.js exactly:
+// the first char after the spec is a version marker, the rest are base-4 packed
+// (3 rows per char, low bits first) indexed through this CUSTOM charset — NOT
+// standard base64. Verified against real Fury-warrior and Enhancement-shaman builds.
+const TALENT_CHARSET = '0zMcmVokRsaqbdrfwihuGINALpTjnyxtgevElBCDFHJKOPQSUWXYZ1234567_89-'
 const TALENT_ROWS = 7
-function decodeTalents(hash) {
-  const m = (hash || '').match(/c([A-Za-z0-9+/]+)$/)
-  if (!m) return []
-  const cols = []
-  for (const ch of m[1]) {
-    const v = B64.indexOf(ch)
-    if (v < 0) continue
-    cols.push(v % 4, (v >> 2) % 4, (v >> 4) % 4)
+function decodeTalents(talent) {
+  const part = (talent || '').split('&')[2] || ''
+  if (!part) return []
+  const version = TALENT_CHARSET.indexOf(part.substr(0, 1))
+  const data = part.substr(1).split('-')[0].split('|')[0] // drop glyph/honor suffixes
+  const cols = new Array(TALENT_ROWS).fill(0)
+  for (let i = 0; i < data.length && i < Math.ceil(TALENT_ROWS / 3); i++) {
+    const ch = data[i]
+    let aU
+    if (version === 0) aU = ch.charCodeAt(0) - 47
+    else if (version === 2) aU = TALENT_CHARSET.indexOf(ch) + 1
+    else aU = TALENT_CHARSET.indexOf(ch)
+    for (let k = 0; k < 3; k++) {
+      const idx = i * 3 + k
+      if (idx < TALENT_ROWS) cols[idx] = (aU >> (2 * k)) & 3
+    }
   }
-  return cols.slice(0, TALENT_ROWS).map((col, i) => ({ row: i + 1, col, icon: null }))
+  return cols.map((col, i) => ({ row: i + 1, col, icon: null }))
 }
 
 // From character-talents HTML + the active spec: { hash, specIcon }.
@@ -207,6 +216,7 @@ async function main() {
         class: sheet.class,
         spec: sheet.spec,
         faction: sheet.faction,
+        guild: sheet.guild,
         ilvl: sheet.ilvl,
         talents,
         talent_hash: hash,

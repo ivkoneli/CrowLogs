@@ -21,6 +21,7 @@ const FIELDS = [
   'hits',
   'day',
   'started',
+  'logid',
 ]
 
 function pick(rec) {

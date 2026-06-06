@@ -57,6 +57,7 @@ function makeDemo() {
         hits: Math.round(profile.dur * 1.4),
         started,
         day: formatDay(started),
+        logid: `demo-night::${boss}`,
         class: className,
         spec,
         faction,

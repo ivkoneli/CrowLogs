@@ -38,7 +38,7 @@ until you click **clear demo data**.
      id text primary key,
      raid text, boss text, difficulty text, player text, guid text,
      pet boolean, damage bigint, dps double precision,
-     duration bigint, hits int, day text, started bigint,
+     duration bigint, hits int, day text, started bigint, logid text,
      created_at timestamptz default now()
    );
    alter table fights enable row level security;
@@ -50,7 +50,7 @@ until you click **clear demo data**.
    create table characters (
      key text primary key,        -- lowercased "Name-Realm", joins onto fights.player
      name text, realm text,
-     class text, spec text, faction text,
+     class text, spec text, faction text, guild text,
      ilvl int, talents jsonb, talent_hash text, spec_icon text,
      updated_at timestamptz default now()
    );

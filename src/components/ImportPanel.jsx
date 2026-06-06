@@ -1,6 +1,17 @@
 import { useCallback, useRef, useState } from 'react'
 import { parseLogToFights } from '../parser.js'
 
+// Stable id for an uploaded file (FNV-1a over its content) so re-importing the
+// same log doesn't create a duplicate "log" in history.
+function hashLog(text) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return 'log_' + (h >>> 0).toString(16)
+}
+
 export default function ImportPanel({ onImported, shared }) {
   const [dragging, setDragging] = useState(false)
   const [status, setStatus] = useState(null) // { ok, msg }
@@ -15,14 +26,16 @@ export default function ImportPanel({ onImported, shared }) {
       const reader = new FileReader()
       reader.onload = async (e) => {
         try {
-          const fights = parseLogToFights(String(e.target.result))
+          const text = String(e.target.result)
+          const logid = hashLog(text)
+          const fights = parseLogToFights(text).map((f) => ({ ...f, logid }))
           if (fights.length === 0) {
             setStatus({ ok: false, msg: 'No damage events found in that file.' })
             setBusy(false)
             return
           }
           const encounters = new Set(fights.map((f) => `${f.boss}|${f.started}`)).size
-          await onImported(fights)
+          await onImported(fights, logid)
           setStatus({
             ok: true,
             msg: `Imported ${encounters} encounter${encounters === 1 ? '' : 's'} · ${fights.length} player result${fights.length === 1 ? '' : 's'} from ${file.name}.`,

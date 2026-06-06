@@ -41,6 +41,7 @@ export function mergeCharacters(fights, characters) {
       class: f.class ?? c.class ?? null,
       spec: f.spec ?? c.spec ?? null,
       faction: f.faction ?? c.faction ?? null,
+      guild: f.guild ?? c.guild ?? null,
       ilvl: f.ilvl ?? c.ilvl ?? null,
       talents: f.talents && f.talents.length ? f.talents : c.talents || [],
       specIcon: f.specIcon ?? c.spec_icon ?? null,

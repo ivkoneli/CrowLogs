@@ -1,5 +1,4 @@
 import { LEGION_CLASSES, ROLES, FACTIONS, specsOf } from '../lib/classes.js'
-import { DIFFICULTIES } from '../lib/raids.js'
 
 // A labeled dropdown, styled to match the guild theme.
 function Field({ label, value, onChange, disabled, children }) {
@@ -16,22 +15,14 @@ function Field({ label, value, onChange, disabled, children }) {
   )
 }
 
-// Compact dropdown filter row: Difficulty · Class · Spec · Role · Faction · Realm.
-// `filter` = { class, spec, role, faction, realm }.
-export default function FilterBar({ difficulty, onDifficulty, filter, onFilter, realms }) {
+// Compact dropdown filter row: Class · Spec · Role · Faction · Realm.
+// (Difficulty is chosen via the Mythic/Heroic tabs.) `filter` = { class, spec, role, faction, realm }.
+export default function FilterBar({ filter, onFilter, realms }) {
   const set = (patch) => onFilter({ ...filter, ...patch })
   const specs = filter.class ? specsOf(filter.class) : []
 
   return (
     <div className="filter-bar">
-      <Field label="Difficulty" value={difficulty} onChange={onDifficulty}>
-        {DIFFICULTIES.map((d) => (
-          <option key={d} value={d}>
-            {d}
-          </option>
-        ))}
-      </Field>
-
       <Field
         label="Class"
         value={filter.class}
