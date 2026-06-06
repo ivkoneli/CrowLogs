@@ -28,6 +28,31 @@ export async function getCharacters() {
   return readLocal()
 }
 
+// Scrape one or more characters from the armory via the Supabase Edge Function
+// (`scrape-character`), which holds the service key + Tauri cookie server-side.
+// Accepts a single "Name-Realm" string (the Update button) or an array of them
+// (post-import enrichment). Returns { updated, failed }. Requires Supabase.
+export async function requestCharacterScrape(playerOrPlayers) {
+  if (!supabase) {
+    throw new Error('Profile updates require Supabase (armory scraping runs server-side).')
+  }
+  const players = Array.isArray(playerOrPlayers) ? playerOrPlayers : [playerOrPlayers]
+  const { data, error } = await supabase.functions.invoke('scrape-character', {
+    body: { players },
+  })
+  if (error) {
+    // Edge functions return error detail in the response body on non-2xx.
+    const detail = await error.context?.text?.().catch(() => null)
+    throw new Error(detail || error.message)
+  }
+  if (data && data.error) throw new Error(data.error)
+  // Surface a single-character failure (e.g. the Update button) as an error.
+  if (data?.failed?.length && !data?.updated?.length) {
+    throw new Error(data.failed[0].error || 'Armory scrape failed.')
+  }
+  return data
+}
+
 // Fill in any missing class/spec/faction/ilvl/talents on fight records from the
 // armory cache. Never overwrites values a record already has (e.g. demo data).
 export function mergeCharacters(fights, characters) {

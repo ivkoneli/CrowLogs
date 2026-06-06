@@ -1,17 +1,34 @@
 // Pure selectors over the flat list of fight records.
 
-// Best (highest-DPS) record per player for a given boss + difficulty, ranked.
+// Difficulty ordering for "highest available" defaults / sorting.
+export const DIFFICULTY_ORDER = ['Mythic', 'Heroic', 'Normal', 'LFR']
+
+// Best (highest-DPS) record per player for a given boss, ranked. A falsy
+// `difficulty` means "all difficulties" (best result per player across them).
 export function bossRanking(fights, raid, boss, difficulty) {
   const best = new Map()
   for (const f of fights) {
-    if (f.raid !== raid || f.boss !== boss || f.difficulty !== difficulty) continue
+    if (f.raid !== raid || f.boss !== boss) continue
+    if (difficulty && f.difficulty !== difficulty) continue
     const cur = best.get(f.player)
     if (!cur || f.dps > cur.dps) best.set(f.player, f)
   }
   return [...best.values()].sort((a, b) => b.dps - a.dps)
 }
 
-// For a player: their best result + rank on each boss of a raid.
+// Difficulties actually present for a boss, ordered hardest-first.
+export function difficultiesFor(fights, raid, boss) {
+  const set = new Set()
+  for (const f of fights) {
+    if (f.raid === raid && f.boss === boss && f.difficulty) set.add(f.difficulty)
+  }
+  return [...set].sort(
+    (a, b) => DIFFICULTY_ORDER.indexOf(a) - DIFFICULTY_ORDER.indexOf(b),
+  )
+}
+
+// For a player: their best result + rank on each boss of a raid. A falsy
+// `difficulty` ranks across all difficulties.
 export function playerSummary(fights, player, raid, bosses, difficulty) {
   return bosses.map((boss) => {
     const ranking = bossRanking(fights, raid, boss, difficulty)
@@ -25,13 +42,17 @@ export function playerSummary(fights, player, raid, bosses, difficulty) {
   })
 }
 
-// Count fights recorded per boss (for the sidebar), by difficulty.
+// Count distinct kills/pulls recorded per boss (for the sidebar). A falsy
+// `difficulty` counts across all difficulties.
 export function bossCounts(fights, raid, difficulty) {
-  const counts = {}
+  const seen = {} // boss -> Set(started)
   for (const f of fights) {
-    if (f.raid !== raid || f.difficulty !== difficulty) continue
-    counts[f.boss] = (counts[f.boss] || 0) + 1
+    if (f.raid !== raid) continue
+    if (difficulty && f.difficulty !== difficulty) continue
+    ;(seen[f.boss] = seen[f.boss] || new Set()).add(f.started)
   }
+  const counts = {}
+  for (const boss of Object.keys(seen)) counts[boss] = seen[boss].size
   return counts
 }
 
@@ -65,53 +86,72 @@ export function playerProfile(fights, player) {
   }
 }
 
-// Every uploaded log a player appears in (grouped by logid), newest first.
+// A player's history: one entry per boss kill/pull they appear in (kept
+// separate, not merged per log), newest first. DPS/duration come straight from
+// the per-fight record so they match the ranking pages exactly.
 export function playerLogs(fights, player) {
-  const byLog = new Map()
-  for (const f of fights) {
-    if (f.player !== player || !f.logid) continue
-    let g = byLog.get(f.logid)
-    if (!g) {
-      g = { logId: f.logid, started: f.started, day: f.day, raid: f.raid, difficulty: f.difficulty, bosses: new Set(), damage: 0, duration: 0 }
-      byLog.set(f.logid, g)
-    }
-    g.bosses.add(f.boss)
-    g.damage += f.damage
-    g.duration = Math.max(g.duration, f.duration)
-    g.started = Math.min(g.started, f.started)
-  }
-  return [...byLog.values()]
-    .map((g) => ({ ...g, bosses: [...g.bosses], dps: g.duration > 0 ? Math.round(g.damage / g.duration) : 0 }))
+  return fights
+    .filter((f) => f.player === player && f.logid)
+    .map((f) => ({
+      id: f.id,
+      logId: f.logid,
+      started: f.started,
+      day: f.day,
+      raid: f.raid,
+      difficulty: f.difficulty,
+      boss: f.boss,
+      damage: f.damage,
+      dps: f.dps,
+      duration: f.duration,
+    }))
     .sort((a, b) => b.started - a.started)
 }
 
-// All players in one uploaded log, aggregated per player and ranked — the same
-// kind of breakdown shown right after a log is imported.
+// One uploaded log, broken out into separate encounters (boss kills/pulls).
+// Each encounter is its own ranked player table — kills are kept distinct, not
+// merged. DPS comes straight from the per-fight record (already correct).
 export function logSummary(fights, logId) {
-  const rows = new Map()
+  const byEncounter = new Map() // key -> { boss, difficulty, raid, started, day, duration, rows[] }
   let day = null
-  let difficulty = null
   let raid = null
   const bosses = new Set()
   for (const f of fights) {
     if (f.logid !== logId) continue
     day = day ?? f.day
-    difficulty = difficulty ?? f.difficulty
     raid = raid ?? f.raid
     bosses.add(f.boss)
-    let r = rows.get(f.player)
-    if (!r) {
-      r = { player: f.player, class: f.class, spec: f.spec, faction: f.faction, pet: f.pet, damage: 0, duration: 0, hits: 0 }
-      rows.set(f.player, r)
+    const key = `${f.boss}|${f.difficulty}|${f.started}`
+    let enc = byEncounter.get(key)
+    if (!enc) {
+      enc = {
+        key,
+        boss: f.boss,
+        difficulty: f.difficulty,
+        raid: f.raid,
+        started: f.started,
+        day: f.day,
+        duration: 0,
+        rows: [],
+      }
+      byEncounter.set(key, enc)
     }
-    r.damage += f.damage
-    r.duration = Math.max(r.duration, f.duration)
-    r.hits += f.hits || 0
+    enc.duration = Math.max(enc.duration, f.duration)
+    enc.rows.push({
+      player: f.player,
+      class: f.class,
+      spec: f.spec,
+      faction: f.faction,
+      pet: f.pet,
+      damage: f.damage,
+      dps: f.dps,
+      duration: f.duration,
+      hits: f.hits || 0,
+    })
   }
-  const ranked = [...rows.values()]
-    .map((r) => ({ ...r, dps: r.duration > 0 ? Math.round(r.damage / r.duration) : 0 }))
-    .sort((a, b) => b.damage - a.damage)
-  return { logId, day, difficulty, raid, bosses: [...bosses], rows: ranked }
+  const encounters = [...byEncounter.values()]
+    .map((enc) => ({ ...enc, rows: enc.rows.sort((a, b) => b.damage - a.damage) }))
+    .sort((a, b) => a.started - b.started)
+  return { logId, day, raid, bosses: [...bosses], encounters }
 }
 
 // Split a ranked list into spec groups (e.g. Fury Warrior / Arms Warrior),
@@ -146,7 +186,9 @@ export function realmsIn(records) {
 export function killCount(fights, raid, boss, difficulty) {
   const set = new Set()
   for (const f of fights) {
-    if (f.raid === raid && f.boss === boss && f.difficulty === difficulty) set.add(f.started)
+    if (f.raid !== raid || f.boss !== boss) continue
+    if (difficulty && f.difficulty !== difficulty) continue
+    set.add(f.started)
   }
   return set.size
 }

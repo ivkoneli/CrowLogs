@@ -15,14 +15,28 @@ function Field({ label, value, onChange, disabled, children }) {
   )
 }
 
-// Compact dropdown filter row: Class · Spec · Role · Faction · Realm.
-// (Difficulty is chosen via the Mythic/Heroic tabs.) `filter` = { class, spec, role, faction, realm }.
-export default function FilterBar({ filter, onFilter, realms }) {
+// Compact dropdown filter row: Difficulty · Class · Spec · Role · Faction · Realm.
+// `filter` = { difficulty, class, spec, role, faction, realm }.
+export default function FilterBar({ filter, onFilter, realms, difficulties = [] }) {
   const set = (patch) => onFilter({ ...filter, ...patch })
   const specs = filter.class ? specsOf(filter.class) : []
 
   return (
     <div className="filter-bar">
+      <Field
+        label="Difficulty"
+        value={filter.difficulty}
+        onChange={(v) => set({ difficulty: v || null })}
+        disabled={difficulties.length === 0}
+      >
+        <option value="">All difficulties</option>
+        {difficulties.map((d) => (
+          <option key={d} value={d}>
+            {d}
+          </option>
+        ))}
+      </Field>
+
       <Field
         label="Class"
         value={filter.class}

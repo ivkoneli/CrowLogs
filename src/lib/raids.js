@@ -1,7 +1,15 @@
 // Raid / boss registry and combat-log difficulty mapping.
 
-// WoW ENCOUNTER_START difficultyID values (raid):
+// WoW ENCOUNTER_START difficultyID values (raid).
+// Two schemes appear in logs:
+//   • MoP/Cata-era 10/25-man raids use 3-7.
+//   • WoD+ flexible raids use 14-17.
 export const DIFFICULTY_MAP = {
+  3: 'Normal', // 10 Player
+  4: 'Normal', // 25 Player
+  5: 'Heroic', // 10 Player Heroic
+  6: 'Heroic', // 25 Player Heroic
+  7: 'LFR', // Looking For Raid
   14: 'Normal',
   15: 'Heroic',
   16: 'Mythic',

@@ -3,7 +3,7 @@ import { RAIDS } from '../lib/raids.js'
 import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
 import logo from '../CrowsLogo.jpg'
 
-export default function Sidebar({ fights, difficulty, selection, onSelectBoss, onSelectPlayer, onImport }) {
+export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport }) {
   const [query, setQuery] = useState('')
   const [openRaids, setOpenRaids] = useState(() => new Set(RAIDS.map((r) => r.name)))
 
@@ -61,14 +61,13 @@ export default function Sidebar({ fights, difficulty, selection, onSelectBoss, o
 
       <nav className="raid-nav">
         {raids.map((raid) => {
-          const counts = bossCounts(fights, raid.name, difficulty)
+          const counts = bossCounts(fights, raid.name)
           const isOpen = openRaids.has(raid.name)
           return (
             <div key={raid.name} className="raid-group">
               <button className="raid-header" onClick={() => toggleRaid(raid.name)}>
                 <span className={`chevron ${isOpen ? 'open' : ''}`}>▸</span>
                 <span>{raid.name}</span>
-                {raid.name !== 'Other' && <span className="diff-badge">{difficulty}</span>}
               </button>
               {isOpen && (
                 <ul className="boss-list">

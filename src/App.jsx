@@ -4,25 +4,14 @@ import ImportPanel from './components/ImportPanel.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
 import LogPage from './components/LogPage.jsx'
-import { getFights, addFights, clearFights, isShared } from './lib/store.js'
-import { getCharacters, mergeCharacters } from './lib/characters.js'
-import { DEMO_FIGHTS } from './lib/demoData.js'
-import { DEFAULT_DIFFICULTY } from './lib/raids.js'
-
-// Highmaul is raid difficulty Mythic/Heroic — shown as tabs.
-const DIFF_TABS = ['Mythic', 'Heroic']
-
-const DEMO_DISMISS_KEY = 'crowlogs.demoDismissed'
+import { getFights, addFights, isShared } from './lib/store.js'
+import { getCharacters, mergeCharacters, requestCharacterScrape } from './lib/characters.js'
 
 export default function App() {
   const [stored, setStored] = useState([])
   const [characters, setCharacters] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [demoDismissed, setDemoDismissed] = useState(
-    () => localStorage.getItem(DEMO_DISMISS_KEY) === '1',
-  )
-  const [difficulty, setDifficulty] = useState(DEFAULT_DIFFICULTY) // Mythic by default
   const [selection, setSelection] = useState({ view: 'import' })
 
   const reload = useCallback(async () => {
@@ -42,10 +31,7 @@ export default function App() {
     reload()
   }, [reload])
 
-  const fights = useMemo(() => {
-    const base = demoDismissed ? stored : [...stored, ...DEMO_FIGHTS]
-    return mergeCharacters(base, characters)
-  }, [stored, demoDismissed, characters])
+  const fights = useMemo(() => mergeCharacters(stored, characters), [stored, characters])
 
   const onImported = useCallback(
     async (records, logId) => {
@@ -53,6 +39,25 @@ export default function App() {
       await reload()
       // Show the freshly parsed log's full breakdown.
       if (logId) setSelection({ view: 'log', logId })
+      // Best-effort: enrich every (non-pet) player in this log from the armory,
+      // then refresh so class/spec/ilvl/talents fill in. Failures are ignored —
+      // the table still shows name / DPS / duration.
+      const players = [...new Set(records.filter((r) => !r.pet).map((r) => r.player))]
+      if (players.length) {
+        requestCharacterScrape(players)
+          .then(reload)
+          .catch(() => {})
+      }
+    },
+    [reload],
+  )
+
+  // Scrape one character's armory profile on demand, then refresh the cache.
+  const onUpdateProfile = useCallback(
+    async (player) => {
+      const data = await requestCharacterScrape(player)
+      await reload()
+      return data
     },
     [reload],
   )
@@ -62,22 +67,10 @@ export default function App() {
   const onSelectLog = (logId) => setSelection({ view: 'log', logId })
   const onImport = () => setSelection({ view: 'import' })
 
-  const dismissDemo = () => {
-    localStorage.setItem(DEMO_DISMISS_KEY, '1')
-    setDemoDismissed(true)
-  }
-  const restoreDemo = () => {
-    localStorage.removeItem(DEMO_DISMISS_KEY)
-    setDemoDismissed(false)
-  }
-
-  const hasDemo = !demoDismissed && DEMO_FIGHTS.length > 0
-
   return (
     <div className="layout">
       <Sidebar
         fights={fights}
-        difficulty={difficulty}
         selection={selection}
         onSelectBoss={onSelectBoss}
         onSelectPlayer={onSelectPlayer}
@@ -87,38 +80,6 @@ export default function App() {
       <main
         className={`content ${selection.view === 'boss' || selection.view === 'log' ? 'content-wide' : ''}`}
       >
-        <div className="topbar">
-          <div className="diff-tabs">
-            {DIFF_TABS.map((d) => (
-              <button
-                key={d}
-                className={`diff-tab ${difficulty === d ? 'active' : ''}`}
-                onClick={() => setDifficulty(d)}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
-          <span className={`mode-pill ${isShared ? 'shared' : 'local'}`}>
-            {isShared ? '🌐 Shared rankings' : '💾 Local (this browser)'}
-          </span>
-          {hasDemo && (
-            <span className="demo-note">
-              Showing demo data ·{' '}
-              <button className="linkbtn" onClick={dismissDemo}>
-                clear demo data
-              </button>
-            </span>
-          )}
-          {demoDismissed && (
-            <span className="demo-note">
-              <button className="linkbtn" onClick={restoreDemo}>
-                show demo data
-              </button>
-            </span>
-          )}
-        </div>
-
         {loading && <div className="empty-state">Loading rankings…</div>}
         {loadError && <div className="error">Couldn’t load rankings: {loadError}</div>}
 
@@ -130,7 +91,6 @@ export default function App() {
             fights={fights}
             raid={selection.raid}
             boss={selection.boss}
-            difficulty={difficulty}
             onSelectPlayer={onSelectPlayer}
           />
         )}
@@ -138,9 +98,9 @@ export default function App() {
           <PlayerPage
             fights={fights}
             player={selection.player}
-            difficulty={difficulty}
             onSelectBoss={onSelectBoss}
             onSelectLog={onSelectLog}
+            onUpdateProfile={onUpdateProfile}
           />
         )}
         {!loading && selection.view === 'log' && (

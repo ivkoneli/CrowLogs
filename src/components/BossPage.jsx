@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
-import { bossRanking, realmsIn, realmOf, killCount, groupBySpec } from '../lib/rankings.js'
+import { bossRanking, realmsIn, realmOf, killCount, groupBySpec, difficultiesFor } from '../lib/rankings.js'
 import { formatDps, formatDuration } from '../parser.js'
 import { classColor, roleOf } from '../lib/classes.js'
 import FilterBar from './FilterBar.jsx'
 import TalentStrip from './TalentStrip.jsx'
 import FactionIcon from './FactionIcon.jsx'
+import { SpecRaceSlots, TrinketSlots } from './IconSlots.jsx'
 
-const EMPTY = { class: null, spec: null, role: null, faction: null, realm: null }
+const EMPTY = { difficulty: null, class: null, spec: null, role: null, faction: null, realm: null }
 
 function Row({ r, rank, maxDps, onSelectPlayer }) {
   return (
@@ -29,6 +30,7 @@ function Row({ r, rank, maxDps, onSelectPlayer }) {
             style={r.class ? { color: classColor(r.class) } : undefined}
           >
             {r.faction && <FactionIcon faction={r.faction} size={14} />}
+            <SpecRaceSlots spec={r.spec} race={r.race} />
             {r.player}
           </button>
           {r.spec && (
@@ -45,6 +47,9 @@ function Row({ r, rank, maxDps, onSelectPlayer }) {
       <td className="talents-col">
         <TalentStrip talents={r.talents} />
       </td>
+      <td className="talents-col">
+        <TrinketSlots />
+      </td>
       <td className="num muted">{formatDuration(r.duration)}</td>
       <td className="num muted">{r.day}</td>
     </tr>
@@ -59,16 +64,19 @@ const HEAD = (
       <th className="num">DPS</th>
       <th className="num">ilvl</th>
       <th className="talents-col">Talents</th>
+      <th className="talents-col">Trinkets</th>
       <th className="num">Duration</th>
       <th className="num">When</th>
     </tr>
   </thead>
 )
 
-export default function BossPage({ fights, raid, boss, difficulty, onSelectPlayer }) {
+export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
   const [filter, setFilter] = useState(EMPTY)
   const [bySpec, setBySpec] = useState(false)
+  const difficulty = filter.difficulty
 
+  const difficulties = useMemo(() => difficultiesFor(fights, raid, boss), [fights, raid, boss])
   const ranking = useMemo(() => bossRanking(fights, raid, boss, difficulty), [fights, raid, boss, difficulty])
   const realms = useMemo(() => realmsIn(ranking), [ranking])
   const kills = useMemo(() => killCount(fights, raid, boss, difficulty), [fights, raid, boss, difficulty])
@@ -89,11 +97,11 @@ export default function BossPage({ fights, raid, boss, difficulty, onSelectPlaye
 
   return (
     <div className="boss-page wide">
-      <FilterBar filter={filter} onFilter={setFilter} realms={realms} />
+      <FilterBar filter={filter} onFilter={setFilter} realms={realms} difficulties={difficulties} />
 
       <div className="page-head center">
         <h2>
-          {boss} <span className="title-diff">{difficulty}</span>
+          {boss} <span className="title-diff">{difficulty || 'All Difficulties'}</span>
         </h2>
         <p className="kills">
           {kills} {kills === 1 ? 'Kill' : 'Kills'}

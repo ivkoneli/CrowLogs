@@ -5,3 +5,11 @@ dist
 .env.*
 !.env.example
 .DS_Store
+
+# Personal/local-only notes — never published
+DEV_NOTES.md
+WoWCombatLog*.txt
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/

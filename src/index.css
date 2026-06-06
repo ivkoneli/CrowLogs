@@ -343,6 +343,22 @@ code {
   border-radius: 12px;
   -webkit-overflow-scrolling: touch;
 }
+.log-encounter {
+  margin-top: 28px;
+}
+.encounter-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.encounter-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.encounter-head .kicker {
+  margin: 0;
+}
 .boss-meter {
   min-width: 720px; /* keeps columns readable; scrolls within .table-scroll if narrower */
 }
@@ -362,6 +378,14 @@ code {
   color: var(--muted);
   padding: 0.7rem 0.9rem;
   border-bottom: 1px solid var(--border);
+}
+/* Headers must share their column's alignment (numbers right, rank centered),
+   otherwise the label sits left of the value it labels. */
+.meter thead th.num {
+  text-align: right;
+}
+.meter thead th.rank {
+  text-align: center;
 }
 .meter td {
   padding: 0.55rem 0.9rem;
@@ -536,6 +560,26 @@ code {
   display: inline-flex;
   gap: 3px;
 }
+/* Generic placeholder squares: spec/race (next to faction icon) + trinkets. */
+.icon-slots {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+  margin: 0 0.35rem 0 0.15rem;
+}
+.icon-slot {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  display: inline-block;
+  flex: none;
+}
+.icon-slot.trinket {
+  width: 22px;
+  height: 22px;
+}
 .talent-slot {
   width: 22px;
   height: 22px;
@@ -706,6 +750,38 @@ code {
   gap: 0.6rem;
   margin-top: 0.5rem;
 }
+.update-profile-btn {
+  margin-left: auto;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
+  border: 1px solid rgba(92, 210, 255, 0.35);
+  background: rgba(92, 210, 255, 0.08);
+  color: var(--highlight);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.update-profile-btn:hover:not(:disabled) {
+  background: rgba(92, 210, 255, 0.18);
+}
+.update-profile-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* Reserved status row so the appearing/disappearing message never shifts the
+   tables below it. Auto-cleared after 5s in PlayerPage. */
+.update-status {
+  min-height: 1.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+.update-status .ok {
+  color: #9be8bd;
+}
+.update-status .bad {
+  color: #ffb4ab;
+}
 .meta-item {
   font-size: 0.85rem;
   padding: 0.2rem 0.6rem;
@@ -863,10 +939,10 @@ code {
   .boss-meter {
     min-width: 0;
   }
-  .boss-meter th:nth-child(6),
-  .boss-meter td:nth-child(6),
   .boss-meter th:nth-child(7),
-  .boss-meter td:nth-child(7) {
+  .boss-meter td:nth-child(7),
+  .boss-meter th:nth-child(8),
+  .boss-meter td:nth-child(8) {
     display: none;
   }
   .talent-slot {
@@ -879,9 +955,11 @@ code {
 }
 
 @media (max-width: 460px) {
-  /* on phones also fold away the talents column; keep rank · name · dps · ilvl */
+  /* on phones also fold away talents + trinkets; keep rank · name · dps · ilvl */
   .boss-meter th:nth-child(5),
-  .boss-meter td:nth-child(5) {
+  .boss-meter td:nth-child(5),
+  .boss-meter th:nth-child(6),
+  .boss-meter td:nth-child(6) {
     display: none;
   }
   .filter-field {

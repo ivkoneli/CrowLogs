@@ -53,6 +53,34 @@ async function dbUpsertCharacters(rows) {
   if (!res.ok) throw new Error(`upsert characters: HTTP ${res.status} — ${await res.text()}`)
 }
 
+// Shared key/value config in Supabase (e.g. the live Tauri session cookie),
+// so the cron and the on-demand edge function use ONE self-refreshing session.
+async function dbGetConfig(key) {
+  const res = await fetch(`${REST}/app_config?key=eq.${encodeURIComponent(key)}&select=value`, {
+    headers: dbHeaders,
+  })
+  if (!res.ok) return null
+  const rows = await res.json()
+  return rows[0]?.value || null
+}
+async function dbSetConfig(key, value) {
+  await fetch(`${REST}/app_config`, {
+    method: 'POST',
+    headers: { ...dbHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ key, value, updated_at: new Date().toISOString() }]),
+  })
+}
+
+// If the armory rotates the session, the response carries a fresh tSessionId.
+function extractSession(res) {
+  const list = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : []
+  for (const c of list) {
+    const m = c.match(/tSessionId=([^;]+)/i)
+    if (m && m[1] && m[1] !== 'deleted') return `tSessionId=${m[1]}`
+  }
+  return null
+}
+
 // Split "Name-Realm" → { name, realm }. Maps a realm slug back to the armory realm
 // string. Extend REALМ_MAP as you add realms.
 const REALM_MAP = {
@@ -73,14 +101,23 @@ function splitPlayer(player) {
 //   TAURI_COOKIE="tSessionId=<value-from-your-logged-in-browser>"
 // Note: sessions expire (~24h), so for the daily cron we'll likely move to a
 // username/password login handshake — captured separately — to mint a fresh one.
+// Prefer the shared cookie kept warm in the DB; fall back to the env secret
+// (and seed the DB with it) the first time.
 async function getSessionCookie() {
-  if (TAURI_COOKIE) return TAURI_COOKIE.includes('=') ? TAURI_COOKIE : `tSessionId=${TAURI_COOKIE}`
-  throw new Error('Set TAURI_COOKIE to a logged-in "tSessionId=…" cookie.')
+  const stored = await dbGetConfig('tauri_cookie')
+  if (stored) return stored
+  if (TAURI_COOKIE) {
+    const c = TAURI_COOKIE.includes('=') ? TAURI_COOKIE : `tSessionId=${TAURI_COOKIE}`
+    await dbSetConfig('tauri_cookie', c)
+    return c
+  }
+  throw new Error('No tauri_cookie in app_config and no TAURI_COOKIE env to seed it.')
 }
 
 // ── FETCH ───────────────────────────────────────────────────────────────────
 // Returns the inner rendered HTML for a character page (sheet/talents/…).
-async function fetchArmory(option, name, realm, cookie) {
+// `state` holds the live cookie; a rotated session in the response updates it.
+async function fetchArmory(option, name, realm, state) {
   const body = new URLSearchParams()
   body.set('ajax', 'true')
   body.set('option', option) // e.g. "character-sheet/ajax"
@@ -92,11 +129,13 @@ async function fetchArmory(option, name, realm, cookie) {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'X-Requested-With': 'XMLHttpRequest',
-      Cookie: cookie,
+      Cookie: state.cookie,
     },
     body,
   })
   if (!res.ok) throw new Error(`${option} ${name}: HTTP ${res.status}`)
+  const rotated = extractSession(res)
+  if (rotated) state.cookie = rotated
   const json = await res.json()
   const html = json.html || ''
   if (html.includes('armory-errorpage')) {
@@ -193,7 +232,7 @@ function parseTalents(html, activeSpec) {
 
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 async function main() {
-  const cookie = await getSessionCookie()
+  const state = { cookie: await getSessionCookie() }
   // Pass player name(s) as CLI args to scrape just those (handy for testing);
   // otherwise scrape everyone who has logs.
   const argPlayers = process.argv.slice(2)
@@ -204,8 +243,8 @@ async function main() {
   for (const player of players) {
     const { name, realm } = splitPlayer(player)
     try {
-      const sheetRaw = await fetchArmory('character-sheet/ajax', name, realm, cookie)
-      const talentsRaw = await fetchArmory('character-talents/ajax', name, realm, cookie)
+      const sheetRaw = await fetchArmory('character-sheet/ajax', name, realm, state)
+      const talentsRaw = await fetchArmory('character-talents/ajax', name, realm, state)
       const sheet = parseSheet(sheetRaw)
       const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
       const talents = decodeTalents(hash) // [{ row, col, icon }] — icons can be added later
@@ -233,6 +272,10 @@ async function main() {
     await dbUpsertCharacters(rows)
     console.log(`Upserted ${rows.length} character(s).`)
   }
+
+  // Persist the (possibly refreshed) session so the next run — and the on-demand
+  // edge function — keep using a live cookie. This is what avoids manual re-pasting.
+  if (state.cookie) await dbSetConfig('tauri_cookie', state.cookie)
 }
 
 main().catch((e) => {
