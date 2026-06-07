@@ -1,6 +1,7 @@
 // All playable classes/specs in WoW: Legion (7.x). Demon Hunter is included;
 // nothing newer (no Evoker). Colors are the official class colors.
 // role: 'dps' | 'tank' | 'healer'.
+import { TALENT_ICONS } from './talentIcons.js'
 
 export const LEGION_CLASSES = [
   {
@@ -172,6 +173,14 @@ export function factionIconUrl(faction) {
   if (faction === 'Alliance') return `${SPEC_ICON_BASE}achievement_pvp_a_a.png`
   if (faction === 'Horde') return `${SPEC_ICON_BASE}achievement_pvp_h_h.png`
   return null
+}
+
+// Icon for the talent picked at (row 1-7, col 1-3) for a class/spec, from the
+// generated Legion talent table. Returns null for "no talent" (col 0) or unknowns.
+export function talentIconUrl(className, spec, row, col) {
+  if (!col) return null
+  const name = TALENT_ICONS[className]?.[spec]?.[row - 1]?.[col - 1]
+  return name ? `${SPEC_ICON_BASE}${name}.png` : null
 }
 
 export function roleOf(className, spec) {

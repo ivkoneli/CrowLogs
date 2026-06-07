@@ -80,7 +80,7 @@ export function MeterRow({
       <td className={`num pots${potions ? '' : ' zero'}`}>{potions ?? 0}</td>
       <td className="num ilvl">{ilvl ?? '—'}</td>
       <td className="talents-col">
-        <TalentStrip talents={talents} />
+        <TalentStrip talents={talents} klass={klass} spec={spec} />
       </td>
       <td className="talents-col">
         <TrinketSlots trinkets={trinkets} />

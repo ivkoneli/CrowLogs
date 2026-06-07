@@ -619,6 +619,7 @@ code {
   height: 22px;
 }
 .talent-slot {
+  position: relative;
   width: 22px;
   height: 22px;
   border-radius: 4px;

@@ -162,7 +162,9 @@ function decodeTalents(talent) {
   const part = (talent || '').split('&')[2] || ''
   if (!part) return []
   const version = TALENT_CHARSET.indexOf(part.substr(0, 1))
-  const data = part.substr(1).split('-')[0].split('|')[0] // drop glyph/honor suffixes
+  // '|' separates an optional suffix; do NOT split on '-' — it's a valid charset
+  // character (value 63), so splitting on it truncated builds that encode to a '-'.
+  const data = part.substr(1).split('|')[0]
   const cols = new Array(TALENT_ROWS).fill(0)
   for (let i = 0; i < data.length && i < Math.ceil(TALENT_ROWS / 3); i++) {
     const ch = data[i]

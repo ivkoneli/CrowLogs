@@ -205,7 +205,7 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
           {profile.talents.length > 0 && (
             <span className="meta-talents">
               <span className="meta-label">Talents</span>
-              <TalentStrip talents={profile.talents} />
+              <TalentStrip talents={profile.talents} klass={profile.class} spec={profile.spec} />
             </span>
           )}
           {onUpdateProfile && (

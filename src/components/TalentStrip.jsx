@@ -1,10 +1,10 @@
-import { TALENT_SLOTS } from '../lib/classes.js'
+import { TALENT_SLOTS, talentIconUrl } from '../lib/classes.js'
 
-// Renders the chosen talent column (1-3) per row. `talents` is an array of
-//   { row, col, icon? }   (col 0 = none). If `icon` is set it shows the icon with
-// the column as a small badge; otherwise it just shows the column number.
-// Falls back to empty placeholder slots when there's no data yet.
-export default function TalentStrip({ talents }) {
+// Renders the chosen talent (col 1-3) per row as its real icon, looked up from the
+// class/spec talent table. `talents` is an array of { row, col } (col 0 = none).
+// If an icon is missing (unknown class/spec, or it fails to load) the slot falls
+// back to the column number.
+export default function TalentStrip({ talents, klass, spec }) {
   const list = Array.isArray(talents) ? talents : []
 
   if (list.length === 0) {
@@ -23,7 +23,7 @@ export default function TalentStrip({ talents }) {
       {list.map((t, i) => {
         const col = typeof t === 'object' ? t.col : t
         const row = typeof t === 'object' && t.row ? t.row : i + 1
-        const icon = typeof t === 'object' ? t.icon : null
+        const icon = talentIconUrl(klass, spec, row, col)
         const label = `Row ${row}: ${col ? `column ${col}` : 'none'}`
         return (
           <span
@@ -31,8 +31,16 @@ export default function TalentStrip({ talents }) {
             className={`talent-slot ${col ? 'picked' : 'none'} col-${col || 0}`}
             title={label}
           >
-            {icon ? <img src={icon} alt={label} /> : null}
-            <span className="talent-col">{col || '–'}</span>
+            {icon && (
+              <img
+                src={icon}
+                alt={label}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            )}
+            {!icon && <span className="talent-col">{col || '–'}</span>}
           </span>
         )
       })}
