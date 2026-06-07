@@ -17,6 +17,17 @@ const FIELDS = [
   'pet',
   'damage',
   'dps',
+  'healing',
+  'hps',
+  'kill',
+  'bloodlust',
+  'potions',
+  // Frozen character snapshot, written at import time (see App.jsx onImported).
+  'ilvl',
+  'talents',
+  'trinkets',
+  'spec',
+  'spec_icon',
   'duration',
   'hits',
   'day',
@@ -26,7 +37,9 @@ const FIELDS = [
 
 function pick(rec) {
   const out = {}
-  for (const f of FIELDS) out[f] = rec[f]
+  // Coerce undefined → null so every persisted row has the same keys (a bulk upsert
+  // with mismatched keys is rejected by PostgREST with "All object keys must match").
+  for (const f of FIELDS) out[f] = rec[f] ?? null
   return out
 }
 

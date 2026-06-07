@@ -5,9 +5,25 @@ create table fights (
   id text primary key,
   raid text, boss text, difficulty text, player text, guid text,
   pet boolean, damage bigint, dps double precision,
+  healing bigint, hps double precision, kill boolean,
+  bloodlust jsonb, potions int,
+  -- Frozen at import so an old log keeps the gear/talents/ilvl/spec you had then.
+  ilvl int, talents jsonb, trinkets jsonb, spec text, spec_icon text,
   duration bigint, hits int, day text, started bigint, logid text,
   created_at timestamptz default now()
 );
+-- Migration for an existing fights table (run once if you created it before
+-- these columns existed). Safe to re-run.
+--   alter table fights add column if not exists healing bigint;
+--   alter table fights add column if not exists hps double precision;
+--   alter table fights add column if not exists kill boolean;
+--   alter table fights add column if not exists bloodlust jsonb;
+--   alter table fights add column if not exists potions int;
+--   alter table fights add column if not exists ilvl int;
+--   alter table fights add column if not exists talents jsonb;
+--   alter table fights add column if not exists trinkets jsonb;
+--   alter table fights add column if not exists spec text;
+--   alter table fights add column if not exists spec_icon text;
 alter table fights enable row level security;
 create policy "public read"   on fights for select using (true);
 create policy "public insert" on fights for insert with check (true);
@@ -20,8 +36,10 @@ create table characters (
   name text, realm text,
   class text, spec text, faction text, guild text,
   ilvl int, talents jsonb, talent_hash text, spec_icon text,
+  gear jsonb,
   updated_at timestamptz default now()
 );
+--   alter table characters add column if not exists gear jsonb;
 alter table characters enable row level security;
 create policy "public read characters" on characters for select using (true);
 
