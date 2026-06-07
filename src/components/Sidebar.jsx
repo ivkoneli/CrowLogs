@@ -3,12 +3,13 @@ import { RAIDS } from '../lib/raids.js'
 import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
 import logo from '../CrowsLogo.jpg'
 
+const KNOWN_RAID_NAMES = RAIDS.map((r) => r.name)
+
 export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport }) {
   const [query, setQuery] = useState('')
   const [openRaids, setOpenRaids] = useState(() => new Set(RAIDS.map((r) => r.name)))
 
-  const knownNames = RAIDS.map((r) => r.name)
-  const raids = useMemo(() => [...RAIDS, ...extraRaids(fights, knownNames)], [fights])
+  const raids = useMemo(() => [...RAIDS, ...extraRaids(fights, KNOWN_RAID_NAMES)], [fights])
 
   const matches = useMemo(
     () => (query ? searchPlayers(fights, query).slice(0, 8) : []),
