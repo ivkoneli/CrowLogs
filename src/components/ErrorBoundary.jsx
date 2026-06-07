@@ -1,8 +1,10 @@
 import { Component } from 'react'
+import * as Sentry from '@sentry/react'
 
 // Catches render errors in the page area so a single bad record can't white-screen
 // the whole app. Shows a small fallback (and a reset) instead of crashing. `resetKey`
 // changes when the user navigates, which clears the error so they can move on.
+// Caught errors are reported to Sentry (a no-op if Sentry isn't configured).
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -11,6 +13,10 @@ export default class ErrorBoundary extends Component {
 
   static getDerivedStateFromError(error) {
     return { error }
+  }
+
+  componentDidCatch(error, info) {
+    Sentry.captureException(error, { contexts: { react: { componentStack: info.componentStack } } })
   }
 
   componentDidUpdate(prev) {
