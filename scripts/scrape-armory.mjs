@@ -5,8 +5,13 @@
 // Supabase `characters` table. The site then reads that cache, so page loads stay instant.
 //
 // Required env (set as GitHub Action repo secrets, or a local .env):
-//   TAURI_USER, TAURI_PASS          — your Tauri account (or use TAURI_COOKIE instead)
-//   TAURI_COOKIE                    — optional: a captured logged-in session cookie
+//   TAURI_COOKIE                    — your Tauri armory auth cookie. Tauri authenticates
+//                                     each request off PERSISTENT credential cookies, so
+//                                     use: "username=<YOU>; pasw=<hash>" (copy both from a
+//                                     logged-in browser's devtools → Cookies). These don't
+//                                     expire like a session — you only re-set this if you
+//                                     change your Tauri password. NOTE: `pasw` is password-
+//                                     equivalent; keep it in encrypted secrets only.
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY  — service role key (server-side only!)
 //   DEFAULT_REALM                   — e.g. "[EN] Evermoon" (used when a name has no realm)
 //
@@ -53,34 +58,6 @@ async function dbUpsertCharacters(rows) {
   if (!res.ok) throw new Error(`upsert characters: HTTP ${res.status} — ${await res.text()}`)
 }
 
-// Shared key/value config in Supabase (e.g. the live Tauri session cookie),
-// so the cron and the on-demand edge function use ONE self-refreshing session.
-async function dbGetConfig(key) {
-  const res = await fetch(`${REST}/app_config?key=eq.${encodeURIComponent(key)}&select=value`, {
-    headers: dbHeaders,
-  })
-  if (!res.ok) return null
-  const rows = await res.json()
-  return rows[0]?.value || null
-}
-async function dbSetConfig(key, value) {
-  await fetch(`${REST}/app_config`, {
-    method: 'POST',
-    headers: { ...dbHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify([{ key, value, updated_at: new Date().toISOString() }]),
-  })
-}
-
-// If the armory rotates the session, the response carries a fresh tSessionId.
-function extractSession(res) {
-  const list = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : []
-  for (const c of list) {
-    const m = c.match(/tSessionId=([^;]+)/i)
-    if (m && m[1] && m[1] !== 'deleted') return `tSessionId=${m[1]}`
-  }
-  return null
-}
-
 // Split "Name-Realm" → { name, realm }. Maps a realm slug back to the armory realm
 // string. Extend REALМ_MAP as you add realms.
 const REALM_MAP = {
@@ -96,28 +73,19 @@ function splitPlayer(player) {
 }
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
-// Viewing a character requires a LOGGED-IN tSessionId cookie (a guest session
-// returns an "Armory error" page). Provide it via TAURI_COOKIE, e.g.
-//   TAURI_COOKIE="tSessionId=<value-from-your-logged-in-browser>"
-// Note: sessions expire (~24h), so for the daily cron we'll likely move to a
-// username/password login handshake — captured separately — to mint a fresh one.
-// Prefer the shared cookie kept warm in the DB; fall back to the env secret
-// (and seed the DB with it) the first time.
-async function getSessionCookie() {
-  const stored = await dbGetConfig('tauri_cookie')
-  if (stored) return stored
-  if (TAURI_COOKIE) {
-    const c = TAURI_COOKIE.includes('=') ? TAURI_COOKIE : `tSessionId=${TAURI_COOKIE}`
-    await dbSetConfig('tauri_cookie', c)
-    return c
-  }
-  throw new Error('No tauri_cookie in app_config and no TAURI_COOKIE env to seed it.')
+// Tauri authenticates every armory request off the persistent `username`/`pasw`
+// credential cookies (a guest — or a bare tSessionId — gets an "Armory error" page).
+// We send TAURI_COOKIE verbatim on each request; there's no session to keep alive and
+// nothing rotates, so a single value works until you change your Tauri password.
+function getAuthCookie() {
+  if (!TAURI_COOKIE) throw new Error('Missing TAURI_COOKIE (expected "username=…; pasw=…").')
+  return TAURI_COOKIE
 }
 
 // ── FETCH ───────────────────────────────────────────────────────────────────
-// Returns the inner rendered HTML for a character page (sheet/talents/…).
-// `state` holds the live cookie; a rotated session in the response updates it.
-async function fetchArmory(option, name, realm, state) {
+// Returns the inner rendered HTML for a character page (sheet/talents/…). The auth
+// cookie is sent verbatim every time — nothing to rotate or persist.
+async function fetchArmory(option, name, realm, cookie) {
   const body = new URLSearchParams()
   body.set('ajax', 'true')
   body.set('option', option) // e.g. "character-sheet/ajax"
@@ -129,17 +97,15 @@ async function fetchArmory(option, name, realm, state) {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'X-Requested-With': 'XMLHttpRequest',
-      Cookie: state.cookie,
+      Cookie: cookie,
     },
     body,
   })
   if (!res.ok) throw new Error(`${option} ${name}: HTTP ${res.status}`)
-  const rotated = extractSession(res)
-  if (rotated) state.cookie = rotated
   const json = await res.json()
   const html = json.html || ''
   if (html.includes('armory-errorpage')) {
-    throw new Error(`${name}: armory error (not logged in, or character not found)`)
+    throw new Error(`${name}: armory error (bad credentials, or character not found)`)
   }
   return html
 }
@@ -230,9 +196,39 @@ function parseTalents(html, activeSpec) {
   return { hash, specIcon: activeSpec ? icons[activeSpec.toLowerCase()] || null : null }
 }
 
+// Equipped gear, parsed from the character sheet's gear_list_table. Rows are in
+// slot order, so we tag each with a slot name (the two trinkets are what the meter
+// shows). Each item: { slot, name, ilvl, icon, id, quality }.
+const SLOT_ORDER = [
+  'head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist',
+  'legs', 'feet', 'finger', 'finger', 'trinket', 'trinket', 'mainhand', 'offhand',
+]
+const QUALITY_BY_RARITY = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
+const GEAR_ROW_RE =
+  /glist_icon[\s\S]*?\/\?item=(\d+)[\s\S]*?<img class="stats_rarity(\d+)" src="([^"]+)"[\s\S]*?glist_name[\s\S]*?<span class="stats_rarity\d+">([^<]+)<\/span>[\s\S]*?glist_ilvl">(\d+)/g
+function parseGear(html) {
+  const raw = []
+  let m
+  while ((m = GEAR_ROW_RE.exec(html))) {
+    raw.push({
+      id: +m[1],
+      quality: QUALITY_BY_RARITY[+m[2]] || 'common',
+      icon: m[3],
+      name: m[4].trim(),
+      ilvl: +m[5],
+    })
+  }
+  // The cosmetic shirt + tabard sit between chest and wrist and would shift every
+  // later slot. The shirt is always ilvl 1; the tabard is low-ilvl but identified by
+  // name (e.g. "Tabard of the Kirin Tor", ilvl 75). Drop both so positions line up.
+  return raw
+    .filter((it) => it.ilvl > 1 && !/\btabard\b/i.test(it.name))
+    .map((it, i) => ({ slot: SLOT_ORDER[i] || 'other', ...it }))
+}
+
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 async function main() {
-  const state = { cookie: await getSessionCookie() }
+  const cookie = getAuthCookie()
   // Pass player name(s) as CLI args to scrape just those (handy for testing);
   // otherwise scrape everyone who has logs.
   const argPlayers = process.argv.slice(2)
@@ -240,14 +236,17 @@ async function main() {
   console.log(`Scraping ${players.length} player(s)…`)
 
   const rows = []
+  let anyAuthed = false
   for (const player of players) {
     const { name, realm } = splitPlayer(player)
     try {
-      const sheetRaw = await fetchArmory('character-sheet/ajax', name, realm, state)
-      const talentsRaw = await fetchArmory('character-talents/ajax', name, realm, state)
+      const sheetRaw = await fetchArmory('character-sheet/ajax', name, realm, cookie)
+      anyAuthed = true // a real (non-error) response proves the credentials are valid
+      const talentsRaw = await fetchArmory('character-talents/ajax', name, realm, cookie)
       const sheet = parseSheet(sheetRaw)
       const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
       const talents = decodeTalents(hash) // [{ row, col, icon }] — icons can be added later
+      const gear = parseGear(sheetRaw)
       rows.push({
         key: player.toLowerCase(),
         name: player,
@@ -260,6 +259,7 @@ async function main() {
         talents,
         talent_hash: hash,
         spec_icon: specIcon,
+        gear,
         updated_at: new Date().toISOString(),
       })
       console.log(`  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${sheet.ilvl}`)
@@ -273,9 +273,16 @@ async function main() {
     console.log(`Upserted ${rows.length} character(s).`)
   }
 
-  // Persist the (possibly refreshed) session so the next run — and the on-demand
-  // edge function — keep using a live cookie. This is what avoids manual re-pasting.
-  if (state.cookie) await dbSetConfig('tauri_cookie', state.cookie)
+  // If NOT ONE character authenticated, the credentials are bad (e.g. you changed your
+  // Tauri password) — fail loudly so GitHub emails the repo owner. Recover by re-setting
+  // the TAURI_COOKIE secret to a fresh "username=…; pasw=…" from a logged-in browser.
+  if (!anyAuthed) {
+    throw new Error(
+      'Tauri auth failed — every character returned an armory error. Re-set the ' +
+        'TAURI_COOKIE secret to a fresh "username=…; pasw=…" (copy both cookies from a ' +
+        'browser logged into tauriwow.com), then re-run. See scripts/scrape-armory.mjs.',
+    )
+  }
 }
 
 main().catch((e) => {

@@ -9,7 +9,9 @@
 // Deploy:
 //   supabase functions deploy scrape-character --no-verify-jwt
 // Secrets (server-side only — never shipped to the browser):
-//   supabase secrets set TAURI_COOKIE="tSessionId=…" DEFAULT_REALM="[EN] Evermoon"
+//   supabase secrets set TAURI_COOKIE="username=…; pasw=…" DEFAULT_REALM="[EN] Evermoon"
+// Tauri authenticates off the persistent `username`/`pasw` cookies (not the session),
+// so this value is static — re-set it only when you change your Tauri password.
 // (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically.)
 //
 // Editor note: this file runs on Deno, not Node. Install the VS Code "Deno"
@@ -25,32 +27,6 @@ const DEFAULT_REALM = Deno.env.get('DEFAULT_REALM') || '[EN] Evermoon'
 
 const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1`
 const dbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
-
-// Shared, self-refreshing Tauri session cookie (kept warm by the 12h cron and
-// updated here on rotation), so neither side needs a manual re-paste.
-async function dbGetConfig(key: string): Promise<string | null> {
-  const res = await fetch(`${REST}/app_config?key=eq.${encodeURIComponent(key)}&select=value`, {
-    headers: dbHeaders,
-  })
-  if (!res.ok) return null
-  const rows = await res.json()
-  return rows[0]?.value || null
-}
-async function dbSetConfig(key: string, value: string) {
-  await fetch(`${REST}/app_config`, {
-    method: 'POST',
-    headers: { ...dbHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify([{ key, value, updated_at: new Date().toISOString() }]),
-  })
-}
-function extractSession(res: Response): string | null {
-  const list = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : []
-  for (const c of list) {
-    const m = c.match(/tSessionId=([^;]+)/i)
-    if (m && m[1] && m[1] !== 'deleted') return `tSessionId=${m[1]}`
-  }
-  return null
-}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -69,21 +45,16 @@ function splitPlayer(player: string) {
   return { name, realm: REALM_MAP[slug] || DEFAULT_REALM }
 }
 
-// Prefer the shared cookie kept warm in the DB; fall back to the env secret
-// (and seed the DB with it) the first time.
-async function sessionCookie(): Promise<string> {
-  const stored = await dbGetConfig('tauri_cookie')
-  if (stored) return stored
-  if (TAURI_COOKIE) {
-    const c = TAURI_COOKIE.includes('=') ? TAURI_COOKIE : `tSessionId=${TAURI_COOKIE}`
-    await dbSetConfig('tauri_cookie', c)
-    return c
-  }
-  throw new Error('No tauri_cookie in app_config and no TAURI_COOKIE secret to seed it.')
+// Tauri authenticates each request off the persistent `username`/`pasw` credential
+// cookies (set as the TAURI_COOKIE secret). It's static — sent verbatim every time.
+function authCookie(): string {
+  if (!TAURI_COOKIE) throw new Error('Missing TAURI_COOKIE secret (expected "username=…; pasw=…").')
+  return TAURI_COOKIE
 }
 
-// `state` holds the live cookie; a rotated session in the response updates it.
-async function fetchArmory(option: string, name: string, realm: string, state: { cookie: string }) {
+// Returns the inner rendered HTML for a character page. The auth cookie is sent
+// verbatim every time — nothing to rotate or persist.
+async function fetchArmory(option: string, name: string, realm: string, cookie: string) {
   const body = new URLSearchParams()
   body.set('ajax', 'true')
   body.set('option', option)
@@ -94,17 +65,15 @@ async function fetchArmory(option: string, name: string, realm: string, state: {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'X-Requested-With': 'XMLHttpRequest',
-      Cookie: state.cookie,
+      Cookie: cookie,
     },
     body,
   })
   if (!res.ok) throw new Error(`${option} ${name}: HTTP ${res.status}`)
-  const rotated = extractSession(res)
-  if (rotated) state.cookie = rotated
   const json = await res.json()
   const html = json.html || ''
   if (html.includes('armory-errorpage')) {
-    throw new Error(`${name}: armory error (session expired, or character not found)`)
+    throw new Error(`${name}: armory error (bad credentials, or character not found)`)
   }
   return html as string
 }
@@ -183,6 +152,28 @@ function parseTalents(html: string, activeSpec: string | null) {
   return { hash, specIcon: activeSpec ? icons[activeSpec.toLowerCase()] || null : null }
 }
 
+// Equipped gear from the character sheet's gear_list_table (mirrors the CI scraper).
+// Items come in slot order; the two trinkets are what the meter shows.
+const SLOT_ORDER = [
+  'head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist',
+  'legs', 'feet', 'finger', 'finger', 'trinket', 'trinket', 'mainhand', 'offhand',
+]
+const QUALITY_BY_RARITY: Record<number, string> = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
+const GEAR_ROW_RE =
+  /glist_icon[\s\S]*?\/\?item=(\d+)[\s\S]*?<img class="stats_rarity(\d+)" src="([^"]+)"[\s\S]*?glist_name[\s\S]*?<span class="stats_rarity\d+">([^<]+)<\/span>[\s\S]*?glist_ilvl">(\d+)/g
+function parseGear(html: string) {
+  const raw: { id: number; quality: string; icon: string; name: string; ilvl: number }[] = []
+  let m: RegExpExecArray | null
+  while ((m = GEAR_ROW_RE.exec(html))) {
+    raw.push({ id: +m[1], quality: QUALITY_BY_RARITY[+m[2]] || 'common', icon: m[3], name: m[4].trim(), ilvl: +m[5] })
+  }
+  // Drop the cosmetic shirt (always ilvl 1) + tabard (low ilvl, matched by name) so
+  // the remaining items line up with SLOT_ORDER (otherwise a ring lands in a trinket slot).
+  return raw
+    .filter((it) => it.ilvl > 1 && !/\btabard\b/i.test(it.name))
+    .map((it, i) => ({ slot: SLOT_ORDER[i] || 'other', ...it }))
+}
+
 async function upsertCharacters(rows: unknown[]) {
   if (rows.length === 0) return
   const res = await fetch(`${REST}/characters`, {
@@ -198,13 +189,14 @@ async function upsertCharacters(rows: unknown[]) {
 }
 
 // Scrape one "Name-Realm" character into a `characters` row.
-async function scrapeOne(player: string, state: { cookie: string }) {
+async function scrapeOne(player: string, cookie: string) {
   const { name, realm } = splitPlayer(player)
-  const sheetRaw = await fetchArmory('character-sheet/ajax', name, realm, state)
-  const talentsRaw = await fetchArmory('character-talents/ajax', name, realm, state)
+  const sheetRaw = await fetchArmory('character-sheet/ajax', name, realm, cookie)
+  const talentsRaw = await fetchArmory('character-talents/ajax', name, realm, cookie)
   const sheet = parseSheet(sheetRaw)
   const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
   const talents = decodeTalents(hash)
+  const gear = parseGear(sheetRaw)
   return {
     key: player.toLowerCase(),
     name: player,
@@ -217,6 +209,7 @@ async function scrapeOne(player: string, state: { cookie: string }) {
     talents,
     talent_hash: hash,
     spec_icon: specIcon,
+    gear,
     updated_at: new Date().toISOString(),
   }
 }
@@ -241,19 +234,17 @@ Deno.serve(async (req) => {
       return json({ error: 'Provide a "player" name or "players" array.' }, 400)
     }
 
-    const state = { cookie: await sessionCookie() }
+    const cookie = authCookie()
     const updated: unknown[] = []
     const failed: { player: string; error: string }[] = []
     for (const p of players) {
       try {
-        updated.push(await scrapeOne(p, state))
+        updated.push(await scrapeOne(p, cookie))
       } catch (e) {
         failed.push({ player: p, error: (e as Error).message })
       }
     }
     await upsertCharacters(updated)
-    // Persist any refreshed session so the cookie stays alive without re-pasting.
-    await dbSetConfig('tauri_cookie', state.cookie)
     return json({ updated, failed })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)

@@ -47,11 +47,14 @@ Setup:
 ```bash
 # Edge function (needs the Supabase CLI):
 supabase functions deploy scrape-character --project-ref <your-ref> --no-verify-jwt
-supabase secrets set --project-ref <your-ref> TAURI_COOKIE="tSessionId=…" DEFAULT_REALM="[EN] Evermoon"
+supabase secrets set --project-ref <your-ref> TAURI_COOKIE="username=…; pasw=…" DEFAULT_REALM="[EN] Evermoon"
 
 # GitHub Action secrets: TAURI_COOKIE, SUPABASE_SERVICE_KEY, VITE_SUPABASE_URL
 ```
 
-`TAURI_COOKIE` is a one-time seed — it's stored in `app_config` and kept alive by the cron,
-so you don't re-paste it. (Editing the edge function in VS Code? Install the **Deno**
-extension; the files run on Deno, not Node.)
+`TAURI_COOKIE` is your Tauri **credential** cookie — `username=…; pasw=…`, copied from a
+logged-in browser (devtools → Cookies → tauriwow.com). Tauri authenticates each request
+off these persistent cookies, so the value is static: you only re-set it if you change
+your Tauri password (no sessions to keep alive). `pasw` is password-equivalent — keep it
+in secrets only. (Editing the edge function in VS Code? Install the **Deno** extension;
+the files run on Deno, not Node.)

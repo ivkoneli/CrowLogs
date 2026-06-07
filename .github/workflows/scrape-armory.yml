@@ -1,9 +1,13 @@
 name: Scrape armory (ilvl + talents)
 
-# Refreshes the Supabase `characters` cache from the Tauri armory.
-# Runs every 12h. Each run hits the armory, which slides the Tauri session's
-# 24h expiry forward — so a single pasted cookie stays valid indefinitely as long
-# as this keeps running (no daily re-paste, no password, no captcha).
+# Refreshes the Supabase `characters` cache from the Tauri armory (ilvl/talents/etc).
+# Runs every 12h. Auth is the persistent `username`/`pasw` credential cookie in the
+# TAURI_COOKIE secret — it doesn't expire, so there's no session to keep alive and no
+# routine re-paste. If the credentials ever stop working (e.g. you changed your Tauri
+# password), the run FAILS on purpose and GitHub emails the repo owner; recover by
+# re-setting TAURI_COOKIE to a fresh "username=…; pasw=…" and re-running.
+# NOTE: GitHub auto-disables scheduled workflows after 60 days with no repo commits —
+# if scraping silently stops, re-enable it here.
 on:
   schedule:
     - cron: '0 */12 * * *'
@@ -21,8 +25,8 @@ jobs:
       - run: npm ci
       - run: node scripts/scrape-armory.mjs
         env:
-          TAURI_USER: ${{ secrets.TAURI_USER }}
-          TAURI_PASS: ${{ secrets.TAURI_PASS }}
+          # Persistent Tauri credential cookie: "username=…; pasw=…". Static — re-set
+          # only when you change your Tauri password.
           TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
