@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { parseLogToFights } from '../parser.js'
+import { reportFailure } from '../lib/notify.js'
 
 // Stable id for an uploaded file (FNV-1a over its content) so re-importing the
 // same log doesn't create a duplicate "log" in history.
@@ -31,6 +32,7 @@ export default function ImportPanel({ onImported, shared }) {
           const fights = parseLogToFights(text).map((f) => ({ ...f, logid }))
           if (fights.length === 0) {
             setStatus({ ok: false, msg: 'No damage events found in that file.' })
+            reportFailure('log-import', new Error('No damage events found'), { file: file.name, size: file.size })
             setBusy(false)
             return
           }
@@ -42,12 +44,14 @@ export default function ImportPanel({ onImported, shared }) {
           })
         } catch (err) {
           setStatus({ ok: false, msg: 'Import failed: ' + err.message })
+          reportFailure('log-import', err, { file: file.name, size: file.size })
         } finally {
           setBusy(false)
         }
       }
       reader.onerror = () => {
         setStatus({ ok: false, msg: 'Could not read that file.' })
+        reportFailure('log-read', new Error('Could not read file'), { file: file.name })
         setBusy(false)
       }
       reader.readAsText(file)
