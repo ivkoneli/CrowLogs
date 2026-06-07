@@ -134,6 +134,29 @@ export function specsOf(className) {
   return c ? c.specs : []
 }
 
+// Spec icons (Legion). The Tauri armory CDN uses the standard WoW icon names, so we
+// build the URL from a per-class map. Anything missing/wrong is hidden via onError
+// in the UI, so this degrades to a text-only tab rather than a broken image.
+const SPEC_ICON_BASE = 'https://legion-static.tauri.hu/images/icons/large/'
+const SPEC_ICON_NAMES = {
+  'Death Knight': { Blood: 'spell_deathknight_bloodpresence', Frost: 'spell_deathknight_frostpresence', Unholy: 'spell_deathknight_unholypresence' },
+  'Demon Hunter': { Havoc: 'ability_demonhunter_specdps', Vengeance: 'ability_demonhunter_spectank' },
+  Druid: { Balance: 'spell_nature_starfall', Feral: 'ability_druid_catform', Guardian: 'ability_racial_bearform', Restoration: 'spell_nature_healingtouch' },
+  Hunter: { 'Beast Mastery': 'ability_hunter_bestialdiscipline', Marksmanship: 'ability_hunter_focusedaim', Survival: 'ability_hunter_camouflage' },
+  Mage: { Arcane: 'spell_holy_magicalsentry', Fire: 'spell_fire_firebolt02', Frost: 'spell_frost_frostbolt02' },
+  Monk: { Brewmaster: 'spell_monk_brewmaster_spec', Mistweaver: 'spell_monk_mistweaver_spec', Windwalker: 'spell_monk_windwalker_spec' },
+  Paladin: { Holy: 'spell_holy_holybolt', Protection: 'ability_paladin_shieldofthetemplar', Retribution: 'spell_holy_auraoflight' },
+  Priest: { Discipline: 'spell_holy_powerwordshield', Holy: 'spell_holy_guardianspirit', Shadow: 'spell_shadow_shadowwordpain' },
+  Rogue: { Assassination: 'ability_rogue_deadlybrew', Outlaw: 'ability_rogue_waylay', Subtlety: 'ability_stealth' },
+  Shaman: { Elemental: 'spell_nature_lightning', Enhancement: 'spell_shaman_improvedstormstrike', Restoration: 'spell_nature_magicimmunity' },
+  Warlock: { Affliction: 'spell_shadow_deathcoil', Demonology: 'spell_shadow_metamorphosis', Destruction: 'spell_shadow_rainoffire' },
+  Warrior: { Arms: 'ability_warrior_savageblow', Fury: 'ability_warrior_innerrage', Protection: 'ability_warrior_defensivestance' },
+}
+export function specIconUrl(className, spec) {
+  const name = SPEC_ICON_NAMES[className]?.[spec]
+  return name ? `${SPEC_ICON_BASE}${name}.png` : null
+}
+
 export function roleOf(className, spec) {
   const c = LEGION_CLASSES.find((c) => c.name === className)
   if (!c) return null

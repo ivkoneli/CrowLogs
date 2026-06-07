@@ -3,17 +3,24 @@
 // Difficulty ordering for "highest available" defaults / sorting.
 export const DIFFICULTY_ORDER = ['Mythic', 'Heroic', 'Normal', 'LFR']
 
-// Best (highest-DPS) record per player for a given boss, ranked. A falsy
-// `difficulty` means "all difficulties" (best result per player across them).
-export function bossRanking(fights, raid, boss, difficulty) {
+// Best record per player for a given boss, ranked by `metric` ('dps' | 'hps').
+// Only KILLS count (wipes are excluded), and only players who actually did the
+// thing being ranked (damage for dps, healing for hps). A falsy `difficulty`
+// means "all difficulties" (best result per player across them).
+export function bossRanking(fights, raid, boss, difficulty, metric = 'dps', spec = null) {
+  const rate = metric === 'hps' ? 'hps' : 'dps'
+  const total = metric === 'hps' ? 'healing' : 'damage'
   const best = new Map()
   for (const f of fights) {
     if (f.raid !== raid || f.boss !== boss) continue
     if (difficulty && f.difficulty !== difficulty) continue
+    if (spec && f.spec !== spec) continue // a specific spec's leaderboard
+    if (f.kill === false) continue // kills only
+    if (!(f[total] > 0)) continue // only players who dealt damage / did healing
     const cur = best.get(f.player)
-    if (!cur || f.dps > cur.dps) best.set(f.player, f)
+    if (!cur || f[rate] > cur[rate]) best.set(f.player, f)
   }
-  return [...best.values()].sort((a, b) => b.dps - a.dps)
+  return [...best.values()].sort((a, b) => b[rate] - a[rate])
 }
 
 // Difficulties actually present for a boss, ordered hardest-first.
@@ -27,28 +34,37 @@ export function difficultiesFor(fights, raid, boss) {
   )
 }
 
-// For a player: their best result + rank on each boss of a raid. A falsy
-// `difficulty` ranks across all difficulties.
-export function playerSummary(fights, player, raid, bosses, difficulty) {
+// For a player: their best result + rank on each boss of a raid, by `metric`.
+// A falsy `difficulty` ranks across all difficulties.
+export function playerSummary(fights, player, raid, bosses, difficulty, metric = 'dps', spec = null) {
+  const rate = metric === 'hps' ? 'hps' : 'dps'
   return bosses.map((boss) => {
-    const ranking = bossRanking(fights, raid, boss, difficulty)
+    const ranking = bossRanking(fights, raid, boss, difficulty, metric, spec)
     const idx = ranking.findIndex((r) => r.player === player)
-    return {
-      boss,
-      record: idx >= 0 ? ranking[idx] : null,
-      rank: idx >= 0 ? idx + 1 : null,
-      total: ranking.length,
+    if (idx >= 0) return { boss, record: ranking[idx], rank: idx + 1, total: ranking.length }
+    // Not on the (metric > 0) leaderboard. If they still KILLED it in this spec, show
+    // that kill with its (possibly 0) value, unranked — never "no kill" for a real kill
+    // (e.g. an Arms warrior did 0 healing on a boss they downed).
+    let killRec = null
+    for (const f of fights) {
+      if (f.player !== player || f.raid !== raid || f.boss !== boss) continue
+      if (difficulty && f.difficulty !== difficulty) continue
+      if (spec && f.spec !== spec) continue
+      if (f.kill === false) continue
+      if (!killRec || (f[rate] || 0) > (killRec[rate] || 0)) killRec = f
     }
+    return { boss, record: killRec, rank: null, total: ranking.length }
   })
 }
 
-// Count distinct kills/pulls recorded per boss (for the sidebar). A falsy
-// `difficulty` counts across all difficulties.
+// Count distinct KILLS recorded per boss (for the sidebar). Wipes don't count.
+// A falsy `difficulty` counts across all difficulties.
 export function bossCounts(fights, raid, difficulty) {
   const seen = {} // boss -> Set(started)
   for (const f of fights) {
     if (f.raid !== raid) continue
     if (difficulty && f.difficulty !== difficulty) continue
+    if (f.kill === false) continue
     ;(seen[f.boss] = seen[f.boss] || new Set()).add(f.started)
   }
   const counts = {}
@@ -83,6 +99,7 @@ export function playerProfile(fights, player) {
     ilvl: first('ilvl'),
     specIcon: first('specIcon'),
     talents,
+    gear: recs.find((r) => r.gear && r.gear.length)?.gear || [],
   }
 }
 
@@ -100,8 +117,14 @@ export function playerLogs(fights, player) {
       raid: f.raid,
       difficulty: f.difficulty,
       boss: f.boss,
+      kill: f.kill,
+      spec: f.spec || null,
+      specIcon: f.specIcon || null,
+      class: f.class || null,
       damage: f.damage,
       dps: f.dps,
+      healing: f.healing || 0,
+      hps: f.hps || 0,
       duration: f.duration,
     }))
     .sort((a, b) => b.started - a.started)
@@ -130,6 +153,8 @@ export function logSummary(fights, logId) {
         raid: f.raid,
         started: f.started,
         day: f.day,
+        kill: f.kill !== false, // wipes are flagged false; legacy/unknown → kill
+        bloodlust: f.bloodlust || [], // [{ player, t }] — same for the whole encounter
         duration: 0,
         rows: [],
       }
@@ -144,29 +169,33 @@ export function logSummary(fights, logId) {
       faction: f.faction,
       ilvl: f.ilvl,
       talents: f.talents,
+      trinkets: f.trinkets,
       pet: f.pet,
       damage: f.damage,
       dps: f.dps,
+      healing: f.healing || 0,
+      hps: f.hps || 0,
+      potions: f.potions || 0,
       duration: f.duration,
       hits: f.hits || 0,
     })
   }
-  const encounters = [...byEncounter.values()]
-    .map((enc) => ({ ...enc, rows: enc.rows.sort((a, b) => b.damage - a.damage) }))
-    .sort((a, b) => a.started - b.started)
+  // Rows are returned unsorted-by-metric; the view sorts by the active meter.
+  const encounters = [...byEncounter.values()].sort((a, b) => a.started - b.started)
   return { logId, day, raid, bosses: [...bosses], encounters }
 }
 
 // Split a ranked list into spec groups (e.g. Fury Warrior / Arms Warrior),
-// each internally ranked, ordered by the group's top DPS.
-export function groupBySpec(ranking) {
+// each internally ranked, ordered by the group's top rate for `metric`.
+export function groupBySpec(ranking, metric = 'dps') {
+  const rate = metric === 'hps' ? 'hps' : 'dps'
   const groups = new Map()
   for (const r of ranking) {
     const label = r.class && r.spec ? `${r.spec} ${r.class}` : r.class || 'Unknown spec'
     if (!groups.has(label)) groups.set(label, { label, class: r.class, spec: r.spec, rows: [] })
     groups.get(label).rows.push(r)
   }
-  return [...groups.values()].sort((a, b) => (b.rows[0]?.dps || 0) - (a.rows[0]?.dps || 0))
+  return [...groups.values()].sort((a, b) => (b.rows[0]?.[rate] || 0) - (a.rows[0]?.[rate] || 0))
 }
 
 // Realm is the part of a WoW name after the dash ("Name-Realm").
@@ -185,12 +214,14 @@ export function realmsIn(records) {
   return [...set].sort((a, b) => a.localeCompare(b))
 }
 
-// Number of distinct kills/pulls logged for a boss (by encounter start time).
+// Number of distinct KILLS logged for a boss (by encounter start time). Wipes
+// (ENCOUNTER_END success = 0) are excluded.
 export function killCount(fights, raid, boss, difficulty) {
   const set = new Set()
   for (const f of fights) {
     if (f.raid !== raid || f.boss !== boss) continue
     if (difficulty && f.difficulty !== difficulty) continue
+    if (f.kill === false) continue
     set.add(f.started)
   }
   return set.size

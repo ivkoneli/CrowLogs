@@ -11,6 +11,11 @@ export function charKey(nameRealm) {
   return (nameRealm || '').trim().toLowerCase()
 }
 
+// The two trinkets out of a full gear array (slot-tagged by the scraper).
+export function trinketsOf(gear) {
+  return (gear || []).filter((g) => g.slot === 'trinket')
+}
+
 function readLocal() {
   try {
     return JSON.parse(localStorage.getItem(LS_KEY) || '[]')
@@ -64,12 +69,17 @@ export function mergeCharacters(fights, characters) {
     return {
       ...f,
       class: f.class ?? c.class ?? null,
+      // Frozen per-fight spec (the spec they played that log) wins over the live spec.
       spec: f.spec ?? c.spec ?? null,
       faction: f.faction ?? c.faction ?? null,
       guild: f.guild ?? c.guild ?? null,
       ilvl: f.ilvl ?? c.ilvl ?? null,
       talents: f.talents && f.talents.length ? f.talents : c.talents || [],
-      specIcon: f.specIcon ?? c.spec_icon ?? null,
+      // Frozen trinkets win; otherwise derive from the live armory gear. `gear` is
+      // the live equipped set (for the gear tab), never frozen per-fight.
+      trinkets: f.trinkets && f.trinkets.length ? f.trinkets : trinketsOf(c.gear),
+      gear: c.gear || f.gear || [],
+      specIcon: f.spec_icon ?? f.specIcon ?? c.spec_icon ?? null,
     }
   })
 }
