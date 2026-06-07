@@ -179,7 +179,14 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
         <span className="kicker">Player</span>
         <h2 style={profile.class ? { color: classColor(profile.class) } : undefined}>
           {profile.faction && <FactionIcon faction={profile.faction} size={26} title={profile.faction} />}
-          <SpecRaceSlots spec={profile.spec} race={profile.race} size={20} />
+          <SpecRaceSlots
+            klass={profile.class}
+            spec={profile.spec}
+            specIcon={profile.specIcon}
+            race={profile.race}
+            gender={profile.gender}
+            size={20}
+          />
           {player}
         </h2>
         <div className="player-meta">

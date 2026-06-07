@@ -157,6 +157,23 @@ export function specIconUrl(className, spec) {
   return name ? `${SPEC_ICON_BASE}${name}.png` : null
 }
 
+// Race portrait icon (Tauri CDN uses the achievement_character_<race>_<gender> set).
+// gender: 0/'0' = male, 1/'1' = female. Worgen/Goblin aren't on the CDN — the UI
+// hides a failed image and keeps the placeholder square.
+export function raceIconUrl(race, gender) {
+  if (!race) return null
+  const key = race.toLowerCase().replace(/\s+/g, '')
+  const g = gender === 1 || gender === '1' ? 'female' : 'male'
+  return `${SPEC_ICON_BASE}achievement_character_${key}_${g}.png`
+}
+
+// Faction crest icon (the PvP achievement crests).
+export function factionIconUrl(faction) {
+  if (faction === 'Alliance') return `${SPEC_ICON_BASE}achievement_pvp_a_a.png`
+  if (faction === 'Horde') return `${SPEC_ICON_BASE}achievement_pvp_h_h.png`
+  return null
+}
+
 export function roleOf(className, spec) {
   const c = LEGION_CLASSES.find((c) => c.name === className)
   if (!c) return null

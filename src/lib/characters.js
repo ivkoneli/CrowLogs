@@ -71,6 +71,9 @@ export function mergeCharacters(fights, characters) {
       class: f.class ?? c.class ?? null,
       // Frozen per-fight spec (the spec they played that log) wins over the live spec.
       spec: f.spec ?? c.spec ?? null,
+      // Race/gender don't change, so they come straight from the live armory cache.
+      race: c.race ?? f.race ?? null,
+      gender: c.gender ?? f.gender ?? null,
       faction: f.faction ?? c.faction ?? null,
       guild: f.guild ?? c.guild ?? null,
       ilvl: f.ilvl ?? c.ilvl ?? null,

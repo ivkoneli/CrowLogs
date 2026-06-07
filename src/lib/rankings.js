@@ -94,6 +94,8 @@ export function playerProfile(fights, player) {
   return {
     class: first('class'),
     spec: first('spec'),
+    race: first('race'),
+    gender: first('gender'),
     faction: first('faction'),
     guild: first('guild'),
     ilvl: first('ilvl'),
@@ -165,7 +167,9 @@ export function logSummary(fights, logId) {
       player: f.player,
       class: f.class,
       spec: f.spec,
+      specIcon: f.specIcon,
       race: f.race,
+      gender: f.gender,
       faction: f.faction,
       ilvl: f.ilvl,
       talents: f.talents,

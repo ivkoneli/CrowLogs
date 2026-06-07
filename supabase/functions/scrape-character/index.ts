@@ -95,6 +95,8 @@ function parseSheet(html: string) {
   const guildM = html.match(/gn=([^&"]+)/i)
   const guild = guildM ? guildM[1].trim() : null
   const raceId = html.match(/RaceId\s*=\s*(\d+)/i)
+  const genderM = html.match(/\bgender\s*=\s*["']?([012])/i) // 0 male, 1 female
+  const gender = genderM ? +genderM[1] : null
   const span = html.match(/level-race-talent-class[^>]*>([\s\S]*?)<\/span>/i)
   const cls = html.match(/level-race-talent-class[^>]*color-c(\d+)/i)
   const klass = cls ? CLASS_BY_ID[+cls[1]] || null : null
@@ -110,7 +112,7 @@ function parseSheet(html: string) {
     if (klass && rest.endsWith(klass)) rest = rest.slice(0, -klass.length).trim()
     spec = rest || null
   }
-  return { ilvl: ilvl ? +ilvl[1] : null, faction: faction ? faction[1] : null, guild, class: klass, race, spec, level }
+  return { ilvl: ilvl ? +ilvl[1] : null, faction: faction ? faction[1] : null, guild, class: klass, race, gender, spec, level }
 }
 
 const TALENT_CHARSET = '0zMcmVokRsaqbdrfwihuGINALpTjnyxtgevElBCDFHJKOPQSUWXYZ1234567_89-'
@@ -203,6 +205,8 @@ async function scrapeOne(player: string, cookie: string) {
     realm,
     class: sheet.class,
     spec: sheet.spec,
+    race: sheet.race,
+    gender: sheet.gender,
     faction: sheet.faction,
     guild: sheet.guild,
     ilvl: sheet.ilvl,

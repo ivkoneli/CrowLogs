@@ -95,7 +95,9 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack }) {
                     name={r.player}
                     klass={r.class}
                     spec={r.spec}
+                    specIcon={r.specIcon}
                     race={r.race}
+                    gender={r.gender}
                     faction={r.faction}
                     subLabel={r.spec ? `${r.spec} ${r.class}` : null}
                     pet={r.pet}

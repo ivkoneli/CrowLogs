@@ -36,10 +36,12 @@ create table characters (
   name text, realm text,
   class text, spec text, faction text, guild text,
   ilvl int, talents jsonb, talent_hash text, spec_icon text,
-  gear jsonb,
+  gear jsonb, race text, gender int,
   updated_at timestamptz default now()
 );
 --   alter table characters add column if not exists gear jsonb;
+--   alter table characters add column if not exists race text;
+--   alter table characters add column if not exists gender int;
 alter table characters enable row level security;
 create policy "public read characters" on characters for select using (true);
 

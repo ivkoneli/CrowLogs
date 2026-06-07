@@ -35,7 +35,9 @@ export function MeterRow({
   name,
   klass,
   spec,
+  specIcon,
   race,
+  gender,
   faction,
   subLabel,
   pet,
@@ -67,7 +69,7 @@ export function MeterRow({
             style={klass ? { color: classColor(klass) } : undefined}
           >
             {faction && <FactionIcon faction={faction} size={14} />}
-            <SpecRaceSlots spec={spec} race={race} />
+            <SpecRaceSlots klass={klass} spec={spec} specIcon={specIcon} race={race} gender={gender} />
             {name}
           </button>
           {subLabel && <span className="spec-tag">{subLabel}</span>}
