@@ -349,8 +349,32 @@ code {
 .encounter-head {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 10px;
+}
+/* Bloodlust / Heroism / Time Warp hint, on its own line under the encounter head. */
+.lust-hint {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+.lust-hint .lust-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--accent-2);
+  font-size: 0.7rem;
+}
+.lust-hint .lust-cast {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.08rem 0.55rem;
+  background: var(--panel);
+  font-weight: 600;
 }
 .encounter-head h3 {
   margin: 0;
@@ -511,7 +535,8 @@ code {
   border: 1px solid var(--border);
   border-radius: 9px;
   padding: 0.5rem 2rem 0.5rem 0.75rem;
-  min-width: 140px;
+  /* Fixed width so a field (esp. Spec) doesn't resize when its options change. */
+  width: 160px;
   font-size: 0.92rem;
   font-weight: 600;
   cursor: pointer;
@@ -734,6 +759,82 @@ code {
   background: var(--panel-2);
 }
 
+/* Combat-potion count column — dim when the player used none. */
+.meter td.pots {
+  color: var(--text);
+}
+.meter td.pots.zero {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+/* ---------- damage/healing metric toggle ---------- */
+.meter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+/* Both toggles sit on one line — kill the .view-toggle top margin so they align. */
+.meter-controls .view-toggle {
+  margin-top: 0;
+}
+.metric-toggle {
+  margin-top: 0;
+}
+/* Stable button width so switching the heal label (Heals/Absorbs/Healing) or the
+   damage label never shifts the layout. */
+.metric-toggle .seg {
+  min-width: 6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+/* Tint the "Healing" segment green when active so the mode is obvious. */
+.metric-toggle .seg:last-child.on {
+  background: #4cd07d;
+  color: #06231a;
+}
+
+/* ---------- kill / wipe result badges ---------- */
+.result-badge {
+  margin-left: 0.5rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  vertical-align: middle;
+}
+.result-badge.kill {
+  color: #4cd07d;
+  border: 1px solid rgba(76, 208, 125, 0.4);
+  background: rgba(76, 208, 125, 0.08);
+}
+.result-badge.wipe {
+  color: #e2566b;
+  border: 1px solid rgba(226, 86, 107, 0.4);
+  background: rgba(226, 86, 107, 0.08);
+}
+.result-badge.sm {
+  font-size: 0.55rem;
+  padding: 0.05rem 0.3rem;
+}
+/* Wipe encounters in the log tab bar */
+.tab.wipe {
+  color: #b06; /* dimmed reddish until hovered/active */
+  opacity: 0.75;
+}
+.tab .wipe-dot {
+  margin-left: 0.3rem;
+  color: #e2566b;
+  font-size: 0.7em;
+}
+
 .back-link {
   display: inline-block;
   margin-bottom: 0.5rem;
@@ -895,6 +996,10 @@ code {
   margin-right: 0.4rem;
   vertical-align: middle;
 }
+img.gear-icon,
+img.icon-slot.trinket {
+  object-fit: cover;
+}
 .gear-name {
   vertical-align: middle;
 }
@@ -939,6 +1044,61 @@ code {
   border-radius: 8px;
   padding: 0.3rem;
   width: fit-content;
+}
+/* Difficulty subtabs + the Damage/Heals toggle share one row on the profile. */
+.rank-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.rank-controls .diff-subtabs {
+  margin-bottom: 0;
+}
+.rank-controls .metric-toggle {
+  margin-top: 0;
+}
+/* Slightly larger, cleaner log header now that it's just "Raid · Diff · Log". */
+.log-title {
+  font-size: 2.6rem !important;
+}
+
+/* History sub-tabs: All | <spec> | … plus the metric toggle on one row. */
+.hist-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.spec-tabs {
+  display: flex;
+  gap: 0.4rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem;
+  width: fit-content;
+}
+.spec-tabs .seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.spec-tab-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: cover;
+  vertical-align: middle;
+}
+.spec-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 .player-main .player-card + .player-card {
   margin-top: 1.25rem;

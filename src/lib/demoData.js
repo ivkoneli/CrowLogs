@@ -3,6 +3,7 @@
 // with the "Clear demo data" button. Numbers are deterministic (no randomness)
 // so ranks stay stable across renders.
 import { RAIDS } from './raids.js'
+import { roleOf } from './classes.js'
 import { formatDay } from '../parser.js'
 
 const HIGHMAUL = RAIDS[0].bosses
@@ -43,6 +44,11 @@ function makeDemo() {
       const variance = ((bi * 7 + pi * 13) % 11) / 100 // 0..0.10
       const dps = Math.round(profile.base * mult * (1 + variance - 0.05))
       const damage = Math.round(dps * profile.dur)
+      // Healers heal big and do little damage; everyone else gets minor offhealing
+      // so the Healing meter looks plausible in demo mode.
+      const healer = roleOf(className, spec) === 'healer'
+      const hps = healer ? Math.round(profile.base * 0.5 * mult * (1 + variance - 0.05)) : Math.round(dps * 0.06)
+      const healing = Math.round(hps * profile.dur)
       records.push({
         id: `demo::${boss}::${player}`,
         raid: 'Highmaul',
@@ -53,6 +59,13 @@ function makeDemo() {
         pet: false,
         damage,
         dps,
+        healing,
+        hps,
+        // 2 = prepot + combat pot (most players); a couple slackers use 1.
+        potions: pi % 7 === 0 ? 1 : 2,
+        kill: true,
+        // Demo lust on the first boss so the hint is visible before a real import.
+        bloodlust: bi === 0 ? [{ player: DEMO_PLAYERS[0][0], t: 6 }] : [],
         duration: durationMs,
         hits: Math.round(profile.dur * 1.4),
         started,

@@ -4,8 +4,9 @@ import ImportPanel from './components/ImportPanel.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
 import LogPage from './components/LogPage.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
-import { getCharacters, mergeCharacters, requestCharacterScrape } from './lib/characters.js'
+import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
 
 export default function App() {
   const [stored, setStored] = useState([])
@@ -39,14 +40,32 @@ export default function App() {
       await reload()
       // Show the freshly parsed log's full breakdown.
       if (logId) setSelection({ view: 'log', logId })
-      // Best-effort: enrich every (non-pet) player in this log from the armory,
-      // then refresh so class/spec/ilvl/talents fill in. Failures are ignored —
-      // the table still shows name / DPS / duration.
+      // Best-effort: scrape every (non-pet) player's armory, then FREEZE their current
+      // ilvl/talents/trinkets onto these fight rows so the log keeps that snapshot
+      // forever (the armory keeps changing as people re-gear). Failures are ignored —
+      // the table still shows name / DPS / duration, just merged from the live cache.
       const players = [...new Set(records.filter((r) => !r.pet).map((r) => r.player))]
       if (players.length) {
-        requestCharacterScrape(players)
-          .then(reload)
-          .catch(() => {})
+        try {
+          const res = await requestCharacterScrape(players)
+          const byKey = new Map((res?.updated || []).map((c) => [charKey(c.name || c.key), c]))
+          const frozen = records.map((r) => {
+            const c = byKey.get(charKey(r.player))
+            if (!c) return r
+            return {
+              ...r,
+              ilvl: c.ilvl ?? r.ilvl,
+              talents: c.talents?.length ? c.talents : r.talents,
+              trinkets: trinketsOf(c.gear),
+              spec: c.spec ?? r.spec,
+              spec_icon: c.spec_icon ?? r.spec_icon ?? null,
+            }
+          })
+          await addFights(frozen)
+        } catch {
+          /* armory enrichment is best-effort */
+        }
+        await reload()
       }
     },
     [reload],
@@ -83,34 +102,36 @@ export default function App() {
         {loading && <div className="empty-state">Loading rankings…</div>}
         {loadError && <div className="error">Couldn’t load rankings: {loadError}</div>}
 
-        {!loading && selection.view === 'import' && (
-          <ImportPanel onImported={onImported} shared={isShared} />
-        )}
-        {!loading && selection.view === 'boss' && (
-          <BossPage
-            fights={fights}
-            raid={selection.raid}
-            boss={selection.boss}
-            onSelectPlayer={onSelectPlayer}
-          />
-        )}
-        {!loading && selection.view === 'player' && (
-          <PlayerPage
-            fights={fights}
-            player={selection.player}
-            onSelectBoss={onSelectBoss}
-            onSelectLog={onSelectLog}
-            onUpdateProfile={onUpdateProfile}
-          />
-        )}
-        {!loading && selection.view === 'log' && (
-          <LogPage
-            fights={fights}
-            logId={selection.logId}
-            onSelectPlayer={onSelectPlayer}
-            onBack={() => setSelection({ view: 'import' })}
-          />
-        )}
+        <ErrorBoundary resetKey={JSON.stringify(selection)}>
+          {!loading && selection.view === 'import' && (
+            <ImportPanel onImported={onImported} shared={isShared} />
+          )}
+          {!loading && selection.view === 'boss' && (
+            <BossPage
+              fights={fights}
+              raid={selection.raid}
+              boss={selection.boss}
+              onSelectPlayer={onSelectPlayer}
+            />
+          )}
+          {!loading && selection.view === 'player' && (
+            <PlayerPage
+              fights={fights}
+              player={selection.player}
+              onSelectBoss={onSelectBoss}
+              onSelectLog={onSelectLog}
+              onUpdateProfile={onUpdateProfile}
+            />
+          )}
+          {!loading && selection.view === 'log' && (
+            <LogPage
+              fights={fights}
+              logId={selection.logId}
+              onSelectPlayer={onSelectPlayer}
+              onBack={() => setSelection({ view: 'import' })}
+            />
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   )

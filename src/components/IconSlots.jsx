@@ -12,12 +12,26 @@ export function SpecRaceSlots({ spec, race, size = 16 }) {
   )
 }
 
-// Two squares for the trinket slots (boss table column).
-export function TrinketSlots() {
+// The two trinket icons (boss table column). `trinkets` is [{ name, ilvl, icon }]
+// frozen from the armory at import; falls back to empty squares when unknown.
+export function TrinketSlots({ trinkets }) {
+  const list = Array.isArray(trinkets) ? trinkets : []
   return (
     <span className="icon-slots">
-      <span className="icon-slot trinket" title="Trinket 1" />
-      <span className="icon-slot trinket" title="Trinket 2" />
+      {[0, 1].map((i) => {
+        const t = list[i]
+        return t && t.icon ? (
+          <img
+            key={i}
+            className="icon-slot trinket"
+            src={t.icon}
+            alt=""
+            title={`${t.name}${t.ilvl ? ` (${t.ilvl})` : ''}`}
+          />
+        ) : (
+          <span key={i} className="icon-slot trinket" title={`Trinket ${i + 1}`} />
+        )
+      })}
     </span>
   )
 }
