@@ -34,18 +34,34 @@ export default function App() {
 
   const fights = useMemo(() => mergeCharacters(stored, characters), [stored, characters])
 
+  // Persist parsed fights, enrich players from the armory, then open the new log.
+  // `opts.covered` (when an addon file was imported) is the set of players the snapshot
+  // resolved; null means "no addon — scrape everyone". `opts.onProgress(fraction, label)`
+  // drives the import progress bar.
   const onImported = useCallback(
-    async (records, logId) => {
+    async (records, logId, opts = {}) => {
+      const { covered = null, onProgress = () => {} } = opts
+      onProgress(0.15, 'Saving encounters…')
       await addFights(records)
       await reload()
-      // Show the freshly parsed log's full breakdown.
-      if (logId) setSelection({ view: 'log', logId })
-      // Best-effort: scrape every (non-pet) player's armory, then FREEZE their current
-      // ilvl/talents/trinkets onto these fight rows so the log keeps that snapshot
-      // forever (the armory keeps changing as people re-gear). Failures are ignored —
-      // the table still shows name / DPS / duration, just merged from the live cache.
-      const players = [...new Set(records.filter((r) => !r.pet).map((r) => r.player))]
+
+      // Best-effort armory enrichment: FREEZE each scraped player's current ilvl/talents/
+      // trinkets onto these rows so the log keeps that snapshot forever (the armory keeps
+      // changing as people re-gear). Lua-first — a value already frozen from the addon wins.
+      // Scrape players the addon didn't cover, plus covered players we've never scraped
+      // before: the addon supplies their build, but race/faction/guild only come from the
+      // armory, so a brand-new addon-only player still needs one bio scrape.
+      const allPlayers = [...new Set(records.filter((r) => !r.pet).map((r) => r.player))]
+      let players
+      if (covered == null) {
+        players = allPlayers
+      } else {
+        const coveredSet = new Set(covered.map(charKey))
+        const known = new Set(characters.map((c) => charKey(c.key || c.name)))
+        players = allPlayers.filter((p) => !coveredSet.has(charKey(p)) || !known.has(charKey(p)))
+      }
       if (players.length) {
+        onProgress(0.45, `Fetching ${players.length} armory profile${players.length === 1 ? '' : 's'}…`)
         try {
           const res = await requestCharacterScrape(players)
           const byKey = new Map((res?.updated || []).map((c) => [charKey(c.name || c.key), c]))
@@ -54,21 +70,26 @@ export default function App() {
             if (!c) return r
             return {
               ...r,
-              ilvl: c.ilvl ?? r.ilvl,
-              talents: c.talents?.length ? c.talents : r.talents,
-              trinkets: trinketsOf(c.gear),
-              spec: c.spec ?? r.spec,
-              spec_icon: c.spec_icon ?? r.spec_icon ?? null,
+              ilvl: r.ilvl ?? c.ilvl,
+              talents: r.talents?.length ? r.talents : c.talents,
+              trinkets: r.trinkets?.length ? r.trinkets : trinketsOf(c.gear),
+              spec: r.spec ?? c.spec,
+              spec_icon: r.spec_icon ?? c.spec_icon ?? null,
             }
           })
+          onProgress(0.8, 'Applying profiles…')
           await addFights(frozen)
         } catch {
           /* armory enrichment is best-effort */
         }
         await reload()
       }
+
+      onProgress(1, 'Done')
+      // Open the freshly parsed log's full breakdown.
+      if (logId) setSelection({ view: 'log', logId })
     },
-    [reload],
+    [reload, characters],
   )
 
   // Scrape one character's armory profile on demand, then refresh the cache.
@@ -97,7 +118,7 @@ export default function App() {
       />
 
       <main
-        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'player' ? 'content-wide' : ''}`}
+        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'player' || selection.view === 'import' ? 'content-wide' : ''}`}
       >
         {loading && <div className="empty-state">Loading rankings…</div>}
         {loadError && <div className="error">Couldn’t load rankings: {loadError}</div>}

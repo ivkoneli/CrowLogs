@@ -23,6 +23,9 @@ const FIELDS = [
   'bloodlust',
   'potions',
   // Frozen character snapshot, written at import time (see App.jsx onImported).
+  // `class` is persisted because the addon snapshot supplies it for players the armory
+  // never scraped (no `characters` cache row to merge it from at read time).
+  'class',
   'ilvl',
   'talents',
   'trinkets',

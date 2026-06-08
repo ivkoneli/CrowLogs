@@ -7,8 +7,10 @@ create table fights (
   pet boolean, damage bigint, dps double precision,
   healing bigint, hps double precision, kill boolean,
   bloodlust jsonb, potions int,
-  -- Frozen at import so an old log keeps the gear/talents/ilvl/spec you had then.
-  ilvl int, talents jsonb, trinkets jsonb, spec text, spec_icon text,
+  -- Frozen at import so an old log keeps the gear/talents/ilvl/spec/class you had then.
+  -- `class` is frozen too because the CrowLogsHelper addon supplies it for players the
+  -- armory never scraped (otherwise they'd render "<spec> undefined").
+  class text, ilvl int, talents jsonb, trinkets jsonb, spec text, spec_icon text,
   duration bigint, hits int, day text, started bigint, logid text,
   created_at timestamptz default now()
 );
@@ -24,6 +26,7 @@ create table fights (
 --   alter table fights add column if not exists trinkets jsonb;
 --   alter table fights add column if not exists spec text;
 --   alter table fights add column if not exists spec_icon text;
+--   alter table fights add column if not exists class text;
 alter table fights enable row level security;
 create policy "public read"   on fights for select using (true);
 create policy "public insert" on fights for insert with check (true);
