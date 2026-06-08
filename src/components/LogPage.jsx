@@ -99,7 +99,7 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack }) {
                     race={r.race}
                     gender={r.gender}
                     faction={r.faction}
-                    subLabel={r.spec ? `${r.spec} ${r.class}` : null}
+                    subLabel={r.spec ? [r.spec, r.class].filter(Boolean).join(' ') : null}
                     pet={r.pet}
                     potions={r.potions}
                     ilvl={r.ilvl}

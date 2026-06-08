@@ -1,4 +1,4 @@
-import { TALENT_SLOTS, talentIconUrl } from '../lib/classes.js'
+import { TALENT_SLOTS, talentIconUrl, iconUrl } from '../lib/classes.js'
 
 // Renders the chosen talent (col 1-3) per row as its real icon, looked up from the
 // class/spec talent table. `talents` is an array of { row, col } (col 0 = none).
@@ -23,7 +23,9 @@ export default function TalentStrip({ talents, klass, spec }) {
       {list.map((t, i) => {
         const col = typeof t === 'object' ? t.col : t
         const row = typeof t === 'object' && t.row ? t.row : i + 1
-        const icon = talentIconUrl(klass, spec, row, col)
+        // Prefer the icon the addon snapshot already resolved (a bare icon name); fall
+        // back to the class/spec talent table when only the column is known (armory).
+        const icon = (typeof t === 'object' && t.icon && iconUrl(t.icon)) || talentIconUrl(klass, spec, row, col)
         const label = `Row ${row}: ${col ? `column ${col}` : 'none'}`
         return (
           <span
