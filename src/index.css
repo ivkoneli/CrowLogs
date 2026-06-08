@@ -949,7 +949,7 @@ code {
   min-width: 0;
 }
 .player-gear {
-  width: 360px;
+  width: 440px;
   flex: none;
   position: sticky;
   top: 1rem;
@@ -1013,6 +1013,25 @@ img.icon-slot.trinket {
   object-fit: cover;
 }
 .gear-name {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+/* Gems / Enchant columns sit tight on the right; keep them just wide enough. */
+.gear-gems,
+.gear-ench {
+  width: 1%;
+  white-space: nowrap;
+}
+.gem-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  object-fit: cover;
   vertical-align: middle;
 }
 .gear-ilvl-cell {

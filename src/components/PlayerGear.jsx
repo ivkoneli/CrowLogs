@@ -18,6 +18,39 @@ const SLOT_LABEL = {
   finger: 'Ring', trinket: 'Trinket', mainhand: 'Main Hand', offhand: 'Off Hand',
 }
 
+// Gems come from the armory as [{ icon, stat }]; the demo data uses a bare count.
+// Render real gem icons when we have them, otherwise the count as placeholder slots.
+function Gems({ gems }) {
+  if (Array.isArray(gems)) {
+    if (!gems.length) return null
+    return (
+      <span className="gear-slots">
+        {gems.map((g, i) => (
+          <img key={i} className="gem-icon" src={g.icon} alt="" title={g.stat} />
+        ))}
+      </span>
+    )
+  }
+  if (typeof gems === 'number' && gems > 0) {
+    return (
+      <span className="gear-slots">
+        {Array.from({ length: gems }, (_, i) => (
+          <span key={i} className="gem-slot" />
+        ))}
+      </span>
+    )
+  }
+  return null
+}
+
+// Enchant is the armory's "Enchanted: <stat>" text (a string) or null. The demo also
+// uses 'missing' to show a slot that should be enchanted but isn't (red).
+function Enchant({ enchant }) {
+  if (enchant === 'missing') return <span className="ench-dot missing" title="Not enchanted" />
+  if (enchant) return <span className="ench-dot ok" title={`Enchanted: ${enchant}`} />
+  return null
+}
+
 export default function PlayerGear({ profile }) {
   const realGear = profile?.gear?.length ? profile.gear : null
   const items = realGear || DEMO_GEAR
@@ -40,6 +73,8 @@ export default function PlayerGear({ profile }) {
           <tr>
             <th>Item</th>
             <th className="num">ilvl</th>
+            <th>Gems</th>
+            <th>Ench</th>
           </tr>
         </thead>
         <tbody>
@@ -60,6 +95,8 @@ export default function PlayerGear({ profile }) {
                 </span>
               </td>
               <td className="num gear-ilvl-cell">{g.ilvl}</td>
+              <td className="gear-gems"><Gems gems={g.gems} /></td>
+              <td className="gear-ench"><Enchant enchant={g.enchant} /></td>
             </tr>
           ))}
         </tbody>

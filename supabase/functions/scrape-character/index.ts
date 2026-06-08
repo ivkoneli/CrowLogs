@@ -163,19 +163,95 @@ const SLOT_ORDER = [
   'legs', 'feet', 'finger', 'finger', 'trinket', 'trinket', 'mainhand', 'offhand',
 ]
 const QUALITY_BY_RARITY: Record<number, string> = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
+
+type Gem = { icon: string; stat: string }
+type GearItem = {
+  slot: string; id: number; quality: string; icon: string; name: string; ilvl: number
+  // `instanceId` is internal (used to fetch the per-item tooltip) and stripped before
+  // storage; gems/enchant are filled from that tooltip (see scrapeOne).
+  instanceId: string | null; gems?: Gem[]; enchant?: string | null
+}
+
 const GEAR_ROW_RE =
   /glist_icon[\s\S]*?\/\?item=(\d+)[\s\S]*?<img class="stats_rarity(\d+)" src="([^"]+)"[\s\S]*?glist_name[\s\S]*?<span class="stats_rarity\d+">([^<]+)<\/span>[\s\S]*?glist_ilvl">(\d+)/g
-function parseGear(html: string) {
-  const raw: { id: number; quality: string; icon: string; name: string; ilvl: number }[] = []
+
+// The model-view .gearItem blocks carry, per item, the tooltip "instance id" — the
+// handle the item-tooltip endpoint needs to return that item's socketed gems + applied
+// enchant (the gear_list_table only has the base item). Map base item id -> instance
+// id(s) in slot order; duplicates (e.g. two identical rings) are popped in order.
+const INSTANCE_RE = /class="itemToolTip[^>]*?\/\?item=(\d+)"[^>]*?\bid="(\d+)/g
+function instanceIds(html: string) {
+  const queue = new Map<string, string[]>()
+  let m: RegExpExecArray | null
+  while ((m = INSTANCE_RE.exec(html))) {
+    const arr = queue.get(m[1]) || []
+    arr.push(m[2])
+    queue.set(m[1], arr)
+  }
+  return queue
+}
+// The full equipped set (colon-joined item ids), shared by every tooltip request for
+// set-bonus lines. Same value for all items on the sheet.
+function parsePcs(html: string) {
+  const m = html.match(/pcs=([0-9:]+)/)
+  return m ? m[1] : ''
+}
+
+function parseGear(html: string): GearItem[] {
+  const instances = instanceIds(html)
+  const raw: GearItem[] = []
   let m: RegExpExecArray | null
   while ((m = GEAR_ROW_RE.exec(html))) {
-    raw.push({ id: +m[1], quality: QUALITY_BY_RARITY[+m[2]] || 'common', icon: m[3], name: m[4].trim(), ilvl: +m[5] })
+    const id = +m[1]
+    raw.push({
+      slot: 'other', id, quality: QUALITY_BY_RARITY[+m[2]] || 'common',
+      icon: m[3], name: m[4].trim(), ilvl: +m[5],
+      instanceId: instances.get(String(id))?.shift() || null,
+    })
   }
   // Drop the cosmetic shirt (always ilvl 1) + tabard (low ilvl, matched by name) so
   // the remaining items line up with SLOT_ORDER (otherwise a ring lands in a trinket slot).
   return raw
     .filter((it) => it.ilvl > 1 && !/\btabard\b/i.test(it.name))
-    .map((it, i) => ({ slot: SLOT_ORDER[i] || 'other', ...it }))
+    .map((it, i) => ({ ...it, slot: SLOT_ORDER[i] || 'other' }))
+}
+
+// Fetch one equipped item's rendered tooltip (option item-tooltip/ajax). `i` is the
+// item's instance id, `pcs` the equipped set — both from the character sheet.
+async function fetchTooltip(i: string, realm: string, pcs: string, cookie: string) {
+  const body = new URLSearchParams()
+  body.set('ajax', 'true')
+  body.set('option', 'item-tooltip/ajax')
+  body.set('dataset[i]', i)
+  body.set('dataset[r]', realm)
+  body.set('dataset[pcs]', pcs)
+  const res = await fetch(ARMORY_AJAX, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie,
+    },
+    body,
+  })
+  if (!res.ok) throw new Error(`tooltip ${i}: HTTP ${res.status}`)
+  const json = await res.json()
+  return (json.html || '') as string
+}
+
+const cleanText = (s: string) => s.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+
+// Pull gems + enchant out of an item tooltip. Enchant is the "Enchanted: <stat>" line;
+// gems are <img class="socketImg …"> followed by the gem's stat text. The item's own
+// "Socket bonus:" line is a bonusGreen span (no socketImg), so it isn't mistaken for a gem.
+function parseTooltip(html: string): { gems: Gem[]; enchant: string | null } {
+  const ench = html.match(/Enchanted:\s*([^<]+)/i)
+  const enchant = ench ? cleanText(ench[1]) || null : null
+  const gems: Gem[] = []
+  const re = /class="socketImg[^"]*"\s*src="([^"]+)">([^<]*)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html))) gems.push({ icon: m[1], stat: cleanText(m[2]) })
+  return { gems, enchant }
 }
 
 async function upsertCharacters(rows: unknown[]) {
@@ -201,6 +277,22 @@ async function scrapeOne(player: string, cookie: string) {
   const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
   const talents = decodeTalents(hash)
   const gear = parseGear(sheetRaw)
+  // Gems/enchants live only in each item's tooltip — one extra request per equipped
+  // item. We do this on the on-demand "Update profile" path (here), NOT in the nightly
+  // CI scrape (scrape-armory.mjs), so the batch run stays light. A failed tooltip just
+  // leaves that item's gems/enchant unset.
+  const pcs = parsePcs(sheetRaw)
+  await Promise.all(
+    gear.map(async (it) => {
+      if (!it.instanceId) return
+      try {
+        const { gems, enchant } = parseTooltip(await fetchTooltip(it.instanceId, realm, pcs, cookie))
+        it.gems = gems
+        it.enchant = enchant
+      } catch { /* tooltip fetch/parse failed — leave gems/enchant unset */ }
+    }),
+  )
+  gear.forEach((it) => delete (it as Partial<GearItem>).instanceId)
   return {
     key: player.toLowerCase(),
     name: player,
