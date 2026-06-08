@@ -79,7 +79,15 @@ function splitPlayer(player) {
 // nothing rotates, so a single value works until you change your Tauri password.
 function getAuthCookie() {
   if (!TAURI_COOKIE) throw new Error('Missing TAURI_COOKIE (expected "username=…; pasw=…").')
-  return TAURI_COOKIE
+  // A pasted secret often carries a trailing/embedded newline (e.g. username and pasw
+  // landed on separate lines). A raw CR/LF makes fetch's Headers reject the Cookie value
+  // ("invalid header value") for EVERY request, which masquerades as an auth failure.
+  // Rejoin any lines with the cookie separator "; " so a stray newline is harmless whether
+  // it was a trailing newline or split the two cookies onto separate lines.
+  return TAURI_COOKIE.split(/[\r\n]+/)
+    .map((line) => line.trim().replace(/;+$/, '')) // drop blank lines + trailing ';'
+    .filter(Boolean)
+    .join('; ')
 }
 
 // ── FETCH ───────────────────────────────────────────────────────────────────
