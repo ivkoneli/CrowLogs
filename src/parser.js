@@ -124,7 +124,7 @@ function resolveActor(guid, name, petOwners, petBaseOwners) {
 }
 
 // Aggregate one encounter window into per-player records.
-function buildRecords({ raid, boss, difficulty, kill, startMs, endMs, events, petOwners, petBaseOwners }) {
+function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endMs, events, petOwners, petBaseOwners }) {
   const players = new Map()
   const lusts = [] // { name, ts } — Bloodlust/Heroism/Time Warp casts this fight
   let firstActivity = null
@@ -220,6 +220,9 @@ function buildRecords({ raid, boss, difficulty, kill, startMs, endMs, events, pe
       raid,
       boss,
       difficulty,
+      // Numeric ENCOUNTER_START id (null when the log had no markers). Used to join
+      // fights onto CrowLogsHelper addon pulls (see lib/addon.js).
+      encounterID: encounterID ?? null,
       kill,
       bloodlust,
       player: p.player,
@@ -249,7 +252,7 @@ export function parseLogToFights(text) {
   const encounters = [] // { boss, raid, difficulty, kill, startMs, endMs }
   const petOwners = new Map() // petGUID -> { guid, name } of the owning player
   const baseSeen = new Map() // pet base -> { owners:Set<guid>, last:{guid,name} }
-  let open = null
+  const openStack = [] // encounters started but not yet matched to an ENCOUNTER_END
   let firstTs = null
   let lastTs = null
 
@@ -271,23 +274,40 @@ export function parseLogToFights(text) {
       // ENCOUNTER_START,encounterID,"name",difficultyID,groupSize,instanceID
       const name = fields[2]
       const matched = matchBoss(name)
-      open = {
+      const seg = {
         boss: matched ? matched.boss : name,
         raid: matched ? matched.raid : 'Other',
         difficulty: difficultyFromId(fields[3]),
+        encounterID: Number(fields[1]) || null,
         kill: false, // set true if ENCOUNTER_END reports success
         startMs: ts,
         endMs: Infinity,
       }
-      encounters.push(open)
+      encounters.push(seg)
+      openStack.push(seg)
       continue
     }
     if (event === 'ENCOUNTER_END') {
       // ENCOUNTER_END,encounterID,"name",difficultyID,groupSize,success
-      if (open) {
-        open.endMs = ts
-        open.kill = fields[5] === '1'
-        open = null
+      // Match the END to its START by encounterID. WoW occasionally fires a stray boss
+      // START+END *inside* another fight's window (e.g. a 1s Valithria Dreamwalker burst
+      // mid Lady Deathwhisper); a single "open" slot would let that steal the close and
+      // drop the real boss's result, turning a kill into a wipe. Fall back to the most
+      // recent open encounter when the id isn't found.
+      const id = Number(fields[1]) || null
+      let idx = -1
+      for (let k = openStack.length - 1; k >= 0; k--) {
+        if (openStack[k].encounterID === id) {
+          idx = k
+          break
+        }
+      }
+      if (idx === -1) idx = openStack.length - 1
+      if (idx !== -1) {
+        const seg = openStack[idx]
+        seg.endMs = ts
+        seg.kill = fields[5] === '1'
+        openStack.splice(idx, 1)
       }
       continue
     }
@@ -307,10 +327,10 @@ export function parseLogToFights(text) {
     events.push({ ts, event, fields })
   }
 
-  // Close a dangling encounter (log cut off mid-fight) — unknown result, treat as kill.
-  if (open) {
-    open.endMs = lastTs ?? open.startMs
-    open.kill = true
+  // Close any encounters left open (log cut off mid-fight) — unknown result, treat as kill.
+  for (const seg of openStack) {
+    seg.endMs = lastTs ?? seg.startMs
+    seg.kill = true
   }
 
   // Base→owner fallback, kept only where a base belongs to exactly one owner, so an
