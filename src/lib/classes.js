@@ -139,6 +139,13 @@ export function specsOf(className) {
 // build the URL from a per-class map. Anything missing/wrong is hidden via onError
 // in the UI, so this degrades to a text-only tab rather than a broken image.
 const SPEC_ICON_BASE = 'https://legion-static.tauri.hu/images/icons/large/'
+
+// Build a full icon URL from a bare WoW icon name (e.g. "inv_sword_48"). Used for
+// talent/trinket icons resolved from the static maps (Lua snapshots). Returns null
+// for an empty name so callers can render an empty slot instead of a broken image.
+export function iconUrl(name) {
+  return name ? `${SPEC_ICON_BASE}${name}.png` : null
+}
 const SPEC_ICON_NAMES = {
   'Death Knight': { Blood: 'spell_deathknight_bloodpresence', Frost: 'spell_deathknight_frostpresence', Unholy: 'spell_deathknight_unholypresence' },
   'Demon Hunter': { Havoc: 'ability_demonhunter_specdps', Vengeance: 'ability_demonhunter_spectank' },

@@ -9,6 +9,8 @@ dist
 # Personal/local-only notes — never published
 DEV_NOTES.md
 WoWCombatLog*.txt
+# Dropped addon SavedVariables used for local testing (contains player GUIDs/gear)
+CrowLogsHelper*.lua
 
 # Supabase CLI local state
 supabase/.temp/
