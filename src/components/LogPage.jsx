@@ -131,6 +131,7 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack, onDelet
                     faction={r.faction}
                     subLabel={r.spec ? [r.spec, r.class].filter(Boolean).join(' ') : null}
                     pet={r.pet}
+                    noAddon={!r.pet && !r.fromAddon}
                     potions={r.potions}
                     ilvl={r.ilvl}
                     talents={r.talents}

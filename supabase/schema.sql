@@ -11,6 +11,9 @@ create table fights (
   -- `class` is frozen too because the CrowLogsHelper addon supplies it for players the
   -- armory never scraped (otherwise they'd render "<spec> undefined").
   class text, ilvl int, talents jsonb, trinkets jsonb, spec text, spec_icon text,
+  -- Did the player run the CrowLogsHelper addon on this pull? Frozen at import (not
+  -- retroactive); drives the "no addon" badge in the log view.
+  from_addon boolean,
   duration bigint, hits int, day text, started bigint, logid text,
   created_at timestamptz default now()
 );
@@ -27,6 +30,7 @@ create table fights (
 --   alter table fights add column if not exists spec text;
 --   alter table fights add column if not exists spec_icon text;
 --   alter table fights add column if not exists class text;
+--   alter table fights add column if not exists from_addon boolean;
 alter table fights enable row level security;
 -- The public (browser anon key) may ONLY read. All writes go through the `submit-log`
 -- edge function (service-role key), which validates, recomputes dps/hps, and rate-limits.

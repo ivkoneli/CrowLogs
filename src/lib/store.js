@@ -31,6 +31,9 @@ const FIELDS = [
   'trinkets',
   'spec',
   'spec_icon',
+  // Whether the player ran the CrowLogsHelper addon on this pull (frozen at import).
+  // Drives the "no addon" badge in the log view.
+  'from_addon',
   'duration',
   'hits',
   'day',

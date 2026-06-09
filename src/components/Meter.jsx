@@ -48,6 +48,7 @@ export function MeterRow({
   duration,
   when,
   onClick,
+  noAddon = false,
 }) {
   return (
     <tr>
@@ -74,6 +75,7 @@ export function MeterRow({
           </button>
           {subLabel && <span className="spec-tag">{subLabel}</span>}
           {pet && <span className="pet-tag">pet</span>}
+          {noAddon && <span className="noaddon-tag" title="This player wasn't running CrowLogsHelper on this pull">no addon</span>}
         </div>
       </td>
       <td className="num strong">{formatDps(value)}</td>

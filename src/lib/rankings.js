@@ -175,6 +175,8 @@ export function logSummary(fights, logId) {
       talents: f.talents,
       trinkets: f.trinkets,
       pet: f.pet,
+      // Frozen per-fight: did they run the addon on this pull? Drives the "no addon" badge.
+      fromAddon: f.from_addon === true,
       damage: f.damage,
       dps: f.dps,
       healing: f.healing || 0,

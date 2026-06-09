@@ -78,6 +78,7 @@ function sanitize(row: Record<string, unknown>) {
   out.player = player
   out.pet = !!row.pet
   out.kill = row.kill == null ? null : !!row.kill
+  out.from_addon = !!row.from_addon
   out.damage = damage
   out.healing = healing
   out.dps = dps

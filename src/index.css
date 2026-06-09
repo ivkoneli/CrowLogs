@@ -477,6 +477,18 @@ code {
   color: #d9a441;
   border-color: rgba(217, 164, 65, 0.4);
 }
+/* Faint "no addon" marker on log rows — present but easy to ignore; vanishes for any
+   pull the player actually ran the addon on. */
+.noaddon-tag {
+  margin-left: 0.4rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  opacity: 0.35;
+}
 
 .rank-pill {
   font-weight: 700;

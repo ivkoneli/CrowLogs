@@ -74,6 +74,10 @@ export function loadoutSnapshot(loadout) {
     talents,
     trinkets,
     complete,
+    // The player was actually running the addon on this pull only if their snapshot came
+    // from a comm reply (or is the recorder's own). An `inspect` snapshot means the leader
+    // inspected them precisely because they had no addon.
+    hadAddon: loadout.source === 'comm' || loadout.source === 'self',
   }
 }
 
@@ -150,6 +154,9 @@ export function freezeFromAddon(fights, addon) {
       ilvl: snap.ilvl ?? f.ilvl,
       talents: snap.talents.length ? snap.talents : f.talents,
       trinkets: snap.trinkets.length >= 2 ? snap.trinkets : f.trinkets,
+      // Frozen per-fight: did this player run the addon on this pull? Drives the "no addon"
+      // badge in the log view. Not retroactive — a later install never backfills old logs.
+      from_addon: !!snap.hadAddon,
     }
   })
   return { fights: out, covered }
