@@ -850,6 +850,21 @@ code {
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
 }
+.log-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.rollback-link {
+  font-size: 0.8rem;
+  color: var(--muted);
+  opacity: 0.65;
+}
+.rollback-link:hover:not(:disabled) {
+  color: #e74c3c;
+  opacity: 1;
+}
 
 .faction-icon {
   vertical-align: -0.18em;

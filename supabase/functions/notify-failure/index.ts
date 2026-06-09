@@ -20,11 +20,28 @@ const CORS = {
 }
 const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '')
 
+// Best-effort per-IP throttle. This endpoint is public and sends email, so without a
+// cap anyone could flood your inbox. In-memory only (resets on cold start), but enough
+// to stop a trivial flood from one source.
+const RATE_MAX = 5
+const RATE_WINDOW_MS = 5 * 60_000 // 5 per 5 minutes per IP
+const hits = new Map<string, number[]>()
+function rateLimited(ip: string): boolean {
+  const now = Date.now()
+  const arr = (hits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS)
+  arr.push(now)
+  hits.set(ip, arr)
+  return arr.length > RATE_MAX
+}
+const clientIp = (req: Request) =>
+  req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('cf-connecting-ip') || 'unknown'
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
   try {
+    if (rateLimited(clientIp(req))) return json({ error: 'Rate limited.' }, 429)
     if (!RESEND_API_KEY || !NOTIFY_TO) {
       return json({ error: 'notify-failure not configured (set RESEND_API_KEY + NOTIFY_TO)' }, 500)
     }

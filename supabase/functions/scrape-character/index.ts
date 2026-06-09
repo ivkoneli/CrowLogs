@@ -34,6 +34,24 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+// This endpoint is public (--no-verify-jwt) and makes outbound armory calls with YOUR
+// Tauri cookie (each character = sheet + talents + ~16 tooltip fetches). Without limits
+// a few requests could hammer Tauri into rate-limiting/banning your account and burn the
+// function quota. Cap the batch + throttle per IP (in-memory, best-effort).
+const MAX_PLAYERS = 40
+const RATE_MAX = 10
+const RATE_WINDOW_MS = 60_000 // 10 requests/minute per IP
+const hits = new Map<string, number[]>()
+function rateLimited(ip: string): boolean {
+  const now = Date.now()
+  const arr = (hits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS)
+  arr.push(now)
+  hits.set(ip, arr)
+  return arr.length > RATE_MAX
+}
+const clientIp = (req: Request) =>
+  req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('cf-connecting-ip') || 'unknown'
+
 const REALM_MAP: Record<string, string> = {
   evermoon: '[EN] Evermoon',
 }
@@ -320,6 +338,8 @@ Deno.serve(async (req) => {
       headers: { ...CORS, 'Content-Type': 'application/json' },
     })
 
+  if (rateLimited(clientIp(req))) return json({ error: 'Rate limit exceeded. Try again shortly.' }, 429)
+
   try {
     const body = await req.json().catch(() => ({}))
     // Accept a single { player } (the Update button) or { players: [...] } (import).
@@ -330,6 +350,9 @@ Deno.serve(async (req) => {
         : []
     if (players.length === 0) {
       return json({ error: 'Provide a "player" name or "players" array.' }, 400)
+    }
+    if (players.length > MAX_PLAYERS) {
+      return json({ error: `Too many players (max ${MAX_PLAYERS}).` }, 413)
     }
 
     const cookie = authCookie()

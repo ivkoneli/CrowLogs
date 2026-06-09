@@ -150,6 +150,10 @@ export default function App() {
               logId={selection.logId}
               onSelectPlayer={onSelectPlayer}
               onBack={() => setSelection({ view: 'import' })}
+              onDeleted={async () => {
+                await reload()
+                setSelection({ view: 'import' })
+              }}
             />
           )}
         </ErrorBoundary>

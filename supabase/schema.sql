@@ -28,9 +28,40 @@ create table fights (
 --   alter table fights add column if not exists spec_icon text;
 --   alter table fights add column if not exists class text;
 alter table fights enable row level security;
-create policy "public read"   on fights for select using (true);
-create policy "public insert" on fights for insert with check (true);
-create policy "public update" on fights for update using (true) with check (true);
+-- The public (browser anon key) may ONLY read. All writes go through the `submit-log`
+-- edge function (service-role key), which validates, recomputes dps/hps, and rate-limits.
+-- This is what stops anyone with the public anon key from inserting fake records or — via
+-- the deterministic fight id (raid::boss::difficulty::player::start) — overwriting real
+-- ones. Deletes happen only through the `delete-log` function (ADMIN_TOKEN-gated).
+create policy "public read" on fights for select using (true);
+-- ── RLS LOCKDOWN MIGRATION ────────────────────────────────────────────────────
+-- If your fights table still has the old open write policies, drop them. Run this
+-- ONLY AFTER the submit-log function is deployed and the site is updated to call it,
+-- otherwise live imports will fail. Safe to re-run.
+--   drop policy if exists "public insert" on fights;
+--   drop policy if exists "public update" on fights;
+
+-- Per-import audit row, written by submit-log; gives the owner a list to roll back from.
+-- Public can read it (to surface logs in the UI); only the functions write/delete it.
+create table logs (
+  logid text primary key,
+  label text,
+  row_count int,
+  ip_hash text,
+  created_at timestamptz default now()
+);
+alter table logs enable row level security;
+create policy "public read logs" on logs for select using (true);
+
+-- ── ROLLBACK / RECOVERY (run manually in the SQL editor when needed) ───────────
+-- Delete one imported log by id (same as the in-app "delete log" button):
+--   delete from fights where logid = 'log_xxxxxxxx';
+--   delete from logs   where logid = 'log_xxxxxxxx';
+-- Find recent imports to identify a logid:
+--   select logid, label, row_count, created_at from logs order by created_at desc limit 50;
+-- BACKUPS: enable scheduled backups / PITR in the Supabase dashboard
+--   (Project Settings → Database → Backups) so a mass-poisoning is recoverable even
+--   without per-log rollback.
 
 -- Armory cache (ilvl / talents / class / spec / faction), keyed by "Name-Realm".
 -- Written only by the scraper / edge function via the service-role key.

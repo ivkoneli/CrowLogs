@@ -67,6 +67,13 @@ export async function getFights() {
   return readLocal()
 }
 
+// A short human label for a batch, stored on the logs audit row so the owner can tell
+// which import to roll back (e.g. "Icecrown Citadel · 06/09").
+function logLabel(rows) {
+  const r = rows.find((x) => x.raid) || rows[0] || {}
+  return [r.raid, r.day].filter(Boolean).join(' · ') || null
+}
+
 export async function addFights(records) {
   // Dedupe by id (last wins) before persisting. Two encounter segments from one log can
   // resolve to the same id (raid::boss::difficulty::player::start); Supabase rejects a
@@ -75,13 +82,42 @@ export async function addFights(records) {
   const byId = new Map(records.map((r) => [r.id, pick(r)]))
   const clean = [...byId.values()]
   if (supabase) {
-    const { error } = await supabase.from('fights').upsert(clean, { onConflict: 'id' })
-    if (error) throw error
+    // Writes go through the `submit-log` edge function, NOT a direct table upsert: the
+    // public anon key must not be able to write/overwrite `fights` (the table is RLS
+    // read-only). The function validates, recomputes dps/hps, caps, and rate-limits.
+    const logid = clean.find((r) => r.logid)?.logid || null
+    const { data, error } = await supabase.functions.invoke('submit-log', {
+      body: { fights: clean, logid, label: logLabel(clean) },
+    })
+    if (error) {
+      const detail = await error.context?.text?.().catch(() => null)
+      throw new Error(detail || error.message)
+    }
+    if (data?.error) throw new Error(data.error)
     return
   }
   const map = new Map(readLocal().map((f) => [f.id, f]))
   for (const r of clean) map.set(r.id, r)
   writeLocal([...map.values()])
+}
+
+// Roll back a previously imported log: deletes every fight row carrying `logid`. Gated
+// server-side by ADMIN_TOKEN (entered at runtime, never shipped in the bundle) via the
+// `delete-log` edge function. Requires Supabase. Returns { logid, deleted }.
+export async function deleteLog(logid, token) {
+  if (!supabase) {
+    // localStorage fallback: just drop the rows locally (no auth needed for your own browser).
+    const remaining = readLocal().filter((f) => f.logid !== logid)
+    writeLocal(remaining)
+    return { logid, deleted: 0 }
+  }
+  const { data, error } = await supabase.functions.invoke('delete-log', { body: { logid, token } })
+  if (error) {
+    const detail = await error.context?.text?.().catch(() => null)
+    throw new Error(detail || error.message)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data
 }
 
 export async function clearFights() {
