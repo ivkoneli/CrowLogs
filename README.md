@@ -1,9 +1,19 @@
 # 🐦‍⬛ CrowLogs
 
-A lightweight WoW combat-log DPS leaderboard you can host on **GitHub Pages**.
-Drop a `WoWCombatLog.txt` and CrowLogs reads each encounter (boss + difficulty),
-computes per-player DPS and fight duration, and builds per-boss rankings and
-per-player pages. Character ilvl / spec / talents are pulled from the Tauri armory.
+A lightweight World of Warcraft combat-log DPS/HPS leaderboard. Drop a
+`WoWCombatLog.txt` and CrowLogs reads each encounter (boss + difficulty), computes
+per-player damage, healing, and fight duration, and builds per-boss rankings and
+per-player profile pages — with character ilvl, spec, talents, and gear pulled from
+the Tauri armory.
+
+## Features
+
+- **Per-boss leaderboards** by difficulty and spec, ranked on DPS or HPS.
+- **Player profiles** — rankings, log history, talents, and full equipment (gems & enchants).
+- **Optional companion addon** (CrowLogsHelper) freezes each pull's exact spec/talents/gear,
+  so old logs keep the build you actually ran.
+- **Open contribution** — no accounts; anyone can import a log and the rankings update for all.
+- Runs entirely in your browser on local data, or shared across everyone via Supabase.
 
 ## Quick start
 
@@ -12,49 +22,12 @@ npm install
 npm run dev      # http://localhost:5173/CrowLogs/
 ```
 
-Drag a `WoWCombatLog.txt` onto the import page. With no Supabase keys set, everything
-is stored in your browser (localStorage) — fine for trying it out.
+Drag a `WoWCombatLog.txt` onto the import page. With no backend configured, everything is
+stored locally in your browser — fine for trying it out.
 
-## Shared mode (Supabase)
+## Hosting your own
 
-To run one leaderboard shared by everyone instead of per-browser:
-
-1. Create a project at [supabase.com](https://supabase.com).
-2. In the **SQL editor**, run [`supabase/schema.sql`](supabase/schema.sql).
-3. Copy your project **URL** and **anon key** (Settings → API).
-4. Local: `cp .env.example .env` and fill `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
-5. Deploys: add those same two as repo secrets (Settings → Secrets and variables → Actions).
-
-## Deploy (GitHub Pages)
-
-1. Push to `main` in a repo named **`CrowLogs`** (must match `base` in
-   [`vite.config.js`](vite.config.js)).
-2. **Settings → Pages → Source: GitHub Actions**.
-3. [`deploy.yml`](.github/workflows/deploy.yml) builds and publishes to
-   `https://<your-username>.github.io/CrowLogs/`.
-
-## Armory enrichment (ilvl / spec / talents)
-
-The Tauri armory is login-gated, so scraping runs **server-side**, never in the browser:
-
-- A 12h GitHub Action ([`scrape-armory.yml`](.github/workflows/scrape-armory.yml)) refreshes
-  every known player.
-- The player page's **Update profile** button and **log import** scrape on demand via a
-  Supabase Edge Function ([`supabase/functions/scrape-character`](supabase/functions/scrape-character/index.ts)).
-
-Setup:
-
-```bash
-# Edge function (needs the Supabase CLI):
-supabase functions deploy scrape-character --project-ref <your-ref> --no-verify-jwt
-supabase secrets set --project-ref <your-ref> TAURI_COOKIE="username=…; pasw=…" DEFAULT_REALM="[EN] Evermoon"
-
-# GitHub Action secrets: TAURI_COOKIE, SUPABASE_SERVICE_KEY, VITE_SUPABASE_URL
-```
-
-`TAURI_COOKIE` is your Tauri **credential** cookie — `username=…; pasw=…`, copied from a
-logged-in browser (devtools → Cookies → tauriwow.com). Tauri authenticates each request
-off these persistent cookies, so the value is static: you only re-set it if you change
-your Tauri password (no sessions to keep alive). `pasw` is password-equivalent — keep it
-in secrets only. (Editing the edge function in VS Code? Install the **Deno** extension;
-the files run on Deno, not Node.)
+CrowLogs is a static site that deploys to **GitHub Pages**, optionally backed by
+[Supabase](https://supabase.com) for a shared, multi-user leaderboard. Armory enrichment,
+the open-contribution write path, automated backups, and error monitoring all run
+server-side. Setup and operational details are kept in the project's dev notes.
