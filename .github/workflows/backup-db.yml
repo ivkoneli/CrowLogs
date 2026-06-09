@@ -30,7 +30,13 @@ jobs:
           version: latest
       - name: Dump + gzip
         run: |
-          supabase db dump --db-url "$SUPABASE_DB_URL" -f crowlogs.sql
+          # `supabase db dump` writes ONLY the schema by default — the rows need a
+          # separate --data-only pass. Concatenate schema first (so a restore creates the
+          # tables) then the data, into one self-contained .sql.
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only -f data.sql
+          cat schema.sql data.sql > crowlogs.sql
+          echo "rows captured: $(grep -c '^INSERT\|^COPY' data.sql || true) statement(s)"
           gzip -9 crowlogs.sql
           mv crowlogs.sql.gz "crowlogs-$(date +%F).sql.gz"
           ls -lh crowlogs-*.sql.gz
