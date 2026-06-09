@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { logSummary } from '../lib/rankings.js'
 import { formatDuration } from '../parser.js'
 import { deleteLog } from '../lib/store.js'
+import { isAdmin, adminToken } from '../lib/admin.js'
 import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 
 // "Iplayretail 0:04" — a lust cast and how far into the fight it landed.
@@ -13,15 +14,14 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack, onDelet
   const [metric, setMetric] = useState('dps')
   const [rollback, setRollback] = useState(null) // { busy?, error? }
 
-  // Owner-only rollback: removes every fight row from this import. Gated server-side by
-  // ADMIN_TOKEN (prompted at runtime, never stored), so a passer-by can't delete logs.
+  // Owner-only rollback: removes every fight row from this import. Only rendered in admin
+  // mode (see lib/admin.js) and uses the locally-stored token, which delete-log verifies
+  // server-side — so the public never sees this and a stranger can't trigger it.
   const handleRollback = useCallback(async () => {
-    const token = window.prompt('Admin token to delete this entire log:')
-    if (!token) return
     if (!window.confirm('Permanently delete every fight from this log? This cannot be undone.')) return
     setRollback({ busy: true })
     try {
-      const res = await deleteLog(logId, token)
+      const res = await deleteLog(logId, adminToken())
       onDeleted?.(res)
     } catch (e) {
       setRollback({ error: e.message || 'Delete failed.' })
@@ -47,14 +47,16 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack, onDelet
             ← back
           </button>
         )}
-        <button
-          className="linkbtn rollback-link"
-          onClick={handleRollback}
-          disabled={rollback?.busy}
-          title="Delete this entire log (admin)"
-        >
-          {rollback?.busy ? 'Deleting…' : '🗑 delete log'}
-        </button>
+        {isAdmin() && (
+          <button
+            className="linkbtn rollback-link"
+            onClick={handleRollback}
+            disabled={rollback?.busy}
+            title="Delete this entire log (admin)"
+          >
+            {rollback?.busy ? 'Deleting…' : '🗑 delete log'}
+          </button>
+        )}
       </div>
       {rollback?.error && <div className="error">{rollback.error}</div>}
       <div className="page-head center">

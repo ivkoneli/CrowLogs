@@ -7,6 +7,10 @@ import LogPage from './components/LogPage.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
+import { initAdminFromUrl } from './lib/admin.js'
+
+// Capture ?admin=<token> from the URL before first render (unlocks owner-only controls).
+initAdminFromUrl()
 
 export default function App() {
   const [stored, setStored] = useState([])
