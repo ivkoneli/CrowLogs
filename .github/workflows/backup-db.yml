@@ -1,0 +1,44 @@
+name: Backup database
+
+# Weekly gzipped pg_dump of the Supabase database, kept as a downloadable workflow
+# artifact (90-day retention = the last ~13 weekly backups on hand). This is the free
+# alternative to Supabase's Pro-plan automated backups. A 10k-fight DB dumps to ~9 MB
+# raw / ~1.3 MB gzipped, so this stays tiny.
+#
+# Setup — add ONE repo secret:
+#   SUPABASE_DB_URL  → Dashboard → Project Settings → Database → Connection string → URI
+#                      (use the "Session pooler" or direct connection, NOT the transaction
+#                      pooler; replace [YOUR-PASSWORD] with your DB password).
+#
+# We dump via the Supabase CLI (`supabase db dump`), which bundles a pg_dump matching the
+# server's Postgres version — avoids the "server version mismatch" errors a plain pg_dump
+# from the runner can hit.
+#
+# NOTE: GitHub auto-disables scheduled workflows after 60 days with no repo commits — if
+# backups silently stop, re-enable this workflow here.
+on:
+  schedule:
+    - cron: '0 5 * * 0' # 05:00 UTC every Sunday
+  workflow_dispatch: # manual "Run workflow" button
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Dump + gzip
+        run: |
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f crowlogs.sql
+          gzip -9 crowlogs.sql
+          mv crowlogs.sql.gz "crowlogs-$(date +%F).sql.gz"
+          ls -lh crowlogs-*.sql.gz
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crowlogs-db-backup
+          path: crowlogs-*.sql.gz
+          retention-days: 90
+          if-no-files-found: error
