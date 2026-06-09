@@ -68,7 +68,12 @@ export async function getFights() {
 }
 
 export async function addFights(records) {
-  const clean = records.map(pick)
+  // Dedupe by id (last wins) before persisting. Two encounter segments from one log can
+  // resolve to the same id (raid::boss::difficulty::player::start); Supabase rejects a
+  // batch that lists the same conflict key twice ("ON CONFLICT DO UPDATE command cannot
+  // affect row a second time"). The localStorage path already collapsed dupes this way.
+  const byId = new Map(records.map((r) => [r.id, pick(r)]))
+  const clean = [...byId.values()]
   if (supabase) {
     const { error } = await supabase.from('fights').upsert(clean, { onConflict: 'id' })
     if (error) throw error

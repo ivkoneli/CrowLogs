@@ -273,12 +273,18 @@ export function parseLogToFights(text) {
     if (event === 'ENCOUNTER_START') {
       // ENCOUNTER_START,encounterID,"name",difficultyID,groupSize,instanceID
       const name = fields[2]
+      const encId = Number(fields[1]) || null
+      // Ignore a duplicate START for an encounter that's already open. A merged or
+      // double-recorded log can emit the same ENCOUNTER_START twice (you can't be in
+      // one encounter twice at once); a second segment would overlap the first, double
+      // the fight, and collide on its id (raid::boss::diff::player::start) at upsert.
+      if (encId != null && openStack.some((s) => s.encounterID === encId)) continue
       const matched = matchBoss(name)
       const seg = {
         boss: matched ? matched.boss : name,
         raid: matched ? matched.raid : 'Other',
         difficulty: difficultyFromId(fields[3]),
-        encounterID: Number(fields[1]) || null,
+        encounterID: encId,
         kill: false, // set true if ENCOUNTER_END reports success
         startMs: ts,
         endMs: Infinity,
