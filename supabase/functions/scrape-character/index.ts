@@ -310,7 +310,8 @@ async function scrapeOne(player: string, cookie: string) {
       } catch { /* tooltip fetch/parse failed — leave gems/enchant unset */ }
     }),
   )
-  gear.forEach((it) => delete (it as Partial<GearItem>).instanceId)
+  // Keep `instanceId` on each item: the CI scraper compares it run-to-run to skip
+  // re-fetching tooltips for unchanged gear (gems/enchants only change with the instance id).
   // Tauri's armory mis-reports Demon Hunter ilvl, so compute it ourselves: the mean of
   // equipped item levels (DH dual-wields, so there's no 2H double-count to worry about).
   let ilvl = sheet.ilvl

@@ -45,6 +45,16 @@ async function dbSelectPlayers() {
   return [...new Set((await res.json()).map((r) => r.player))]
 }
 
+// Existing stored gear per character key — used to reuse gems/enchants for items whose
+// instance id is unchanged, so we don't re-fetch ~16 tooltips per player every run.
+async function dbSelectCharacters() {
+  const res = await fetch(`${REST}/characters?select=key,gear`, { headers: dbHeaders })
+  if (!res.ok) throw new Error(`select characters: HTTP ${res.status} — ${await res.text()}`)
+  const map = new Map()
+  for (const c of await res.json()) map.set(c.key, c.gear || [])
+  return map
+}
+
 async function dbUpsertCharacters(rows) {
   const res = await fetch(`${REST}/characters`, {
     method: 'POST',
@@ -219,16 +229,36 @@ const SLOT_ORDER = [
 const QUALITY_BY_RARITY = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
 const GEAR_ROW_RE =
   /glist_icon[\s\S]*?\/\?item=(\d+)[\s\S]*?<img class="stats_rarity(\d+)" src="([^"]+)"[\s\S]*?glist_name[\s\S]*?<span class="stats_rarity\d+">([^<]+)<\/span>[\s\S]*?glist_ilvl">(\d+)/g
+
+// The model-view .gearItem blocks carry each item's tooltip "instance id" — the handle
+// the item-tooltip endpoint needs, and our change-detection key (it changes whenever the
+// item's gems/enchant change). Map base item id -> instance id(s) in slot order.
+const INSTANCE_RE = /class="itemToolTip[^>]*?\/\?item=(\d+)"[^>]*?\bid="(\d+)/g
+function instanceIds(html) {
+  const queue = new Map()
+  let m
+  while ((m = INSTANCE_RE.exec(html))) {
+    const arr = queue.get(m[1]) || []
+    arr.push(m[2])
+    queue.set(m[1], arr)
+  }
+  return queue
+}
+const parsePcs = (html) => (html.match(/pcs=([0-9:]+)/) || [])[1] || ''
+
 function parseGear(html) {
+  const instances = instanceIds(html)
   const raw = []
   let m
   while ((m = GEAR_ROW_RE.exec(html))) {
+    const id = +m[1]
     raw.push({
-      id: +m[1],
+      id,
       quality: QUALITY_BY_RARITY[+m[2]] || 'common',
       icon: m[3],
       name: m[4].trim(),
       ilvl: +m[5],
+      instanceId: (instances.get(String(id)) || []).shift() || null,
     })
   }
   // The cosmetic shirt + tabard sit between chest and wrist and would shift every
@@ -239,6 +269,39 @@ function parseGear(html) {
     .map((it, i) => ({ slot: SLOT_ORDER[i] || 'other', ...it }))
 }
 
+// Gems + enchant live in each item's tooltip, not the gear list. `i` is the item instance
+// id, `pcs` the equipped set — both from the character sheet.
+async function fetchTooltip(i, realm, pcs, cookie) {
+  const body = new URLSearchParams()
+  body.set('ajax', 'true')
+  body.set('option', 'item-tooltip/ajax')
+  body.set('dataset[i]', i)
+  body.set('dataset[r]', realm)
+  body.set('dataset[pcs]', pcs)
+  const res = await fetch(ARMORY_AJAX, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      Cookie: cookie,
+    },
+    body,
+  })
+  if (!res.ok) throw new Error(`tooltip ${i}: HTTP ${res.status}`)
+  return (await res.json()).html || ''
+}
+const cleanText = (s) => s.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+function parseTooltip(html) {
+  const ench = html.match(/Enchanted:\s*([^<]+)/i)
+  const enchant = ench ? cleanText(ench[1]) || null : null
+  const gems = []
+  const re = /class="socketImg[^"]*"\s*src="([^"]+)">([^<]*)/gi
+  let m
+  while ((m = re.exec(html))) gems.push({ icon: m[1], stat: cleanText(m[2]) })
+  return { gems, enchant }
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 async function main() {
   const cookie = getAuthCookie()
@@ -247,6 +310,11 @@ async function main() {
   const argPlayers = process.argv.slice(2)
   const players = argPlayers.length ? argPlayers : await dbSelectPlayers()
   console.log(`Scraping ${players.length} player(s)…`)
+
+  const existingGear = await dbSelectCharacters() // key -> stored gear[]
+  // Cap tooltip (gems/enchant) fetches per run so the first run / a mass re-gear can't
+  // hammer the armory; unfetched items just fill in on a later run.
+  let tooltipBudget = 400
 
   const rows = []
   let anyAuthed = false
@@ -267,6 +335,33 @@ async function main() {
         const eq = gear.filter((g) => g.ilvl > 1)
         if (eq.length) ilvl = Math.round(eq.reduce((s, g) => s + g.ilvl, 0) / eq.length)
       }
+
+      // Gems/enchants: reuse stored values for any item whose instance id is unchanged
+      // (no tooltip request); only fetch tooltips for changed/new items, within the budget.
+      const byIid = new Map()
+      for (const g of existingGear.get(player.toLowerCase()) || []) {
+        if (g.instanceId) byIid.set(g.instanceId, g)
+      }
+      const pcs = parsePcs(sheetRaw)
+      let fetched = 0
+      for (const it of gear) {
+        if (!it.instanceId) continue
+        const cached = byIid.get(it.instanceId)
+        if (cached && (cached.gems !== undefined || cached.enchant !== undefined)) {
+          it.gems = cached.gems || []
+          it.enchant = cached.enchant ?? null
+        } else if (tooltipBudget > 0) {
+          tooltipBudget -= 1
+          fetched += 1
+          try {
+            const t = parseTooltip(await fetchTooltip(it.instanceId, realm, pcs, cookie))
+            it.gems = t.gems
+            it.enchant = t.enchant
+            await sleep(150) // gentle on the armory
+          } catch { /* leave unset; a later run retries */ }
+        }
+      }
+
       rows.push({
         key: player.toLowerCase(),
         name: player,
@@ -284,7 +379,7 @@ async function main() {
         gear,
         updated_at: new Date().toISOString(),
       })
-      console.log(`  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${ilvl}`)
+      console.log(`  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${ilvl}${fetched ? ` (+${fetched} tooltips)` : ''}`)
     } catch (e) {
       console.warn(`  ✗ ${player}: ${e.message}`)
     }
