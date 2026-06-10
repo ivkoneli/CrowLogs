@@ -260,6 +260,13 @@ async function main() {
       const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
       const talents = decodeTalents(hash) // [{ row, col, icon }] — icons can be added later
       const gear = parseGear(sheetRaw)
+      // Tauri mis-reports Demon Hunter ilvl — compute it ourselves as the mean of equipped
+      // item levels (DH dual-wields, so no 2H double-count). Other classes trust the sheet.
+      let ilvl = sheet.ilvl
+      if (sheet.class === 'Demon Hunter') {
+        const eq = gear.filter((g) => g.ilvl > 1)
+        if (eq.length) ilvl = Math.round(eq.reduce((s, g) => s + g.ilvl, 0) / eq.length)
+      }
       rows.push({
         key: player.toLowerCase(),
         name: player,
@@ -270,14 +277,14 @@ async function main() {
         gender: sheet.gender,
         faction: sheet.faction,
         guild: sheet.guild,
-        ilvl: sheet.ilvl,
+        ilvl,
         talents,
         talent_hash: hash,
         spec_icon: specIcon,
         gear,
         updated_at: new Date().toISOString(),
       })
-      console.log(`  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${sheet.ilvl}`)
+      console.log(`  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${ilvl}`)
     } catch (e) {
       console.warn(`  ✗ ${player}: ${e.message}`)
     }

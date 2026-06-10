@@ -311,6 +311,13 @@ async function scrapeOne(player: string, cookie: string) {
     }),
   )
   gear.forEach((it) => delete (it as Partial<GearItem>).instanceId)
+  // Tauri's armory mis-reports Demon Hunter ilvl, so compute it ourselves: the mean of
+  // equipped item levels (DH dual-wields, so there's no 2H double-count to worry about).
+  let ilvl = sheet.ilvl
+  if (sheet.class === 'Demon Hunter') {
+    const eq = gear.filter((g) => g.ilvl > 1)
+    if (eq.length) ilvl = Math.round(eq.reduce((s, g) => s + g.ilvl, 0) / eq.length)
+  }
   return {
     key: player.toLowerCase(),
     name: player,
@@ -321,7 +328,7 @@ async function scrapeOne(player: string, cookie: string) {
     gender: sheet.gender,
     faction: sheet.faction,
     guild: sheet.guild,
-    ilvl: sheet.ilvl,
+    ilvl,
     talents,
     talent_hash: hash,
     spec_icon: specIcon,
