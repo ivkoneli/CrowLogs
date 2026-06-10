@@ -77,6 +77,10 @@ export function mergeCharacters(fights, characters) {
       faction: f.faction ?? c.faction ?? null,
       guild: f.guild ?? c.guild ?? null,
       ilvl: f.ilvl ?? c.ilvl ?? null,
+      // The player's CURRENT ilvl from the live armory cache, kept alongside the frozen
+      // per-fight `ilvl`. The profile/equipment panel uses this (it shows live gear), while
+      // the log view keeps the frozen `ilvl` (what they had on that pull).
+      liveIlvl: c.ilvl ?? null,
       talents: f.talents && f.talents.length ? f.talents : c.talents || [],
       // Frozen trinkets win; otherwise derive from the live armory gear. `gear` is
       // the live equipped set (for the gear tab), never frozen per-fight.

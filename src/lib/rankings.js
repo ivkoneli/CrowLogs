@@ -98,7 +98,9 @@ export function playerProfile(fights, player) {
     gender: first('gender'),
     faction: first('faction'),
     guild: first('guild'),
-    ilvl: first('ilvl'),
+    // Prefer the live armory ilvl (current gear) over a frozen per-fight value, so the
+    // profile + equipment panel don't show a stale ilvl next to the player's live gear.
+    ilvl: first('liveIlvl') ?? first('ilvl'),
     specIcon: first('specIcon'),
     talents,
     gear: recs.find((r) => r.gear && r.gear.length)?.gear || [],
