@@ -1,7 +1,7 @@
 # 🐦‍⬛ CrowLogs
 
 A lightweight World of Warcraft combat-log DPS/HPS leaderboard. Drop a
-`WoWCombatLog.txt` and CrowLogs reads each encounter (boss + difficulty), computes
+`WoWCombatLog.txt` and [CrowLogs](https://ivkoneli.github.io/CrowLogs/) reads each encounter (boss + difficulty), computes
 per-player damage, healing, and fight duration, and builds per-boss rankings and
 per-player profile pages — with character ilvl, spec, talents, and gear pulled from
 the Tauri armory.
