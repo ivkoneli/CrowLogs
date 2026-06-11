@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { logSummary } from '../lib/rankings.js'
 import { formatDuration } from '../parser.js'
 import { deleteLog } from '../lib/store.js'
@@ -8,11 +8,24 @@ import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 // "Iplayretail 0:04" — a lust cast and how far into the fight it landed.
 const lustLabel = (l) => `${l.player.split('-')[0]} ${formatDuration(l.t * 1000)}`
 
-export default function LogPage({ fights, logId, onSelectPlayer, onBack, onDeleted }) {
+// `focus` (optional) = { started }: open on the tab of the encounter with that start
+// time (unique within a log) — set by ranking/history row clicks and by shared
+// #/log/<id>/<started> URLs, where it arrives as a string. `onEncounterChange`
+// reports tab switches so the address bar can keep pointing at the visible pull.
+export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncounterChange, onBack, onDeleted }) {
   const log = useMemo(() => logSummary(fights, logId), [fights, logId])
-  const [active, setActive] = useState(0)
+  const focusIndex = useMemo(() => {
+    if (focus?.started == null) return 0
+    return Math.max(0, log.encounters.findIndex((e) => String(e.started) === String(focus.started)))
+  }, [log, focus])
+  const [active, setActive] = useState(focusIndex)
   const [metric, setMetric] = useState('dps')
   const [rollback, setRollback] = useState(null) // { busy?, error? }
+
+  // Re-aim the active tab if the page is reused for a different log/focus.
+  useEffect(() => {
+    setActive(focusIndex)
+  }, [logId, focusIndex])
 
   // Owner-only rollback: removes every fight row from this import. Only rendered in admin
   // mode (see lib/admin.js) and uses the locally-stored token, which delete-log verifies
@@ -43,8 +56,8 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack, onDelet
     <div className="boss-page wide">
       <div className="log-topbar">
         {onBack && (
-          <button className="linkbtn back-link" onClick={onBack}>
-            ← back
+          <button className="back-link" onClick={onBack}>
+            <span className="back-arrow">←</span> Back
           </button>
         )}
         {isAdmin() && (
@@ -76,7 +89,10 @@ export default function LogPage({ fights, logId, onSelectPlayer, onBack, onDelet
             <button
               key={e.key}
               className={`tab ${i === active ? 'active' : ''} ${e.kill ? '' : 'wipe'}`}
-              onClick={() => setActive(i)}
+              onClick={() => {
+                setActive(i)
+                onEncounterChange?.(e.started)
+              }}
             >
               {e.boss}
               {!e.kill && <span className="wipe-dot" title="Wipe">✕</span>}

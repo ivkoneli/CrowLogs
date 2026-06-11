@@ -6,8 +6,10 @@ import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 
 const EMPTY = { difficulty: null, class: null, spec: null, role: null, faction: null, realm: null }
 
-// Map a ranking record to the shared MeterRow for the active metric.
-function rowProps(r, rank, maxValue, metric, onSelectPlayer) {
+// Map a ranking record to the shared MeterRow for the active metric. Clicking the
+// name opens the player's profile; clicking anywhere else on the row opens the log
+// this parse came from, on the matching encounter.
+function rowProps(r, rank, maxValue, metric, onSelectPlayer, onSelectLog) {
   return {
     rank,
     value: metric === 'hps' ? r.hps : r.dps,
@@ -28,10 +30,11 @@ function rowProps(r, rank, maxValue, metric, onSelectPlayer) {
     duration: r.duration,
     when: r.day,
     onClick: () => onSelectPlayer(r.player),
+    onRowClick: r.logid ? () => onSelectLog(r.logid, { started: r.started }) : undefined,
   }
 }
 
-export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
+export default function BossPage({ fights, raid, boss, onSelectPlayer, onSelectLog }) {
   const [filter, setFilter] = useState(EMPTY)
   const [bySpec, setBySpec] = useState(false)
   const [metric, setMetric] = useState('dps')
@@ -105,7 +108,7 @@ export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
                   <MeterHead metric={metric} />
                   <tbody>
                     {g.rows.map((r, i) => (
-                      <MeterRow key={r.player} {...rowProps(r, i + 1, gMax, metric, onSelectPlayer)} />
+                      <MeterRow key={r.player} {...rowProps(r, i + 1, gMax, metric, onSelectPlayer, onSelectLog)} />
                     ))}
                   </tbody>
                 </table>
@@ -119,7 +122,7 @@ export default function BossPage({ fights, raid, boss, onSelectPlayer }) {
             <MeterHead metric={metric} />
             <tbody>
               {filtered.map((r, i) => (
-                <MeterRow key={r.player} {...rowProps(r, i + 1, maxValue, metric, onSelectPlayer)} />
+                <MeterRow key={r.player} {...rowProps(r, i + 1, maxValue, metric, onSelectPlayer, onSelectLog)} />
               ))}
             </tbody>
           </table>

@@ -19,6 +19,10 @@
 
 html {
   overflow-x: hidden;
+  /* Always reserve room for the page scrollbar, so views that don't scroll
+     (e.g. a short healer meter, a filtered ranking) don't shift sideways
+     when the scrollbar appears/disappears. */
+  scrollbar-gutter: stable;
 }
 
 /* Elegant themed scrollbars (replaces the chunky default) */
@@ -90,6 +94,7 @@ code {
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  scrollbar-gutter: stable; /* collapsing raid groups shouldn't nudge the nav sideways */
 }
 
 .content {
@@ -432,6 +437,27 @@ code {
 }
 .name-cell {
   width: 55%;
+}
+
+/* Player-page tables (per-raid rankings + history): lock the column widths so
+   switching difficulty/metric/spec only swaps the numbers — auto table layout
+   would re-balance columns to fit the new content and nudge everything. The
+   first (un-sized) column absorbs the leftover width. */
+.rank-meter,
+.hist-meter {
+  table-layout: fixed;
+}
+.rank-meter th.num {
+  width: 110px;
+}
+.hist-meter th.num {
+  width: 110px;
+}
+.hist-meter th.when-col {
+  width: 110px;
+}
+.hist-meter th.spec-col {
+  width: 150px;
 }
 .bar-wrap {
   position: relative;
@@ -858,9 +884,31 @@ code {
 }
 
 .back-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--accent-2);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 1rem 0.4rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.back-link:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(92, 210, 255, 0.12);
+}
+.back-link .back-arrow {
+  transition: transform 0.15s;
+}
+.back-link:hover .back-arrow {
+  transform: translateX(-3px);
 }
 .log-topbar {
   display: flex;
@@ -982,6 +1030,7 @@ code {
   top: 1rem;
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
+  scrollbar-gutter: stable; /* gear list shouldn't reflow when it gets tall enough to scroll */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;

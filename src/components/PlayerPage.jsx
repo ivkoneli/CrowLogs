@@ -69,7 +69,7 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
           {ranked.length} of {raid.bosses.length} bosses
         </span>
       </div>
-      <table className="meter">
+      <table className="meter rank-meter">
         <thead>
           <tr>
             <th>Boss</th>
@@ -287,12 +287,12 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
                       <p>No {histSpec} logs for {player} yet.</p>
                     </div>
                   ) : (
-                    <table className="meter">
+                    <table className="meter hist-meter">
                       <thead>
                         <tr>
-                          <th>When</th>
+                          <th className="when-col">When</th>
                           <th>Encounter</th>
-                          {!histSpec && <th>Spec</th>}
+                          {!histSpec && <th className="spec-col">Spec</th>}
                           <th className="num">
                             {histMetric === 'hps' ? (histSpec ? healLabelFor(histSpec) : 'Healing') : 'DPS'}
                           </th>
@@ -301,7 +301,11 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
                       </thead>
                       <tbody>
                         {histLogs.map((log) => (
-                          <tr key={log.id} className="log-row" onClick={() => onSelectLog(log.logId)}>
+                          <tr
+                            key={log.id}
+                            className="log-row"
+                            onClick={() => onSelectLog(log.logId, { started: log.started })}
+                          >
                             <td className="muted">{log.day}</td>
                             <td className="name-cell">
                               <button className="name link boss-link">{log.boss}</button>

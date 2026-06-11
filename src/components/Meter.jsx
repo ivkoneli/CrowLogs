@@ -27,7 +27,9 @@ export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
 
 // `klass` colors the name + bar; `subLabel` is the small grey tag after the name
 // (e.g. "Fury Warrior" in rankings, "Heroic" in history). `value`/`maxValue` are
-// the rate (DPS or HPS) and the group max used to size the bar.
+// the rate (DPS or HPS) and the group max used to size the bar. `onRowClick`
+// (optional) makes the whole row clickable (e.g. rankings → that parse's log);
+// the name button still fires its own `onClick` without triggering the row's.
 export function MeterRow({
   rank,
   value,
@@ -48,10 +50,11 @@ export function MeterRow({
   duration,
   when,
   onClick,
+  onRowClick,
   noAddon = false,
 }) {
   return (
-    <tr>
+    <tr className={onRowClick ? 'log-row' : undefined} onClick={onRowClick || undefined}>
       <td className="rank">{rank}</td>
       <td className="name-cell">
         <div className="bar-wrap">
@@ -66,7 +69,10 @@ export function MeterRow({
           />
           <button
             className="name link"
-            onClick={onClick}
+            onClick={(e) => {
+              e.stopPropagation()
+              onClick?.(e)
+            }}
             style={klass ? { color: classColor(klass) } : undefined}
           >
             {faction && <FactionIcon faction={faction} size={14} />}

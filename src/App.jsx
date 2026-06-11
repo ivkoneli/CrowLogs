@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
 import { initAdminFromUrl } from './lib/admin.js'
+import { selectionFromHash, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
 
 // Capture ?admin=<token> from the URL before first render (unlocks owner-only controls).
 initAdminFromUrl()
@@ -17,7 +18,23 @@ export default function App() {
   const [characters, setCharacters] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [selection, setSelection] = useState({ view: 'import' })
+  // The current page comes from the URL hash so deep links land on the right page.
+  const [selection, setSelection] = useState(() => selectionFromHash(window.location.hash))
+
+  // Navigate: update state AND the address bar, so every page is shareable.
+  // Extra fields on `sel` beyond the route (e.g. a log's `focus` encounter) stay
+  // in memory only — shared links open the page in its default state.
+  const navigate = useCallback((sel) => {
+    pushSelection(sel)
+    setSelection(sel)
+  }, [])
+
+  // Back/forward (popstate also fires on manual hash edits) re-derive the page from the URL.
+  useEffect(() => {
+    const onPop = () => setSelection(selectionFromHash(window.location.hash))
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   const reload = useCallback(async () => {
     try {
@@ -91,9 +108,9 @@ export default function App() {
 
       onProgress(1, 'Done')
       // Open the freshly parsed log's full breakdown.
-      if (logId) setSelection({ view: 'log', logId })
+      if (logId) navigate({ view: 'log', logId })
     },
-    [reload, characters],
+    [reload, characters, navigate],
   )
 
   // Scrape one character's armory profile on demand, then refresh the cache.
@@ -106,10 +123,23 @@ export default function App() {
     [reload],
   )
 
-  const onSelectBoss = (raid, boss) => setSelection({ view: 'boss', raid, boss })
-  const onSelectPlayer = (player) => setSelection({ view: 'player', player })
-  const onSelectLog = (logId) => setSelection({ view: 'log', logId })
-  const onImport = () => setSelection({ view: 'import' })
+  const onSelectBoss = (raid, boss) => navigate({ view: 'boss', raid, boss })
+  const onSelectPlayer = (player) => navigate({ view: 'player', player })
+  // `focus` (optional) = { started } — opens the log on that encounter's tab.
+  const onSelectLog = (logId, focus = null) => navigate({ view: 'log', logId, focus })
+  const onImport = () => navigate({ view: 'import' })
+
+  // Switching encounter tabs inside a log rewrites the URL in place (no history spam),
+  // so copying the address always shares the boss you're looking at.
+  const onLogEncounterChange = useCallback((started) => {
+    setSelection((sel) => {
+      if (sel.view !== 'log') return sel
+      return { ...sel, focus: { started } }
+    })
+  }, [])
+  useEffect(() => {
+    if (selection.view === 'log') replaceSelection(selection)
+  }, [selection])
 
   return (
     <div className="layout">
@@ -137,6 +167,7 @@ export default function App() {
               raid={selection.raid}
               boss={selection.boss}
               onSelectPlayer={onSelectPlayer}
+              onSelectLog={onSelectLog}
             />
           )}
           {!loading && selection.view === 'player' && (
@@ -152,11 +183,15 @@ export default function App() {
             <LogPage
               fights={fights}
               logId={selection.logId}
+              focus={selection.focus}
               onSelectPlayer={onSelectPlayer}
-              onBack={() => setSelection({ view: 'import' })}
+              onEncounterChange={onLogEncounterChange}
+              // Real back when we navigated here in-app (history/rankings click);
+              // home when the log was opened cold from a shared link.
+              onBack={() => (canGoBack() ? window.history.back() : navigate({ view: 'import' }))}
               onDeleted={async () => {
                 await reload()
-                setSelection({ view: 'import' })
+                navigate({ view: 'import' })
               }}
             />
           )}
