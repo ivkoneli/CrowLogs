@@ -604,6 +604,62 @@ code {
   color: var(--text);
 }
 
+/* ---------- history: collapsible per-log groups ---------- */
+.hist-group {
+  margin-bottom: 0.55rem;
+}
+.hist-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.hist-group-head:hover {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+/* Square off the bottom corners when open so the table reads as one unit. */
+.hist-group-head.open {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+.hist-group-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.hist-group-diff {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.hist-group-date {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.hist-group-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+/* The encounter table butts up flush under its (open) header. */
+.hist-group .hist-meter {
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 /* ---------- boss meter extras ---------- */
 .boss-meter .spec-tag {
   position: relative;

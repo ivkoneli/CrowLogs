@@ -150,6 +150,38 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
   // by time). The metric toggle only changes which value column shows, not the order.
   const histLogs = useMemo(() => (histSpec ? logs.filter((l) => l.spec === histSpec) : logs), [logs, histSpec])
 
+  // Group the (spec-filtered) history by the log each encounter came from — one
+  // collapsible section per import (raid · difficulty · date), newest first — so a
+  // player with many encounters across a few raid nights stays compact.
+  const histGroups = useMemo(() => {
+    const byLog = new Map()
+    for (const log of histLogs) {
+      let g = byLog.get(log.logId)
+      if (!g) {
+        g = { logId: log.logId, raid: log.raid, day: log.day, started: log.started, diffs: new Set(), encounters: [] }
+        byLog.set(log.logId, g)
+      }
+      g.diffs.add(log.difficulty)
+      if (log.started > g.started) g.started = log.started
+      g.encounters.push(log)
+    }
+    return [...byLog.values()].sort((a, b) => b.started - a.started)
+  }, [histLogs])
+
+  // Distinct imported logs (ignores the spec filter) — drives the History tab count.
+  const logCount = useMemo(() => new Set(logs.map((l) => l.logId)).size, [logs])
+
+  // Which log sections are expanded. `null` = untouched → default to the newest open.
+  const [openLogs, setOpenLogs] = useState(null)
+  const defaultOpen = () => new Set(histGroups.slice(0, 1).map((g) => g.logId))
+  const openSet = openLogs ?? defaultOpen()
+  const toggleLog = (logId) =>
+    setOpenLogs((prev) => {
+      const next = new Set(prev ?? defaultOpen())
+      next.has(logId) ? next.delete(logId) : next.add(logId)
+      return next
+    })
+
   // Auto-clear the update status after 5s (the reserved row stays, so tables
   // below don't shift when it appears/disappears).
   useEffect(() => {
@@ -224,7 +256,7 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
               Rankings
             </button>
             <button className={`tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
-              History {logs.length ? `(${logs.length})` : ''}
+              History {logCount ? `(${logCount})` : ''}
             </button>
           </div>
 
@@ -282,50 +314,70 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
                       healLabel={histSpec ? healLabelFor(histSpec) : 'Healing'}
                     />
                   </div>
-                  {histLogs.length === 0 ? (
+                  {histGroups.length === 0 ? (
                     <div className="empty-state">
                       <p>No {histSpec} logs for {player} yet.</p>
                     </div>
                   ) : (
-                    <table className="meter hist-meter">
-                      <thead>
-                        <tr>
-                          <th className="when-col">When</th>
-                          <th>Encounter</th>
-                          {!histSpec && <th className="spec-col">Spec</th>}
-                          <th className="num">
-                            {histMetric === 'hps' ? (histSpec ? healLabelFor(histSpec) : 'Healing') : 'DPS'}
-                          </th>
-                          <th className="num">Duration</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {histLogs.map((log) => (
-                          <tr
-                            key={log.id}
-                            className="log-row"
-                            onClick={() => onSelectLog(log.logId, { started: log.started })}
+                    histGroups.map((g) => {
+                      const isOpen = openSet.has(g.logId)
+                      const valueLabel = histMetric === 'hps' ? (histSpec ? healLabelFor(histSpec) : 'Healing') : 'DPS'
+                      return (
+                        <div key={g.logId} className="hist-group">
+                          <button
+                            className={`hist-group-head ${isOpen ? 'open' : ''}`}
+                            onClick={() => toggleLog(g.logId)}
                           >
-                            <td className="muted">{log.day}</td>
-                            <td className="name-cell">
-                              <button className="name link boss-link">{log.boss}</button>
-                              <span className="spec-tag">{log.difficulty}</span>
-                              {log.kill === false && <span className="result-badge wipe sm">Wipe</span>}
-                            </td>
-                            {!histSpec && (
-                              <td className="muted spec-cell">
-                                {log.specIcon && <img className="spec-tab-icon" src={log.specIcon} alt="" />}
-                                {log.spec || '—'}
-                              </td>
-                            )}
-                            <td className="num strong">
-                              {formatDps(histMetric === 'hps' ? log.hps : log.dps)}
-                            </td>
-                            <td className="num muted">{formatDuration(log.duration)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            <span className={`chevron ${isOpen ? 'open' : ''}`}>▸</span>
+                            <span className="hist-group-title">{g.raid || 'Combat'}</span>
+                            <span className="hist-group-diff">{[...g.diffs].join(' / ')}</span>
+                            <span className="hist-group-date">{g.day}</span>
+                            <span className="hist-group-count">
+                              {g.encounters.length} {g.encounters.length === 1 ? 'encounter' : 'encounters'}
+                            </span>
+                          </button>
+                          {isOpen && (
+                            <table className="meter hist-meter">
+                              <thead>
+                                <tr>
+                                  <th className="when-col">When</th>
+                                  <th>Encounter</th>
+                                  {!histSpec && <th className="spec-col">Spec</th>}
+                                  <th className="num">{valueLabel}</th>
+                                  <th className="num">Duration</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {g.encounters.map((log) => (
+                                  <tr
+                                    key={log.id}
+                                    className="log-row"
+                                    onClick={() => onSelectLog(log.logId, { started: log.started })}
+                                  >
+                                    <td className="muted">{log.day}</td>
+                                    <td className="name-cell">
+                                      <button className="name link boss-link">{log.boss}</button>
+                                      <span className="spec-tag">{log.difficulty}</span>
+                                      {log.kill === false && <span className="result-badge wipe sm">Wipe</span>}
+                                    </td>
+                                    {!histSpec && (
+                                      <td className="muted spec-cell">
+                                        {log.specIcon && <img className="spec-tab-icon" src={log.specIcon} alt="" />}
+                                        {log.spec || '—'}
+                                      </td>
+                                    )}
+                                    <td className="num strong">
+                                      {formatDps(histMetric === 'hps' ? log.hps : log.dps)}
+                                    </td>
+                                    <td className="num muted">{formatDuration(log.duration)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )
+                    })
                   )}
                 </>
               )}
