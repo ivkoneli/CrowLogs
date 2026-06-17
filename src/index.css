@@ -604,6 +604,79 @@ code {
   color: var(--text);
 }
 
+/* ---------- log analysis loading overlay ---------- */
+.log-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.log-loading-inner {
+  text-align: center;
+  max-width: 560px;
+  padding: 2rem;
+}
+.big-spinner {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 1.5rem;
+  border-radius: 50%;
+  border: 5px solid var(--panel-2);
+  border-top-color: var(--accent);
+  animation: clh-spin 0.9s linear infinite;
+}
+@keyframes clh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.log-loading-title {
+  margin: 0 0 0.35rem;
+}
+.log-loading-sub {
+  color: var(--muted);
+  margin: 0 0 1.6rem;
+}
+.log-loading-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.5rem 1rem 0.5rem 0.5rem;
+  max-width: 100%;
+}
+.log-loading-tip .tip-label {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #0c0e13;
+  background: var(--accent-2);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+}
+.log-loading-tip .tip-text {
+  color: var(--text);
+  font-size: 0.92rem;
+  animation: clh-fade 0.4s ease;
+}
+@keyframes clh-fade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ---------- history: collapsible per-log groups ---------- */
 .hist-group {
   margin-bottom: 0.55rem;
@@ -678,6 +751,47 @@ code {
 .talents-col {
   width: 1%;
   white-space: nowrap;
+}
+
+/* Stable meter columns: pin every column except the flexible Player name so the table
+   never reflows when DPS crosses 1m/10m (the value width changes) or when a player has
+   a different trinket count. The Name column (2) absorbs the slack. Widths are sized for
+   the largest expected content (e.g. "999.9k"/"10.00m" DPS, two trinket icons). */
+/* Name is the ONLY flexible column — drop the 55% (a percentage fights the fixed-px
+   columns in auto layout and lets the table re-solve when switching logs). */
+.boss-meter .name-cell {
+  width: auto;
+}
+/* Fixed-width value box so the DPS/HPS number occupies the same space regardless of how
+   many digits it has (e.g. "812.4k" vs "10.00m") — the column edge never moves. */
+.boss-meter .rate-val {
+  display: inline-block;
+  min-width: 64px;
+  text-align: right;
+}
+.boss-meter th:nth-child(3),
+.boss-meter td:nth-child(3) { /* DPS / HPS */
+  width: 92px;
+}
+.boss-meter th:nth-child(4),
+.boss-meter td:nth-child(4) { /* Pots */
+  width: 54px;
+}
+.boss-meter th:nth-child(5),
+.boss-meter td:nth-child(5) { /* ilvl */
+  width: 58px;
+}
+.boss-meter th:nth-child(7),
+.boss-meter td:nth-child(7) { /* Trinkets */
+  width: 84px;
+}
+.boss-meter th:nth-child(8),
+.boss-meter td:nth-child(8) { /* Duration */
+  width: 72px;
+}
+.boss-meter th:nth-child(9),
+.boss-meter td:nth-child(9) { /* When */
+  width: 92px;
 }
 .talent-strip {
   display: inline-flex;

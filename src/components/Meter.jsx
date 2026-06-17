@@ -84,7 +84,9 @@ export function MeterRow({
           {noAddon && <span className="noaddon-tag" title="This player wasn't running CrowLogsHelper on this pull">no addon</span>}
         </div>
       </td>
-      <td className="num strong">{formatDps(value)}</td>
+      <td className="num strong">
+        <span className="rate-val">{formatDps(value)}</span>
+      </td>
       <td className={`num pots${potions ? '' : ' zero'}`}>{potions ?? 0}</td>
       <td className="num ilvl">{ilvl ?? '—'}</td>
       <td className="talents-col">

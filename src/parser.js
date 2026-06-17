@@ -395,8 +395,11 @@ export function formatNumber(n) {
   return Math.round(n).toLocaleString('en-US')
 }
 
-// Compact rate formatter, used for both DPS and HPS (e.g. 12.3k).
+// Compact rate formatter, used for both DPS and HPS (e.g. 12.3k, 1.2m). Millions get
+// an 'm' suffix so Legion-scale numbers stay short (10.0m, not 10000.0k) and the meter
+// column width stays bounded.
 export function formatDps(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(2) + 'm'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return Math.round(n).toString()
 }

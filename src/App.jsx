@@ -4,6 +4,7 @@ import ImportPanel from './components/ImportPanel.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
 import LogPage from './components/LogPage.jsx'
+import LogLoading from './components/LogLoading.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
@@ -19,6 +20,9 @@ export default function App() {
   const [characters, setCharacters] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  // While an import is being analyzed, holds the (class-enriched) fights so the loading
+  // overlay can show log-specific tips. Null when not analyzing.
+  const [analyzing, setAnalyzing] = useState(null)
   // The current page comes from the URL hash so deep links land on the right page.
   const [selection, setSelection] = useState(() => selectionFromHash(window.location.hash))
 
@@ -68,6 +72,11 @@ export default function App() {
   const onImported = useCallback(
     async (records, logId, opts = {}) => {
       const { covered = null, onProgress = () => {} } = opts
+      // Show the full-screen loading overlay immediately, with tips drawn from this log
+      // (enriched with any character data we already have for sharper jabs).
+      setAnalyzing(mergeCharacters(records, characters))
+      const startedAt = Date.now()
+      try {
       onProgress(0.15, 'Saving encounters…')
       await addFights(records)
       await reload()
@@ -113,8 +122,18 @@ export default function App() {
       }
 
       onProgress(1, 'Done')
+      // Analysis is usually near-instant (localStorage) or a few seconds (Supabase +
+      // armory scrape). Hold the overlay for at least 5s so the loading tips actually
+      // get read. Skipped on error — the catch path surfaces the failure right away.
+      const elapsed = Date.now() - startedAt
+      if (elapsed < 5000) await new Promise((r) => setTimeout(r, 5000 - elapsed))
       // Open the freshly parsed log's full breakdown.
       if (logId) navigate({ view: 'log', logId })
+      } finally {
+        // Clear the overlay last — after navigate, so the log view is already underneath
+        // (on error, the import page with its file selection/error is revealed instead).
+        setAnalyzing(null)
+      }
     },
     [reload, characters, navigate],
   )
@@ -203,6 +222,8 @@ export default function App() {
           )}
         </ErrorBoundary>
       </main>
+
+      {analyzing && <LogLoading fights={analyzing} />}
     </div>
   )
 }
