@@ -7,6 +7,7 @@ import LogPage from './components/LogPage.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
+import { foldPetsByClass } from './lib/petfold.js'
 import { initAdminFromUrl } from './lib/admin.js'
 import { selectionFromHash, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
 
@@ -53,7 +54,12 @@ export default function App() {
     reload()
   }, [reload])
 
-  const fights = useMemo(() => mergeCharacters(stored, characters), [stored, characters])
+  // Enrich with armory/addon character data, then fold any leftover permanent-pet rows
+  // (e.g. a Water Elemental with no SPELL_SUMMON) into the sole player of their class.
+  const fights = useMemo(
+    () => foldPetsByClass(mergeCharacters(stored, characters)),
+    [stored, characters],
+  )
 
   // Persist parsed fights, enrich players from the armory, then open the new log.
   // `opts.covered` (when an addon file was imported) is the set of players the snapshot

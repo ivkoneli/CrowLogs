@@ -12,6 +12,7 @@ import { parseLua, luaArray } from './luaParse.js'
 import { TALENT_BY_ID } from './talentIcons.js'
 import { ITEM_ICONS } from './itemIcons.js'
 import { iconUrl, specIconUrl } from './classes.js'
+import { foldPetsByOwner } from './petfold.js'
 
 // WoW class token (UnitClass's second return) -> our display name.
 const CLASS_TOKEN = {
@@ -31,7 +32,10 @@ export function parseAddonFile(text) {
     return null
   }
   if (!db || typeof db !== 'object' || !db.loadouts) return null
-  return { loadouts: db.loadouts || {}, pulls: luaArray(db.pulls) }
+  // `pets` maps a live pet GUID to its owner's player GUID (recorded by the addon at
+  // pull start), so a permanent pet with no SPELL_SUMMON in the log still folds into
+  // the right player — even when two of the same class are present. See petfold.js.
+  return { loadouts: db.loadouts || {}, pulls: luaArray(db.pulls), pets: db.pets || {} }
 }
 
 // Item-link string "item:128024:..." -> numeric item id (or null).
@@ -159,5 +163,7 @@ export function freezeFromAddon(fights, addon) {
       from_addon: !!snap.hadAddon,
     }
   })
-  return { fights: out, covered }
+  // Fold any pet rows whose owner the addon identified by GUID (exact, class-agnostic)
+  // into that player, so the pet's output is credited correctly even with two mages.
+  return { fights: foldPetsByOwner(out, addon.pets), covered }
 }
