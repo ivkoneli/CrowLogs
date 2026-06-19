@@ -80,6 +80,14 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
           {log.day} · {log.encounters.length}{' '}
           {log.encounters.length === 1 ? 'encounter' : 'encounters'}
         </p>
+        {isAdmin() && (
+          <p
+            className="addon-coverage"
+            title="Players confirmed running CrowLogsHelper this raid (broadcast or inspected via the addon), out of everyone in the log."
+          >
+            {log.addonCount}/{log.playerCount} ran the addon
+          </p>
+        )}
         <MetricToggle metric={metric} onChange={setMetric} />
       </div>
 
@@ -147,7 +155,8 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
                     faction={r.faction}
                     subLabel={r.spec ? [r.spec, r.class].filter(Boolean).join(' ') : null}
                     pet={r.pet}
-                    noAddon={!r.pet && !r.fromAddon}
+                    // Admin-only data-provenance tag (inspect/armory; addon stays unmarked).
+                    source={isAdmin() ? r.snapshotSrc : null}
                     potions={r.potions}
                     ilvl={r.ilvl}
                     talents={r.talents}

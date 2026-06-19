@@ -51,7 +51,9 @@ export function MeterRow({
   when,
   onClick,
   onRowClick,
-  noAddon = false,
+  // 'inspect' | 'armory' — provenance tag (admin-only; caller passes null otherwise).
+  // 'addon'/unset shows nothing, matching the "addon users are unmarked" convention.
+  source = null,
 }) {
   return (
     <tr className={onRowClick ? 'log-row' : undefined} onClick={onRowClick || undefined}>
@@ -81,7 +83,22 @@ export function MeterRow({
           </button>
           {subLabel && <span className="spec-tag">{subLabel}</span>}
           {pet && <span className="pet-tag">pet</span>}
-          {noAddon && <span className="noaddon-tag" title="This player wasn't running CrowLogsHelper on this pull">no addon</span>}
+          {source === 'inspect' && (
+            <span
+              className="src-tag inspect"
+              title="Build captured by the raid leader inspecting them in-game on this pull. Accurate to this kill — they may or may not be running the addon."
+            >
+              inspect
+            </span>
+          )}
+          {source === 'armory' && (
+            <span
+              className="src-tag armory"
+              title="No addon snapshot for this pull — gear/talents are from the armory and may have changed since this kill."
+            >
+              armory
+            </span>
+          )}
         </div>
       </td>
       <td className="num strong">

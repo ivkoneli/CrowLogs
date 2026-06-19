@@ -35,7 +35,15 @@ export function parseAddonFile(text) {
   // `pets` maps a live pet GUID to its owner's player GUID (recorded by the addon at
   // pull start), so a permanent pet with no SPELL_SUMMON in the log still folds into
   // the right player — even when two of the same class are present. See petfold.js.
-  return { loadouts: db.loadouts || {}, pulls: luaArray(db.pulls), pets: db.pets || {} }
+  // `addonUsers` is guid -> name of everyone confirmed running the addon (replied over
+  // comms), so a player whose build was frozen from an inspect still counts as an addon
+  // user (they never changed gear, so they were only ever inspected, not broadcast).
+  return {
+    loadouts: db.loadouts || {},
+    pulls: luaArray(db.pulls),
+    pets: db.pets || {},
+    addonUsers: db.addonUsers || {},
+  }
 }
 
 // Item-link string "item:128024:..." -> numeric item id (or null).
@@ -140,12 +148,18 @@ export function freezeFromAddon(fights, addon) {
     if (!cache.has(hash)) cache.set(hash, loadoutSnapshot(addon.loadouts[hash]))
     return cache.get(hash)
   }
+  // Confirmed addon users (replied over comms at least once) — true even when their build
+  // was frozen from an inspect, so `from_addon` means "ran the addon" regardless of how
+  // we got their data. The site's per-raid addon count is derived from this.
+  const addonUsers = addon.addonUsers || {}
+  const hasAddon = (guid) => guid != null && addonUsers[guid] != null
   const out = fights.map((f) => {
     if (f.pet) return f
     const pull = matchPull(f, addon.pulls)
-    if (!pull) return f
+    // Even with no matched pull / snapshot, a confirmed addon user still counts as one.
+    if (!pull) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
     const snap = snapshotFor(pull.participants[f.guid])
-    if (!snap) return f
+    if (!snap) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
     // Only a COMPLETE snapshot marks the player covered (skips the armory). A partial one
     // (inspect) still freezes the reliable spec/talents, but leaves ilvl/trinkets unset so
     // the armory backfills them — better current data than a half-captured set.
@@ -158,9 +172,9 @@ export function freezeFromAddon(fights, addon) {
       ilvl: snap.ilvl ?? f.ilvl,
       talents: snap.talents.length ? snap.talents : f.talents,
       trinkets: snap.trinkets.length >= 2 ? snap.trinkets : f.trinkets,
-      // Frozen per-fight: did this player run the addon on this pull? Drives the "no addon"
-      // badge in the log view. Not retroactive — a later install never backfills old logs.
-      from_addon: !!snap.hadAddon,
+      // Confirmed running the addon: broadcast their build (comm/self) OR replied over
+      // comms (hasAddon) even though this pull's build was frozen from an inspect.
+      from_addon: !!snap.hadAddon || hasAddon(f.guid),
     }
   })
   // Fold any pet rows whose owner the addon identified by GUID (exact, class-agnostic)

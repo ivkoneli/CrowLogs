@@ -142,11 +142,17 @@ export function logSummary(fights, logId) {
   let day = null
   let raid = null
   const bosses = new Set()
+  const players = new Set() // distinct non-pet players in the log
+  const addonPlayers = new Set() // …of those, the ones confirmed running the addon
   for (const f of fights) {
     if (f.logid !== logId) continue
     day = day ?? f.day
     raid = raid ?? f.raid
     bosses.add(f.boss)
+    if (!f.pet) {
+      players.add(f.player)
+      if (f.from_addon === true) addonPlayers.add(f.player)
+    }
     const key = `${f.boss}|${f.difficulty}|${f.started}`
     let enc = byEncounter.get(key)
     if (!enc) {
@@ -179,6 +185,8 @@ export function logSummary(fights, logId) {
       pet: f.pet,
       // Frozen per-fight: did they run the addon on this pull? Drives the "no addon" badge.
       fromAddon: f.from_addon === true,
+      // 'addon' | 'inspect' | 'armory' — where this pull's build came from (admin-only badge).
+      snapshotSrc: f.snapshotSrc || null,
       damage: f.damage,
       dps: f.dps,
       healing: f.healing || 0,
@@ -190,7 +198,15 @@ export function logSummary(fights, logId) {
   }
   // Rows are returned unsorted-by-metric; the view sorts by the active meter.
   const encounters = [...byEncounter.values()].sort((a, b) => a.started - b.started)
-  return { logId, day, raid, bosses: [...bosses], encounters }
+  return {
+    logId,
+    day,
+    raid,
+    bosses: [...bosses],
+    encounters,
+    playerCount: players.size,
+    addonCount: addonPlayers.size,
+  }
 }
 
 // Split a ranked list into spec groups (e.g. Fury Warrior / Arms Warrior),

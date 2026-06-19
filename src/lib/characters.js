@@ -58,16 +58,32 @@ export async function requestCharacterScrape(playerOrPlayers) {
   return data
 }
 
+// Where a fight's frozen build came from, derived from what was stored at import:
+//   addon   — broadcast over addon comms (from_addon); definitely running the addon.
+//   inspect — the leader inspected them in-raid (the addon snapshot froze `class` but
+//             not from_addon). Accurate to that pull; they may or may not run the addon.
+//   armory  — no snapshot at all; class/gear come from the armory cache below and may
+//             be stale. (`class` is only ever stored by an addon snapshot, never by the
+//             armory enrichment — that's what makes inspect vs armory distinguishable.)
+function snapshotSourceOf(f) {
+  if (f.pet) return null
+  if (f.from_addon === true) return 'addon'
+  if (f.class != null) return 'inspect'
+  return 'armory'
+}
+
 // Fill in any missing class/spec/faction/ilvl/talents on fight records from the
-// armory cache. Never overwrites values a record already has (e.g. demo data).
+// armory cache, and tag each with where its snapshot came from (see snapshotSourceOf).
+// Never overwrites values a record already has (e.g. demo data).
 export function mergeCharacters(fights, characters) {
-  if (!characters || characters.length === 0) return fights
-  const byKey = new Map(characters.map((c) => [charKey(c.key || c.name), c]))
+  const byKey = new Map((characters || []).map((c) => [charKey(c.key || c.name), c]))
   return fights.map((f) => {
+    const snapshotSrc = snapshotSourceOf(f)
     const c = byKey.get(charKey(f.player))
-    if (!c) return f
+    if (!c) return { ...f, snapshotSrc }
     return {
       ...f,
+      snapshotSrc,
       class: f.class ?? c.class ?? null,
       // Frozen per-fight spec (the spec they played that log) wins over the live spec.
       spec: f.spec ?? c.spec ?? null,

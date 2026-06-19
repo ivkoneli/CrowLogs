@@ -321,6 +321,14 @@ code {
   font-size: 0.95rem;
   letter-spacing: 0.02em;
 }
+/* Admin-only addon-coverage line in the log header. */
+.addon-coverage {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-2);
+  cursor: help;
+}
 .kicker {
   font-size: 0.72rem;
   text-transform: uppercase;
@@ -514,6 +522,28 @@ code {
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
   opacity: 0.35;
+}
+
+/* Admin-only data-provenance tags on log rows. `inspect` = leader inspected them in
+   raid (accurate); `armory` = no snapshot, gear may be stale (worth a second look). An
+   unmarked row means the player broadcast their build over the addon. */
+.src-tag {
+  margin-left: 0.4rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  cursor: help;
+}
+.src-tag.inspect {
+  color: #7fb8e6;
+  border-color: rgba(127, 184, 230, 0.4);
+}
+.src-tag.armory {
+  color: #d9a441;
+  border-color: rgba(217, 164, 65, 0.45);
 }
 
 .rank-pill {
