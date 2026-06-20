@@ -40,9 +40,11 @@ const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1`
 const dbHeaders = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
 
 async function dbSelectPlayers() {
-  const res = await fetch(`${REST}/fights?select=player`, { headers: dbHeaders })
+  const res = await fetch(`${REST}/fights?select=player,pet`, { headers: dbHeaders })
   if (!res.ok) throw new Error(`select fights: HTTP ${res.status} — ${await res.text()}`)
-  return [...new Set((await res.json()).map((r) => r.player))]
+  // Skip pet rows (e.g. an unfolded "Water Elemental") — they aren't armory characters,
+  // so scraping them just wastes a request and logs a spurious not-found error.
+  return [...new Set((await res.json()).filter((r) => !r.pet).map((r) => r.player))]
 }
 
 // Existing stored gear per character key — used to reuse gems/enchants for items whose
