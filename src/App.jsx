@@ -72,13 +72,27 @@ export default function App() {
   const onImported = useCallback(
     async (records, logId, opts = {}) => {
       const { covered = null, onProgress = () => {} } = opts
+      // Keep already-imported encounters under their ORIGINAL log instead of moving them to
+      // this file's logid — so re-uploading a combat log that still holds last week's raid
+      // (the .txt wasn't reset) only adds the new night, never re-creates the old one.
+      const priorLogid = new Map(stored.map((f) => [f.id, f.logid]))
+      const recs = records.map((r) => {
+        const prev = priorLogid.get(r.id)
+        return prev && prev !== r.logid ? { ...r, logid: prev } : r
+      })
+      // Open this file's log when it brought new encounters; otherwise (a pure re-upload)
+      // open the log those encounters already live in, so we never land on an empty page.
+      const hasNew = recs.some((r) => !priorLogid.has(r.id))
+      const newest = recs.length ? recs.reduce((a, b) => (b.started > a.started ? b : a)) : null
+      const openLogId = hasNew ? logId : newest?.logid || logId
+
       // Show the full-screen loading overlay immediately, with tips drawn from this log
       // (enriched with any character data we already have for sharper jabs).
-      setAnalyzing(mergeCharacters(records, characters))
+      setAnalyzing(mergeCharacters(recs, characters))
       const startedAt = Date.now()
       try {
       onProgress(0.15, 'Saving encounters…')
-      await addFights(records)
+      await addFights(recs)
       await reload()
 
       // Best-effort armory enrichment: FREEZE each scraped player's current ilvl/talents/
@@ -87,7 +101,7 @@ export default function App() {
       // Scrape players the addon didn't cover, plus covered players we've never scraped
       // before: the addon supplies their build, but race/faction/guild only come from the
       // armory, so a brand-new addon-only player still needs one bio scrape.
-      const allPlayers = [...new Set(records.filter((r) => !r.pet).map((r) => r.player))]
+      const allPlayers = [...new Set(recs.filter((r) => !r.pet).map((r) => r.player))]
       let players
       if (covered == null) {
         players = allPlayers
@@ -101,7 +115,7 @@ export default function App() {
         try {
           const res = await requestCharacterScrape(players)
           const byKey = new Map((res?.updated || []).map((c) => [charKey(c.name || c.key), c]))
-          const frozen = records.map((r) => {
+          const frozen = recs.map((r) => {
             const c = byKey.get(charKey(r.player))
             if (!c) return r
             return {
@@ -127,15 +141,15 @@ export default function App() {
       // get read. Skipped on error — the catch path surfaces the failure right away.
       const elapsed = Date.now() - startedAt
       if (elapsed < 5000) await new Promise((r) => setTimeout(r, 5000 - elapsed))
-      // Open the freshly parsed log's full breakdown.
-      if (logId) navigate({ view: 'log', logId })
+      // Open the log's full breakdown (this file's, or the existing one on a pure re-upload).
+      if (openLogId) navigate({ view: 'log', logId: openLogId })
       } finally {
         // Clear the overlay last — after navigate, so the log view is already underneath
         // (on error, the import page with its file selection/error is revealed instead).
         setAnalyzing(null)
       }
     },
-    [reload, characters, navigate],
+    [reload, characters, navigate, stored],
   )
 
   // Scrape one character's armory profile on demand, then refresh the cache.
