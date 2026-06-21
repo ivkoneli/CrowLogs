@@ -26,6 +26,18 @@ const DAMAGE_EVENTS = new Set([
   'DAMAGE_SPLIT',
 ])
 const HEAL_EVENTS = new Set(['SPELL_HEAL', 'SPELL_PERIODIC_HEAL', 'SPELL_BUILDING_HEAL'])
+// The only event types we actually consume. Everything else in a combat log — auras,
+// cast-starts, energize, misses, etc. (often half the lines) — is gated out cheaply
+// BEFORE the field split, which is the bulk of the parse cost on a big file.
+const RELEVANT_EVENTS = new Set([
+  ...DAMAGE_EVENTS,
+  ...HEAL_EVENTS,
+  'SPELL_CAST_SUCCESS', // lust + potions
+  'SPELL_ABSORBED', // absorb shields → healing
+  'SPELL_SUMMON', // pet → owner mapping
+  'ENCOUNTER_START',
+  'ENCOUNTER_END',
+])
 // "Lust" effects — Bloodlust/Heroism/Time Warp and the equivalent pet/drum versions.
 // Keyed by spellId (string, as fields come out of the log). SPELL_CAST_SUCCESS for one
 // of these names the caster + time, which is what we surface as a per-fight hint.
@@ -121,6 +133,28 @@ function resolveActor(guid, name, petOwners, petBaseOwners) {
     return { guid, name, pet: true } // unknown owner — keep as its own row
   }
   return { guid, name, pet: false }
+}
+
+// Events are appended in chronological (file) order, so a time window is a contiguous
+// slice. Binary-search the [loTs, hiTs] bounds so each encounter scans only its own
+// events instead of all of them — turns the O(encounters × events) rescan into O(events).
+function eventsInWindow(events, loTs, hiTs) {
+  if (loTs === -Infinity && hiTs === Infinity) return events
+  let a = 0
+  let b = events.length
+  while (a < b) {
+    const m = (a + b) >> 1
+    if (events[m].ts < loTs) a = m + 1
+    else b = m
+  }
+  const start = a
+  b = events.length
+  while (a < b) {
+    const m = (a + b) >> 1
+    if (events[m].ts <= hiTs) a = m + 1
+    else b = m
+  }
+  return events.slice(start, a)
 }
 
 // Aggregate one encounter window into per-player records.
@@ -260,12 +294,15 @@ export function parseLogToFights(text) {
     if (!line) continue
     const gap = line.indexOf('  ')
     if (gap === -1) continue
-    const stamp = line.slice(0, gap)
-    const ts = parseTimestamp(stamp)
+    const rest = line.slice(gap + 2)
+    // Event type is the first field (no quotes/commas in it). Read it cheaply and skip
+    // the lines we don't use before paying for parseTimestamp + the full field split.
+    const comma = rest.indexOf(',')
+    const event = comma === -1 ? rest : rest.slice(0, comma)
+    if (!RELEVANT_EVENTS.has(event)) continue
+    const ts = parseTimestamp(line.slice(0, gap))
     if (Number.isNaN(ts)) continue
-    const fields = splitFields(line.slice(gap + 2))
-    const event = fields[0]
-    if (!event || event === 'COMBAT_LOG_VERSION') continue
+    const fields = splitFields(rest)
 
     if (firstTs === null) firstTs = ts
     lastTs = ts
@@ -386,7 +423,12 @@ export function parseLogToFights(text) {
 
   const records = []
   for (const seg of segments) {
-    for (const rec of buildRecords({ ...seg, events, petOwners, petBaseOwners })) records.push(rec)
+    // Pass only this encounter's events. The lower bound includes the ~20s pre-pull pad
+    // buildRecords uses for lust/prepot detection (lustLo = startMs − 20000).
+    const winLo = Number.isFinite(seg.startMs) ? seg.startMs - 20000 : -Infinity
+    const winHi = Number.isFinite(seg.endMs) ? seg.endMs : Infinity
+    const segEvents = eventsInWindow(events, winLo, winHi)
+    for (const rec of buildRecords({ ...seg, events: segEvents, petOwners, petBaseOwners })) records.push(rec)
   }
   return records
 }

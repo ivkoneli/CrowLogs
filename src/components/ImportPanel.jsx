@@ -127,7 +127,16 @@ function DropCard({ badge, optional, title, subtitle, icon, accept, file, onPick
             <div className="drop-cloud"><UploadIcon /></div>
             <p className="drop-line">Drag &amp; drop your file here</p>
             <p className="drop-or muted">or</p>
-            <button type="button" className="browse-btn" onClick={() => inputRef.current?.click()}>
+            <button
+              type="button"
+              className="browse-btn"
+              onClick={(e) => {
+                // The whole drop area is also clickable, so without stopping propagation
+                // this click bubbles up and opens the file dialog a SECOND time.
+                e.stopPropagation()
+                inputRef.current?.click()
+              }}
+            >
               Browse files
             </button>
           </>
