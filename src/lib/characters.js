@@ -97,6 +97,12 @@ export function mergeCharacters(fights, characters) {
       // per-fight `ilvl`. The profile/equipment panel uses this (it shows live gear), while
       // the log view keeps the frozen `ilvl` (what they had on that pull).
       liveIlvl: c.ilvl ?? null,
+      // Live armory spec/talents too, so the profile header reflects the player's CURRENT
+      // build instead of a spec frozen from one old pull (e.g. a warrior who opened a night
+      // as Arms then swapped to Prot). The per-fight `spec`/`talents` stay frozen for logs.
+      liveSpec: c.spec ?? null,
+      liveSpecIcon: c.spec_icon ?? null,
+      liveTalents: c.talents ?? null,
       talents: f.talents && f.talents.length ? f.talents : c.talents || [],
       // Frozen trinkets win; otherwise derive from the live armory gear. `gear` is
       // the live equipped set (for the gear tab), never frozen per-fight.

@@ -90,10 +90,16 @@ export function playerProfile(fights, player) {
     for (const r of recs) if (r[k] != null && r[k] !== '') return r[k]
     return null
   }
-  const talents = recs.find((r) => r.talents && r.talents.length)?.talents || []
+  // The header is the player's CURRENT character card (it shows live gear/ilvl), so prefer
+  // the live armory spec/talents and only fall back to a frozen per-fight value when the
+  // armory hasn't been scraped — otherwise one off-spec pull can mislabel the whole profile.
+  const liveTalents = recs.find((r) => r.liveTalents && r.liveTalents.length)?.liveTalents
+  const talents = liveTalents?.length
+    ? liveTalents
+    : recs.find((r) => r.talents && r.talents.length)?.talents || []
   return {
     class: first('class'),
-    spec: first('spec'),
+    spec: first('liveSpec') ?? first('spec'),
     race: first('race'),
     gender: first('gender'),
     faction: first('faction'),
@@ -101,7 +107,7 @@ export function playerProfile(fights, player) {
     // Prefer the live armory ilvl (current gear) over a frozen per-fight value, so the
     // profile + equipment panel don't show a stale ilvl next to the player's live gear.
     ilvl: first('liveIlvl') ?? first('ilvl'),
-    specIcon: first('specIcon'),
+    specIcon: first('liveSpecIcon') ?? first('specIcon'),
     talents,
     gear: recs.find((r) => r.gear && r.gear.length)?.gear || [],
   }
