@@ -148,6 +148,11 @@ function DropCard({ badge, optional, title, subtitle, icon, accept, file, onPick
   )
 }
 
+// A browser can't hold a string larger than ~512 MiB (V8's max string length), so a combat
+// log past that can't be read at all — which otherwise surfaces as a confusing "no damage
+// events found". Flag it clearly instead. Resetting the log between raids stays well under.
+const MAX_LOG_MB = 500
+
 export default function ImportPanel({ onImported, shared }) {
   const [logFile, setLogFile] = useState(null) // { name, text, fights }
   const [addonFile, setAddonFile] = useState(null) // { name, addon }
@@ -165,7 +170,25 @@ export default function ImportPanel({ onImported, shared }) {
     setError(null)
     try {
       for (const file of files) {
-        const text = await readText(file)
+        // Too big to even read into a string — give an actionable message up front.
+        if (file.size > MAX_LOG_MB * 1024 * 1024) {
+          setError(
+            `${file.name} is ${(file.size / 1048576).toFixed(0)} MB — too large for the browser to read (limit ~${MAX_LOG_MB} MB). ` +
+              `Delete your WoWCombatLog.txt so the game starts a fresh one, then upload a single raid night.`,
+          )
+          continue
+        }
+        let text
+        try {
+          text = await readText(file)
+        } catch (err) {
+          // Backstop for a borderline file: RangeError "Cannot create a string longer than…".
+          setError(
+            `Couldn’t read ${file.name} — it’s likely too large for the browser. Delete WoWCombatLog.txt and upload a single raid night.`,
+          )
+          reportFailure('log-read', err, { file: file.name, size: file.size })
+          continue
+        }
         if (text.includes('CrowLogsHelperDB')) {
           const { parseAddonFile } = await import('../lib/addon.js')
           const addon = parseAddonFile(text)
