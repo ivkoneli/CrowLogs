@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import ImportPanel from './components/ImportPanel.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
 import LogPage from './components/LogPage.jsx'
 import LogLoading from './components/LogLoading.jsx'
+import DuplicatePrompt from './components/DuplicatePrompt.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
+import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
 import { initAdminFromUrl } from './lib/admin.js'
@@ -26,6 +28,23 @@ export default function App() {
   // 'working' = spinner + tips over the skeleton; 'reveal' = skeleton alone for a beat
   // after the log mounts underneath, so the cut to real data is a soft fade.
   const [analyzePhase, setAnalyzePhase] = useState('working')
+  // Suspected cross-logger duplicates awaiting the user's skip/keep decision. The promise
+  // returned by confirmDuplicates resolves when they act on the modal.
+  const [dupPrompt, setDupPrompt] = useState(null)
+  const dupResolver = useRef(null)
+
+  const confirmDuplicates = useCallback((duplicates, total) => {
+    return new Promise((resolve) => {
+      dupResolver.current = resolve
+      setDupPrompt({ duplicates, total })
+    })
+  }, [])
+  const resolveDuplicates = useCallback((decision) => {
+    setDupPrompt(null)
+    const r = dupResolver.current
+    dupResolver.current = null
+    r?.(decision)
+  }, [])
   // The current page comes from the URL hash so deep links land on the right page.
   const [selection, setSelection] = useState(() => selectionFromHash(window.location.hash))
 
@@ -79,13 +98,38 @@ export default function App() {
       // this file's logid — so re-uploading a combat log that still holds last week's raid
       // (the .txt wasn't reset) only adds the new night, never re-creates the old one.
       const priorLogid = new Map(stored.map((f) => [f.id, f.logid]))
-      const recs = records.map((r) => {
+      let recs = records.map((r) => {
         const prev = priorLogid.get(r.id)
         return prev && prev !== r.logid ? { ...r, logid: prev } : r
       })
+
+      // Cross-logger duplicate guard: flag incoming encounters that match ones already saved
+      // (same boss/difficulty, near-identical start + roster) but under a different id — these
+      // would otherwise double-count, since exact-id upsert can't catch them. Let the user skip.
+      const dups = findDuplicateEncounters(recs, stored, STRICT)
+      if (dups.length) {
+        const totalEncounters = new Set(recs.map(encounterKey)).size
+        const decision = await confirmDuplicates(dups, totalEncounters)
+        if (decision.action === 'skip' && decision.keys.size) {
+          recs = recs.filter((r) => !decision.keys.has(encounterKey(r)))
+        }
+        if (!recs.length) {
+          // The user skipped every encounter — they were all already imported. Report it back
+          // so the import page can say "nothing new to add" instead of silently navigating.
+          return { nothingNew: true }
+        }
+      }
+
       // Open this file's log when it brought new encounters; otherwise (a pure re-upload)
       // open the log those encounters already live in, so we never land on an empty page.
       const hasNew = recs.some((r) => !priorLogid.has(r.id))
+      // Re-uploading a log whose encounters are ALL already imported (same file, identical
+      // timestamps → identical ids — the fuzzy guard skips these by design) brings nothing new.
+      // Say so instead of silently re-running. An addon file (covered != null) is the exception:
+      // it can refresh frozen build data on existing rows, so let that proceed.
+      if (!hasNew && covered == null) {
+        return { nothingNew: true }
+      }
       const newest = recs.length ? recs.reduce((a, b) => (b.started > a.started ? b : a)) : null
       const openLogId = hasNew ? logId : newest?.logid || logId
 
@@ -157,7 +201,7 @@ export default function App() {
         setAnalyzing(null)
       }
     },
-    [reload, characters, navigate, stored],
+    [reload, characters, navigate, stored, confirmDuplicates],
   )
 
   // Scrape one character's armory profile on demand, then refresh the cache.
@@ -246,6 +290,13 @@ export default function App() {
       </main>
 
       {analyzing && <LogLoading fights={analyzing} phase={analyzePhase} />}
+      {dupPrompt && (
+        <DuplicatePrompt
+          duplicates={dupPrompt.duplicates}
+          total={dupPrompt.total}
+          onResolve={resolveDuplicates}
+        />
+      )}
     </div>
   )
 }

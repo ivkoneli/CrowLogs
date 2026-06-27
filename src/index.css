@@ -1968,6 +1968,156 @@ img.icon-slot.trinket {
   }
 }
 
+/* ---------- duplicate-encounter confirm modal ---------- */
+.dup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(6, 4, 12, 0.72);
+  backdrop-filter: blur(3px);
+  animation: clh-fade 0.2s ease;
+}
+.dup-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 1.4rem 1.5rem 1.2rem;
+}
+.dup-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.3rem;
+}
+.dup-sub {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.dup-allnote {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid var(--border);
+  color: var(--accent-2);
+}
+.dup-list {
+  list-style: none;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.dup-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  transition: opacity 0.15s;
+}
+.dup-row.skipping {
+  opacity: 0.62;
+}
+.dup-check {
+  display: inline-flex;
+  flex: none;
+  cursor: pointer;
+}
+.dup-check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.dup-box {
+  width: 19px;
+  height: 19px;
+  border-radius: 5px;
+  border: 1.5px solid var(--accent);
+  display: inline-block;
+  position: relative;
+  transition: background 0.12s;
+}
+.dup-check input:checked + .dup-box {
+  background: var(--accent);
+}
+.dup-check input:checked + .dup-box::after {
+  content: '';
+  position: absolute;
+  left: 5.5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.dup-check input:focus-visible + .dup-box {
+  box-shadow: 0 0 0 2px var(--highlight);
+}
+.dup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.dup-boss {
+  font-weight: 600;
+}
+.dup-diff {
+  color: var(--accent-2);
+  font-weight: 700;
+  font-size: 0.85em;
+}
+.dup-meta {
+  font-size: 0.78rem;
+}
+.dup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.dup-btn {
+  border-radius: 9px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+}
+.dup-btn.ghost {
+  background: transparent;
+  color: var(--muted);
+}
+.dup-btn.ghost:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.dup-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.dup-btn.primary:hover {
+  background: var(--accent-2);
+}
+
 .import-privacy {
   display: flex;
   align-items: center;
@@ -1993,7 +2143,8 @@ img.icon-slot.trinket {
 }
 
 .error,
-.success {
+.success,
+.notice {
   margin-top: 1rem;
   padding: 0.8rem 1rem;
   border-radius: 10px;
@@ -2007,6 +2158,12 @@ img.icon-slot.trinket {
   background: rgba(46, 204, 113, 0.12);
   border: 1px solid rgba(46, 204, 113, 0.4);
   color: #9be8bd;
+}
+/* Neutral/informational — e.g. "everything was already imported". Not an error, not a win. */
+.notice {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid var(--border);
+  color: var(--accent-2);
 }
 
 /* ---------- responsive ---------- */

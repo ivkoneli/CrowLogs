@@ -164,6 +164,7 @@ export default function ImportPanel({ onImported, shared }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(null) // { pct, label }
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null) // info message (e.g. "everything was a duplicate")
   const [busy, setBusy] = useState(false)
   // Real parse-progress for the top banner: { pct: 0..1, label }, or null when idle. Driven
   // by progress messages the worker streams while it reads + parses the file.
@@ -178,6 +179,7 @@ export default function ImportPanel({ onImported, shared }) {
       if (!files.length) return
       setBusy(true)
       setError(null)
+      setNotice(null)
       setParse({ pct: 0.02, label: 'Reading file…' })
       try {
         for (const file of files) {
@@ -261,14 +263,21 @@ export default function ImportPanel({ onImported, shared }) {
         fights = res.fights
         covered = [...res.covered]
       }
-      await onImported(fights, logid, {
+      const result = await onImported(fights, logid, {
         covered,
         onProgress: (pct, label) => setProgress({ pct, label }),
       })
-      // onImported navigates to the log view on success; this component unmounts.
+      // onImported navigates to the log view on success and this component unmounts (so the
+      // resets below are a harmless no-op). When it returns WITHOUT navigating — every encounter
+      // was already imported (a re-upload, or all skipped as duplicates) — we stay mounted: say
+      // so, and the finally clears the button.
+      if (result?.nothingNew) {
+        setNotice('Everything in this upload was already imported — nothing new to add.')
+      }
     } catch (err) {
       setError('Analysis failed: ' + err.message)
       reportFailure('log-import', err, { file: logFile?.name })
+    } finally {
       setAnalyzing(false)
       setProgress(null)
     }
@@ -381,6 +390,7 @@ export default function ImportPanel({ onImported, shared }) {
       )}
 
       {error && <div className="error">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
 
       <p className="import-privacy muted">
         🔒 Your combat log is parsed locally in your browser.
