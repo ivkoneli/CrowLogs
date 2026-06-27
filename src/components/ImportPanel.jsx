@@ -1,24 +1,27 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { parseLogToFights } from '../parser.js'
 import { reportFailure } from '../lib/notify.js'
 
-// Stable id for an uploaded file (FNV-1a over its content) so re-importing the
-// same log doesn't create a duplicate "log" in history.
-function hashLog(text) {
-  let h = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return 'log_' + (h >>> 0).toString(16)
-}
-
-function readText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => resolve(String(e.target.result))
-    reader.onerror = () => reject(new Error('Could not read file'))
-    reader.readAsText(file)
+// Read + parse a file on a Web Worker so a big combat log doesn't freeze the page. Resolves
+// to the worker's terminal message: { ok, kind:'log'|'addon', fights, logid, text, stage,
+// error }. Non-terminal { kind:'progress', pct, label } messages stream to `onProgress` as
+// the parse runs. A fresh worker per file keeps it stateless; terminated once it replies.
+function parseFileInWorker(file, onProgress) {
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL('../parser.worker.js', import.meta.url), { type: 'module' })
+    worker.onmessage = (e) => {
+      const msg = e.data
+      if (msg?.kind === 'progress') {
+        onProgress?.(msg.pct, msg.label)
+        return
+      }
+      worker.terminate()
+      resolve(msg)
+    }
+    worker.onerror = (err) => {
+      worker.terminate()
+      resolve({ ok: false, stage: 'worker', error: err.message || 'Worker failed' })
+    }
+    worker.postMessage({ file })
   })
 }
 
@@ -148,71 +151,85 @@ function DropCard({ badge, optional, title, subtitle, icon, accept, file, onPick
   )
 }
 
-// A browser can't hold a string larger than ~512 MiB (V8's max string length), so a combat
-// log past that can't be read at all — which otherwise surfaces as a confusing "no damage
-// events found". Flag it clearly instead. Resetting the log between raids stays well under.
-const MAX_LOG_MB = 500
+// The worker streams the log in chunks, so V8's ~512 MiB string cap no longer applies — the
+// real ceiling is now worker memory: the retained events array runs ~9× the file size, so a
+// ~500 MB log already peaks several GB and bumps a browser worker's heap limit. This soft cap
+// admits a heavy multi-night log while keeping truly enormous files (sure to OOM) out; the
+// honest fix for those is to upload one raid night at a time.
+const MAX_LOG_MB = 1000
 
 export default function ImportPanel({ onImported, shared }) {
-  const [logFile, setLogFile] = useState(null) // { name, text, fights }
+  const [logFile, setLogFile] = useState(null) // { name, fights, logid }
   const [addonFile, setAddonFile] = useState(null) // { name, addon }
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(null) // { pct, label }
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Real parse-progress for the top banner: { pct: 0..1, label }, or null when idle. Driven
+  // by progress messages the worker streams while it reads + parses the file.
+  const [parse, setParse] = useState(null)
 
-  // Parse the combat log on drop so Players / Bosses / Duration preview instantly;
-  // the addon file is parsed (and validated) but its merge waits for Analyze.
-  const ingest = useCallback(async (fileList) => {
-    const files = Array.from(fileList || [])
-    if (!files.length) return
-    setBusy(true)
-    setError(null)
-    try {
-      for (const file of files) {
-        // Too big to even read into a string — give an actionable message up front.
-        if (file.size > MAX_LOG_MB * 1024 * 1024) {
-          setError(
-            `${file.name} is ${(file.size / 1048576).toFixed(0)} MB — too large for the browser to read (limit ~${MAX_LOG_MB} MB). ` +
-              `Delete your WoWCombatLog.txt so the game starts a fresh one, then upload a single raid night.`,
-          )
-          continue
-        }
-        let text
-        try {
-          text = await readText(file)
-        } catch (err) {
-          // Backstop for a borderline file: RangeError "Cannot create a string longer than…".
-          setError(
-            `Couldn’t read ${file.name} — it’s likely too large for the browser. Delete WoWCombatLog.txt and upload a single raid night.`,
-          )
-          reportFailure('log-read', err, { file: file.name, size: file.size })
-          continue
-        }
-        if (text.includes('CrowLogsHelperDB')) {
-          const { parseAddonFile } = await import('../lib/addon.js')
-          const addon = parseAddonFile(text)
-          if (!addon) {
-            setError(`${file.name} isn’t a CrowLogsHelper snapshot.`)
+  // Parse the combat log on drop (on a worker thread) so Players / Bosses / Duration preview
+  // instantly without freezing the page; the addon file is parsed and validated but its merge
+  // waits for Analyze.
+  const ingest = useCallback(
+    async (fileList) => {
+      const files = Array.from(fileList || [])
+      if (!files.length) return
+      setBusy(true)
+      setError(null)
+      setParse({ pct: 0.02, label: 'Reading file…' })
+      try {
+        for (const file of files) {
+          // Past the soft ceiling the browser is likely to run out of memory mid-parse —
+          // steer to a single raid night up front rather than crash the worker.
+          if (file.size > MAX_LOG_MB * 1024 * 1024) {
+            setError(
+              `${file.name} is ${(file.size / 1048576).toFixed(0)} MB — over the ~${MAX_LOG_MB} MB limit and likely to exhaust memory. ` +
+                `Delete your WoWCombatLog.txt so the game starts a fresh one, then upload a single raid night.`,
+            )
             continue
           }
-          setAddonFile({ name: file.name, addon })
-        } else {
-          const fights = parseLogToFights(text)
-          if (fights.length === 0) {
-            setError(`No damage events found in ${file.name}.`)
+          const res = await parseFileInWorker(file, (pct, label) =>
+            setParse({ pct, label: label || 'Parsing…' }),
+          )
+          if (!res.ok) {
+            setError(
+              `Couldn’t parse ${file.name}: ${res.error}. ` +
+                `If it's a multi-week log, delete WoWCombatLog.txt and upload one raid night at a time.`,
+            )
+            reportFailure('log-read', new Error(res.error || 'parse failed'), {
+              file: file.name,
+              size: file.size,
+              stage: res.stage,
+            })
             continue
           }
-          setLogFile({ name: file.name, text, fights })
+          if (res.kind === 'addon') {
+            const { parseAddonFile } = await import('../lib/addon.js')
+            const addon = parseAddonFile(res.text)
+            if (!addon) {
+              setError(`${file.name} isn’t a CrowLogsHelper snapshot.`)
+              continue
+            }
+            setAddonFile({ name: file.name, addon })
+          } else {
+            if (res.fights.length === 0) {
+              setError(`No damage events found in ${file.name}.`)
+              continue
+            }
+            setLogFile({ name: file.name, fights: res.fights, logid: res.logid })
+          }
         }
+      } finally {
+        setBusy(false)
+        // Snap to 100% then clear, so the bar visibly completes rather than vanishing mid-run.
+        setParse({ pct: 1, label: 'Done' })
+        setTimeout(() => setParse(null), 450)
       }
-    } catch (err) {
-      setError('Could not read that file: ' + err.message)
-      reportFailure('log-read', err, { files: files.map((f) => f.name).join(', ') })
-    } finally {
-      setBusy(false)
-    }
-  }, [])
+    },
+    [],
+  )
 
   // Instant preview from the parsed combat log (no addon merge needed).
   const preview = useMemo(() => {
@@ -232,7 +249,7 @@ export default function ImportPanel({ onImported, shared }) {
     setAnalyzing(true)
     setProgress({ pct: 0.05, label: 'Preparing…' })
     try {
-      const logid = hashLog(logFile.text)
+      const logid = logFile.logid
       let fights = logFile.fights.map((f) => ({ ...f, logid }))
       let covered = null
       if (addonFile) {
@@ -262,6 +279,18 @@ export default function ImportPanel({ onImported, shared }) {
 
   return (
     <div className="import-v2">
+      {parse != null && (
+        <div className="parse-banner" role="status" aria-live="polite">
+          <div className="parse-banner-row">
+            <span className="parse-spinner" />
+            <span className="parse-banner-label">{parse.label} — you can keep using the site.</span>
+            <span className="parse-banner-pct">{Math.round(parse.pct * 100)}%</span>
+          </div>
+          <div className="parse-banner-track">
+            <div className="parse-banner-fill" style={{ width: `${Math.round(parse.pct * 100)}%` }} />
+          </div>
+        </div>
+      )}
       <div className="import-head">
         <h2>Import Raid Data</h2>
         <p className="muted">Upload your combat log and optionally a build snapshot from your addon.</p>

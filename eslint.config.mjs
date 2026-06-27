@@ -29,6 +29,12 @@ export default [
     },
   },
   {
+    // Web Workers run in a worker global scope (self, FileReaderSync, postMessage…).
+    files: ['**/*.worker.js'],
+    languageOptions: { globals: { ...globals.worker } },
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     // Node-run scripts + config files (Vite/eslint) use Node globals.
     files: ['scripts/**/*.{js,mjs}', 'vite.config.js', 'eslint.config.mjs'],
     languageOptions: { globals: { ...globals.node } },

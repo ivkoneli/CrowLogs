@@ -280,8 +280,12 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
     }))
 }
 
-export function parseLogToFights(text) {
-  const lines = text.split(/\r?\n/)
+// Incremental log parser. Feed it raw lines one at a time with `pushLine` (in file order),
+// then call `finish()` to get the fight records. Splitting consumption from finalization is
+// what lets the worker STREAM a file in chunks instead of materializing the whole thing as
+// one string — a log past V8's ~512 MB string cap can't be read whole, but it can be read a
+// chunk at a time. `parseLogToFights` below is just this fed from an in-memory string.
+export function createLogParser() {
   const events = []
   const encounters = [] // { boss, raid, difficulty, kill, startMs, endMs }
   const petOwners = new Map() // petGUID -> { guid, name } of the owning player
@@ -290,18 +294,18 @@ export function parseLogToFights(text) {
   let firstTs = null
   let lastTs = null
 
-  for (const line of lines) {
-    if (!line) continue
+  function pushLine(line) {
+    if (!line) return
     const gap = line.indexOf('  ')
-    if (gap === -1) continue
+    if (gap === -1) return
     const rest = line.slice(gap + 2)
     // Event type is the first field (no quotes/commas in it). Read it cheaply and skip
     // the lines we don't use before paying for parseTimestamp + the full field split.
     const comma = rest.indexOf(',')
     const event = comma === -1 ? rest : rest.slice(0, comma)
-    if (!RELEVANT_EVENTS.has(event)) continue
+    if (!RELEVANT_EVENTS.has(event)) return
     const ts = parseTimestamp(line.slice(0, gap))
-    if (Number.isNaN(ts)) continue
+    if (Number.isNaN(ts)) return
     const fields = splitFields(rest)
 
     if (firstTs === null) firstTs = ts
@@ -315,7 +319,7 @@ export function parseLogToFights(text) {
       // double-recorded log can emit the same ENCOUNTER_START twice (you can't be in
       // one encounter twice at once); a second segment would overlap the first, double
       // the fight, and collide on its id (raid::boss::diff::player::start) at upsert.
-      if (encId != null && openStack.some((s) => s.encounterID === encId)) continue
+      if (encId != null && openStack.some((s) => s.encounterID === encId)) return
       const matched = matchBoss(name)
       const seg = {
         boss: matched ? matched.boss : name,
@@ -328,7 +332,7 @@ export function parseLogToFights(text) {
       }
       encounters.push(seg)
       openStack.push(seg)
-      continue
+      return
     }
     if (event === 'ENCOUNTER_END') {
       // ENCOUNTER_END,encounterID,"name",difficultyID,groupSize,success
@@ -352,7 +356,7 @@ export function parseLogToFights(text) {
         seg.kill = fields[5] === '1'
         openStack.splice(idx, 1)
       }
-      continue
+      return
     }
 
     // Map pets to their owner so their output folds into the player.
@@ -370,67 +374,95 @@ export function parseLogToFights(text) {
     events.push({ ts, event, fields })
   }
 
-  // Close any encounters left open (log cut off mid-fight) — unknown result, treat as kill.
-  for (const seg of openStack) {
-    seg.endMs = lastTs ?? seg.startMs
-    seg.kill = true
-  }
+  // Resolve encounters into per-player fight records. `onProgress(frac)` (optional) reports
+  // 0→1 across the per-encounter aggregation. Safe to call once.
+  function finish({ onProgress } = {}) {
+    const report = typeof onProgress === 'function' ? onProgress : () => {}
 
-  // Base→owner fallback, kept only where a base belongs to exactly one owner, so an
-  // unmapped pet GUID (summoned before the log started) folds in without ambiguity.
-  const petBaseOwners = new Map()
-  for (const [base, b] of baseSeen) if (b.owners.size === 1) petBaseOwners.set(base, b.last)
-
-  let segments = []
-  if (encounters.length > 0) {
-    segments = encounters
-  } else if (events.length > 0) {
-    // No encounter markers: one fight against the most-damaged enemy.
-    const enemyDamage = new Map()
-    for (const ev of events) {
-      if (!DAMAGE_EVENTS.has(ev.event)) continue
-      const srcGuid = ev.fields[1]
-      if (!isPlayerGuid(srcGuid)) continue
-      const dstGuid = ev.fields[5]
-      const dstName = ev.fields[6]
-      if (!isEnemyGuid(dstGuid)) continue
-      const amount = parseInt(ev.fields[ev.fields.length - DAMAGE_SUFFIX_LEN], 10)
-      if (!Number.isFinite(amount) || amount <= 0) continue
-      enemyDamage.set(dstName, (enemyDamage.get(dstName) || 0) + amount)
+    // Close any encounters left open (log cut off mid-fight) — unknown result, treat as kill.
+    for (const seg of openStack) {
+      seg.endMs = lastTs ?? seg.startMs
+      seg.kill = true
     }
-    let topTarget = 'Unknown Target'
-    let max = -1
-    for (const [name, dmg] of enemyDamage) {
-      if (dmg > max) {
-        max = dmg
-        topTarget = name
+
+    // Base→owner fallback, kept only where a base belongs to exactly one owner, so an
+    // unmapped pet GUID (summoned before the log started) folds in without ambiguity.
+    const petBaseOwners = new Map()
+    for (const [base, b] of baseSeen) if (b.owners.size === 1) petBaseOwners.set(base, b.last)
+
+    let segments = []
+    if (encounters.length > 0) {
+      segments = encounters
+    } else if (events.length > 0) {
+      // No encounter markers: one fight against the most-damaged enemy.
+      const enemyDamage = new Map()
+      for (const ev of events) {
+        if (!DAMAGE_EVENTS.has(ev.event)) continue
+        const srcGuid = ev.fields[1]
+        if (!isPlayerGuid(srcGuid)) continue
+        const dstGuid = ev.fields[5]
+        const dstName = ev.fields[6]
+        if (!isEnemyGuid(dstGuid)) continue
+        const amount = parseInt(ev.fields[ev.fields.length - DAMAGE_SUFFIX_LEN], 10)
+        if (!Number.isFinite(amount) || amount <= 0) continue
+        enemyDamage.set(dstName, (enemyDamage.get(dstName) || 0) + amount)
       }
+      let topTarget = 'Unknown Target'
+      let max = -1
+      for (const [name, dmg] of enemyDamage) {
+        if (dmg > max) {
+          max = dmg
+          topTarget = name
+        }
+      }
+      const matched = matchBoss(topTarget)
+      segments = [
+        {
+          boss: matched ? matched.boss : topTarget,
+          raid: matched ? matched.raid : 'Other',
+          difficulty: DEFAULT_DIFFICULTY,
+          kill: true, // no marker to tell — assume a kill so it shows
+          // No explicit encounter window: let buildRecords use the active
+          // first→last activity window so pre-pull/post-fight noise doesn't count.
+          startMs: null,
+          endMs: null,
+        },
+      ]
     }
-    const matched = matchBoss(topTarget)
-    segments = [
-      {
-        boss: matched ? matched.boss : topTarget,
-        raid: matched ? matched.raid : 'Other',
-        difficulty: DEFAULT_DIFFICULTY,
-        kill: true, // no marker to tell — assume a kill so it shows
-        // No explicit encounter window: let buildRecords use the active
-        // first→last activity window so pre-pull/post-fight noise doesn't count.
-        startMs: null,
-        endMs: null,
-      },
-    ]
+
+    const records = []
+    const segTotal = segments.length || 1
+    for (let s = 0; s < segments.length; s++) {
+      const seg = segments[s]
+      // Pass only this encounter's events. The lower bound includes the ~20s pre-pull pad
+      // buildRecords uses for lust/prepot detection (lustLo = startMs − 20000).
+      const winLo = Number.isFinite(seg.startMs) ? seg.startMs - 20000 : -Infinity
+      const winHi = Number.isFinite(seg.endMs) ? seg.endMs : Infinity
+      const segEvents = eventsInWindow(events, winLo, winHi)
+      for (const rec of buildRecords({ ...seg, events: segEvents, petOwners, petBaseOwners })) records.push(rec)
+      report((s + 1) / segTotal)
+    }
+    return records
   }
 
-  const records = []
-  for (const seg of segments) {
-    // Pass only this encounter's events. The lower bound includes the ~20s pre-pull pad
-    // buildRecords uses for lust/prepot detection (lustLo = startMs − 20000).
-    const winLo = Number.isFinite(seg.startMs) ? seg.startMs - 20000 : -Infinity
-    const winHi = Number.isFinite(seg.endMs) ? seg.endMs : Infinity
-    const segEvents = eventsInWindow(events, winLo, winHi)
-    for (const rec of buildRecords({ ...seg, events: segEvents, petOwners, petBaseOwners })) records.push(rec)
+  return { pushLine, finish }
+}
+
+// Parse a whole log already held as one string. `onProgress(fraction)` (optional) reports a
+// 0→1 estimate: the line scan owns 0→0.8, per-encounter aggregation the rest. The worker uses
+// the streaming `createLogParser` directly for big files; this stays for Node + small inputs.
+export function parseLogToFights(text, { onProgress } = {}) {
+  const report = typeof onProgress === 'function' ? onProgress : () => {}
+  const parser = createLogParser()
+  const lines = text.split(/\r?\n/)
+  const total = lines.length || 1
+  for (let li = 0; li < lines.length; li++) {
+    // Report every ~262k lines — cheap enough to be invisible, frequent enough for a smooth bar.
+    if ((li & 0x3ffff) === 0) report((li / total) * 0.8)
+    parser.pushLine(lines[li])
   }
-  return records
+  report(0.8)
+  return parser.finish({ onProgress: (f) => report(0.8 + f * 0.2) })
 }
 
 export function formatNumber(n) {

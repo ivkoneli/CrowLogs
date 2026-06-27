@@ -1909,6 +1909,65 @@ img.icon-slot.trinket {
   transition: width 0.35s ease;
 }
 
+/* ---------- top parse banner (combat log parsed off the main thread) ---------- */
+.parse-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 80;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 0.55rem 1.1rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  animation: clh-fade 0.25s ease;
+}
+.parse-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.parse-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--panel-2);
+  border-top-color: var(--accent);
+  animation: clh-spin 0.8s linear infinite;
+}
+.parse-banner-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.parse-banner-pct {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.parse-banner-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.parse-banner-fill {
+  height: 100%;
+  background: var(--bar);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .parse-spinner {
+    animation: none;
+  }
+}
+
 .import-privacy {
   display: flex;
   align-items: center;
