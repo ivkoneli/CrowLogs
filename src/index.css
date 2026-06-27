@@ -635,14 +635,51 @@ code {
 }
 
 /* ---------- log analysis loading overlay ---------- */
+/* Opaque backdrop that hides the import page and hosts the skeleton. Offset past the
+   sidebar on desktop so the skeleton lines up with where the real log will mount (no
+   sideways jump when it clears); full-width once the sidebar stacks on mobile. */
+.log-loading-host {
+  position: fixed;
+  inset: 0;
+  left: var(--sidebar-w);
+  z-index: 60;
+  background: var(--bg);
+  overflow-y: auto;
+}
+@media (max-width: 760px) {
+  .log-loading-host {
+    left: 0;
+  }
+}
+.log-loading-skeleton {
+  padding: 1.5rem 2rem 4rem;
+}
+@media (max-width: 980px) {
+  .log-loading-skeleton {
+    padding: 1.25rem 1.25rem 3rem;
+  }
+}
+/* When the spinner drops away, ease the skeleton out so the real meters underneath
+   fade in rather than snap. */
+.log-loading-host.revealing .log-loading-skeleton {
+  animation: clh-skeleton-out 1s ease forwards;
+}
+@keyframes clh-skeleton-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Spinner + tips scrim, layered over the skeleton (translucent so the shimmer shows). */
 .log-loading {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
+  background: rgba(10, 7, 18, 0.72);
+  backdrop-filter: blur(2px);
 }
 .log-loading-inner {
   text-align: center;
@@ -705,6 +742,126 @@ code {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ---------- content skeleton (log page placeholder) ---------- */
+/* A `.sk` element is a rounded block carrying the shimmer sweep; layout-specific
+   classes (sk-title, sk-row, …) only set its size and position. */
+.sk {
+  display: block;
+  border-radius: 6px;
+  background: var(--panel-2);
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(167, 139, 250, 0.16) 40%,
+    rgba(167, 139, 250, 0.16) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: sk-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes sk-shimmer {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+  }
+}
+
+.log-skeleton .log-topbar {
+  margin-bottom: 0.5rem;
+}
+.sk-back {
+  width: 64px;
+  height: 20px;
+}
+.log-skeleton .page-head.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+}
+.sk-title {
+  width: 280px;
+  height: 30px;
+}
+.sk-sub {
+  width: 170px;
+  height: 16px;
+}
+.sk-toggle {
+  width: 160px;
+  height: 32px;
+  border-radius: 999px;
+}
+.sk-tabs {
+  justify-content: center;
+}
+.sk-tab {
+  width: 110px;
+  height: 34px;
+  border-radius: 8px;
+}
+.log-skeleton .encounter-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.sk-enc-title {
+  width: 220px;
+  height: 24px;
+}
+.sk-kicker {
+  width: 280px;
+  height: 15px;
+}
+.sk-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.sk-rank {
+  width: 22px;
+  height: 16px;
+  flex: none;
+}
+.sk-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex: none;
+}
+.sk-name {
+  width: 130px;
+  height: 16px;
+  flex: none;
+}
+.sk-bar {
+  height: 14px;
+  border-radius: 7px;
+}
+.sk-value {
+  width: 64px;
+  height: 16px;
+  margin-left: auto;
+  flex: none;
 }
 
 /* ---------- history: collapsible per-log groups ---------- */

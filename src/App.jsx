@@ -23,6 +23,9 @@ export default function App() {
   // While an import is being analyzed, holds the (class-enriched) fights so the loading
   // overlay can show log-specific tips. Null when not analyzing.
   const [analyzing, setAnalyzing] = useState(null)
+  // 'working' = spinner + tips over the skeleton; 'reveal' = skeleton alone for a beat
+  // after the log mounts underneath, so the cut to real data is a soft fade.
+  const [analyzePhase, setAnalyzePhase] = useState('working')
   // The current page comes from the URL hash so deep links land on the right page.
   const [selection, setSelection] = useState(() => selectionFromHash(window.location.hash))
 
@@ -89,6 +92,7 @@ export default function App() {
       // Show the full-screen loading overlay immediately, with tips drawn from this log
       // (enriched with any character data we already have for sharper jabs).
       setAnalyzing(mergeCharacters(recs, characters))
+      setAnalyzePhase('working')
       const startedAt = Date.now()
       try {
       onProgress(0.15, 'Saving encounters…')
@@ -143,6 +147,10 @@ export default function App() {
       if (elapsed < 5000) await new Promise((r) => setTimeout(r, 5000 - elapsed))
       // Open the log's full breakdown (this file's, or the existing one on a pure re-upload).
       if (openLogId) navigate({ view: 'log', logId: openLogId })
+      // Drop the spinner/tips but keep the skeleton over the now-mounted log for ~1s, so
+      // the real meters fade in instead of snapping in the instant analysis finishes.
+      setAnalyzePhase('reveal')
+      await new Promise((r) => setTimeout(r, 1000))
       } finally {
         // Clear the overlay last — after navigate, so the log view is already underneath
         // (on error, the import page with its file selection/error is revealed instead).
@@ -237,7 +245,7 @@ export default function App() {
         </ErrorBoundary>
       </main>
 
-      {analyzing && <LogLoading fights={analyzing} />}
+      {analyzing && <LogLoading fights={analyzing} phase={analyzePhase} />}
     </div>
   )
 }

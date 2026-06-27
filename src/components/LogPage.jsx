@@ -4,6 +4,7 @@ import { formatDuration } from '../parser.js'
 import { deleteLog } from '../lib/store.js'
 import { isAdmin, adminToken } from '../lib/admin.js'
 import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
+import LogSkeleton from './LogSkeleton.jsx'
 
 // "Iplayretail 0:04" — a lust cast and how far into the fight it landed.
 const lustLabel = (l) => `${l.player.split('-')[0]} ${formatDuration(l.t * 1000)}`
@@ -51,6 +52,11 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
     return [...enc.rows].filter((r) => rate(r) > 0).sort((a, b) => rate(b) - rate(a))
   }, [enc, rate])
   const maxValue = rows.length ? Math.max(...rows.map(rate), 1) : 1
+
+  // No encounters resolved yet for this logId — the fights are still landing (the analyze
+  // overlay just cleared, or this is a cold open from a shared link). Show the content's
+  // skeleton instead of a blank page so the layout doesn't pop in empty.
+  if (!log.encounters.length) return <LogSkeleton />
 
   return (
     <div className="boss-page wide">
