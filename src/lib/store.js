@@ -63,9 +63,23 @@ function writeLocal(list) {
 
 export async function getFights() {
   if (supabase) {
-    const { data, error } = await supabase.from('fights').select('*')
-    if (error) throw error
-    return data || []
+    // PostgREST silently caps any single select at 1000 rows (Supabase's default
+    // max-rows), so once the table outgrows that, an unpaged select('*') returns an
+    // ARBITRARY 1000 — freshly imported fights just don't show up. Page through in
+    // 1000-row windows (ordered, so pages can't skip/duplicate rows) until a short page.
+    const PAGE = 1000
+    const all = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('fights')
+        .select('*')
+        .order('id')
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      all.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return all
   }
   return readLocal()
 }
