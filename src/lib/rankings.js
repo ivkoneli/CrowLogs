@@ -186,6 +186,7 @@ export function logSummary(fights, logId) {
       gender: f.gender,
       faction: f.faction,
       ilvl: f.ilvl,
+      ilvlIsLive: f.ilvlIsLive === true,
       talents: f.talents,
       trinkets: f.trinkets,
       pet: f.pet,

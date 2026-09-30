@@ -165,6 +165,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
                     source={isAdmin() ? r.snapshotSrc : null}
                     potions={r.potions}
                     ilvl={r.ilvl}
+                    ilvlIsLive={r.ilvlIsLive}
                     talents={r.talents}
                     trinkets={r.trinkets}
                     duration={r.duration}

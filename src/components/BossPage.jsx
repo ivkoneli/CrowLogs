@@ -25,6 +25,7 @@ function rowProps(r, rank, maxValue, metric, onSelectPlayer, onSelectLog) {
     pet: r.pet,
     potions: r.potions,
     ilvl: r.ilvl,
+    ilvlIsLive: r.ilvlIsLive === true,
     talents: r.talents,
     trinkets: r.trinkets,
     duration: r.duration,

@@ -2273,3 +2273,10 @@ img.icon-slot.trinket {
     flex: 1 1 100%;
   }
 }
+
+/* An ilvl the armory supplied now, standing in for one never captured on that pull.
+   Muted + '~' so a value that drifts with re-gearing reads as an estimate, not history. */
+.ilvl-live {
+  opacity: 0.55;
+  font-style: italic;
+}

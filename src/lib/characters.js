@@ -93,6 +93,12 @@ export function mergeCharacters(fights, characters) {
       faction: f.faction ?? c.faction ?? null,
       guild: f.guild ?? c.guild ?? null,
       ilvl: f.ilvl ?? c.ilvl ?? null,
+      // TRUE when the ilvl above is the player's CURRENT armory value standing in for a
+      // snapshot that was never captured — it drifts every time they re-gear, so a log
+      // view must not present it as what they wore on that pull. The addon's inspect path
+      // cannot read item level (it reports 0), so ilvl is frozen by the import-time armory
+      // scrape; when that scrape never ran, nothing was frozen and this flag goes up.
+      ilvlIsLive: f.ilvl == null && c.ilvl != null,
       // The player's CURRENT ilvl from the live armory cache, kept alongside the frozen
       // per-fight `ilvl`. The profile/equipment panel uses this (it shows live gear), while
       // the log view keeps the frozen `ilvl` (what they had on that pull).

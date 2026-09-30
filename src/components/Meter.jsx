@@ -45,6 +45,8 @@ export function MeterRow({
   pet,
   potions,
   ilvl,
+  // The ilvl is the player's current armory value, not one captured on this pull.
+  ilvlIsLive = false,
   talents,
   trinkets,
   duration,
@@ -105,7 +107,19 @@ export function MeterRow({
         <span className="rate-val">{formatDps(value)}</span>
       </td>
       <td className={`num pots${potions ? '' : ' zero'}`}>{potions ?? 0}</td>
-      <td className="num ilvl">{ilvl ?? '—'}</td>
+      <td className="num ilvl">
+        {ilvl == null ? (
+          '—'
+        ) : ilvlIsLive ? (
+          // Not captured on this pull — shown muted with a '~' so a drifting current
+          // value is never mistaken for the gear they actually wore.
+          <span className="ilvl-live" title="Current armory item level — not captured on this pull">
+            ~{ilvl}
+          </span>
+        ) : (
+          ilvl
+        )}
+      </td>
       <td className="talents-col">
         <TalentStrip talents={talents} klass={klass} spec={spec} />
       </td>
