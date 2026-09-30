@@ -40,5 +40,11 @@ export const DEMO_GEAR = SLOTS.map((slot) => ({
   enchant: null,
 }))
 
-// A few placeholder artifact traits (Legion). Empty for now — just the UI.
-export const DEMO_ARTIFACT = Array.from({ length: 6 }, (_, i) => ({ row: i + 1, points: 0 }))
+// A Legion artifact has exactly THREE relic slots, so the placeholder shows three.
+// Real relics come from the armory's artifact page (see scripts/scrape-armory.mjs).
+export const ARTIFACT_RELIC_SLOTS = 3
+export const DEMO_ARTIFACT = Array.from({ length: ARTIFACT_RELIC_SLOTS }, (_, i) => ({
+  slot: i + 1,
+  name: null,
+  icon: null,
+}))

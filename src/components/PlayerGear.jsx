@@ -1,7 +1,7 @@
 // Fixed right-hand stats panel on the player page: equipped gear (live from the
 // armory cache, refreshed by "Update profile"). Falls back to demo data until a
 // real scrape has run for this character.
-import { DEMO_GEAR, DEMO_ARTIFACT } from '../lib/demoGear.js'
+import { DEMO_GEAR, DEMO_ARTIFACT, ARTIFACT_RELIC_SLOTS } from '../lib/demoGear.js'
 
 const QUALITY_COLOR = {
   artifact: '#e6cc80',
@@ -56,6 +56,14 @@ export default function PlayerGear({ profile }) {
   const items = realGear || DEMO_GEAR
   const isDemo = !realGear
 
+  // Relics hang off the artifact weapon; a Legion artifact always has three slots, so
+  // pad to three and let unfilled ones render as empty.
+  const artifact = items.find((g) => g.quality === 'artifact') || null
+  const relics = Array.from(
+    { length: ARTIFACT_RELIC_SLOTS },
+    (_, i) => (artifact?.relics || [])[i] || DEMO_ARTIFACT[i],
+  )
+
   const withIlvl = items.filter((g) => g.ilvl > 1)
   const avg = isDemo
     ? Math.round(withIlvl.reduce((s, g) => s + g.ilvl, 0) / (withIlvl.length || 1)) || profile?.ilvl || 0
@@ -104,13 +112,28 @@ export default function PlayerGear({ profile }) {
 
       <div className="gear-head">
         <span className="kicker">Artifact</span>
-        <span className="muted small">demo</span>
+        {artifact?.artifactName ? (
+          <span className="artifact-name" style={{ color: QUALITY_COLOR.artifact }}>
+            {artifact.artifactName}
+          </span>
+        ) : (
+          <span className="muted small">{isDemo ? 'demo' : 'none'}</span>
+        )}
       </div>
-      <div className="artifact-strip">
-        {DEMO_ARTIFACT.map((t) => (
-          <span key={t.row} className="icon-slot" title={`Trait row ${t.row}`} />
+      <ul className="relic-list">
+        {relics.map((r, i) => (
+          <li key={r?.id ?? i} className="relic-row">
+            {r?.icon ? (
+              <img className="relic-icon" src={r.icon} alt="" />
+            ) : (
+              <span className="relic-icon empty" />
+            )}
+            <span className={`relic-name${r?.name ? '' : ' muted'}`}>
+              {r?.name || 'Empty socket'}
+            </span>
+          </li>
         ))}
-      </div>
+      </ul>
     </aside>
   )
 }

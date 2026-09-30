@@ -27,7 +27,15 @@ const {
 } = process.env
 
 // The armory SPA loads data via this AJAX endpoint, returning JSON {html, callback}.
+import { RELIC_ICONS } from '../src/lib/itemIcons.js'
+
 const ARMORY_AJAX = 'https://tauriwow.com/sys/mod/armory.php'
+const ICON_BASE = 'https://legion-static.tauri.hu/images/icons/large/'
+
+// Tauri's armory reports every Legion legendary as ilvl 910. On this server they are
+// actually 895, and the wrong number inflates both the item row and the character's
+// average ilvl. Correct it on the way in (verified against the in-game item).
+const LEGENDARY_ILVL = 895
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_KEY')
@@ -262,6 +270,32 @@ function instanceIds(html) {
 }
 const parsePcs = (html) => (html.match(/pcs=([0-9:]+)/) || [])[1] || ''
 
+// The artifact page embeds its data as a JS literal:
+//   var artifactData = [{"class":11,"powers":{…},"relics":[{"item":141274,…}],"artifactName":"…"}]
+// The item tooltip only ever labels a relic socket "Relic Enhancement" with no name or
+// item level, so the equipped relics' item ids can ONLY be had from here.
+function parseArtifact(html) {
+  const m = html.match(/var\s+artifactData\s*=\s*(\[[\s\S]*?\]);/)
+  if (!m) return null
+  let data
+  try {
+    data = JSON.parse(m[1])
+  } catch {
+    return null
+  }
+  const a = Array.isArray(data) ? data[0] : data
+  if (!a) return null
+  const relics = (a.relics || [])
+    .map((r) => {
+      const meta = RELIC_ICONS[String(r.item)]
+      if (!meta) return { id: r.item, name: null, icon: null }
+      // Relic item levels on the armory are wrong too, so only name + icon are kept.
+      return { id: r.item, name: meta.name, icon: meta.icon ? `${ICON_BASE}${meta.icon}.png` : null }
+    })
+    .filter(Boolean)
+  return { artifactName: a.artifactName || null, relics }
+}
+
 function parseGear(html) {
   const instances = instanceIds(html)
   const raw = []
@@ -344,10 +378,20 @@ async function main() {
       const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
       const talents = decodeTalents(hash) // [{ row, col, icon }] — icons can be added later
       const gear = parseGear(sheetRaw)
+      // Legendaries come off the armory at 910 but are 895 here; fix the rows first so
+      // any average computed below is built from corrected numbers.
+      let fixedLegendaries = 0
+      for (const g of gear) {
+        if (g.quality === 'legendary' && g.ilvl !== LEGENDARY_ILVL) {
+          g.ilvl = LEGENDARY_ILVL
+          fixedLegendaries += 1
+        }
+      }
       // Tauri mis-reports Demon Hunter ilvl — compute it ourselves as the mean of equipped
-      // item levels (DH dual-wields, so no 2H double-count). Other classes trust the sheet.
+      // item levels (DH dual-wields, so no 2H double-count). Other classes trust the sheet,
+      // EXCEPT when a corrected legendary means the sheet's average was built from 910s.
       let ilvl = sheet.ilvl
-      if (sheet.class === 'Demon Hunter') {
+      if (sheet.class === 'Demon Hunter' || fixedLegendaries) {
         const eq = gear.filter((g) => g.ilvl > 1)
         if (eq.length) ilvl = Math.round(eq.reduce((s, g) => s + g.ilvl, 0) / eq.length)
       }
@@ -358,20 +402,36 @@ async function main() {
       for (const g of existingGear.get(player.toLowerCase()) || []) {
         if (g.instanceId) byIid.set(g.instanceId, g)
       }
+      // Equipped relics. The artifact's tooltip "sockets" ARE its relic slots, so they
+      // must not be rendered as gems; they get attached to the artifact item instead.
+      let artifact = null
+      try {
+        artifact = parseArtifact(await fetchArmory('character-artifact/ajax', name, realm, cookie))
+      } catch { /* no artifact page (e.g. never picked one up) — not an error */ }
+      if (artifact) {
+        const weapon = gear.find((g) => g.quality === 'artifact')
+        if (weapon) {
+          weapon.artifactName = artifact.artifactName
+          weapon.relics = artifact.relics
+        }
+      }
+
       const pcs = parsePcs(sheetRaw)
       let fetched = 0
       for (const it of gear) {
         if (!it.instanceId) continue
         const cached = byIid.get(it.instanceId)
         if (cached && (cached.gems !== undefined || cached.enchant !== undefined)) {
-          it.gems = cached.gems || []
+          // Drop relic sockets cached as gems by an earlier version of this script.
+          it.gems = it.quality === 'artifact' ? [] : cached.gems || []
           it.enchant = cached.enchant ?? null
         } else if (tooltipBudget > 0) {
           tooltipBudget -= 1
           fetched += 1
           try {
             const t = parseTooltip(await fetchTooltip(it.instanceId, realm, pcs, cookie))
-            it.gems = t.gems
+            // On an artifact those "sockets" are relic slots — kept in `relics`, not `gems`.
+            it.gems = it.quality === 'artifact' ? [] : t.gems
             it.enchant = t.enchant
             await sleep(150) // gentle on the armory
           } catch { /* leave unset; a later run retries */ }
@@ -395,7 +455,11 @@ async function main() {
         gear,
         updated_at: new Date().toISOString(),
       })
-      console.log(`  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${ilvl}${fetched ? ` (+${fetched} tooltips)` : ''}`)
+      const relicNote = artifact?.relics?.length ? `, ${artifact.relics.length} relic(s)` : ''
+      const legNote = fixedLegendaries ? `, ${fixedLegendaries} legendary→${LEGENDARY_ILVL}` : ''
+      console.log(
+        `  ✓ ${player} — ${sheet.race} ${sheet.spec} ${sheet.class}, ilvl ${ilvl}${legNote}${relicNote}${fetched ? ` (+${fetched} tooltips)` : ''}`,
+      )
     } catch (e) {
       console.warn(`  ✗ ${player}: ${e.message}`)
     }
