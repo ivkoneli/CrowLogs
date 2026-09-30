@@ -1,15 +1,58 @@
 import { useMemo, useState } from 'react'
-import { RAIDS } from '../lib/raids.js'
+import { RAIDS, MAIN_RAIDS, OTHER_RAIDS } from '../lib/raids.js'
 import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
 import logo from '../CrowsLogo.jpg'
 
 const KNOWN_RAID_NAMES = RAIDS.map((r) => r.name)
 
+// One collapsible raid → boss list. Shared by the main sections and the
+// "Other" drawer so both render identically.
+function RaidGroup({ raid, fights, selection, isOpen, onToggle, onSelectBoss }) {
+  const counts = bossCounts(fights, raid.name)
+  return (
+    <div className="raid-group">
+      <button className="raid-header" onClick={() => onToggle(raid.name)}>
+        <span className={`chevron ${isOpen ? 'open' : ''}`}>▸</span>
+        <span>{raid.name}</span>
+      </button>
+      {isOpen && (
+        <ul className="boss-list">
+          {raid.bosses.map((boss) => {
+            const active =
+              selection?.view === 'boss' &&
+              selection.boss === boss &&
+              selection.raid === raid.name
+            const count = counts[boss] || 0
+            return (
+              <li key={boss}>
+                <button
+                  className={`boss-item ${active ? 'active' : ''}`}
+                  onClick={() => onSelectBoss(raid.name, boss)}
+                >
+                  <span className="boss-name">{boss}</span>
+                  <span className={`boss-count ${count ? '' : 'zero'}`}>{count}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport }) {
   const [query, setQuery] = useState('')
-  const [openRaids, setOpenRaids] = useState(() => new Set(RAIDS.map((r) => r.name)))
+  // Current progression starts expanded; everything under "Other" starts collapsed.
+  const [openRaids, setOpenRaids] = useState(() => new Set(MAIN_RAIDS.map((r) => r.name)))
+  const [otherOpen, setOtherOpen] = useState(false)
 
-  const raids = useMemo(() => [...RAIDS, ...extraRaids(fights, KNOWN_RAID_NAMES)], [fights])
+  // Retired raids plus any raid not in the registry (unrecognized encounters,
+  // target dummies) share the "Other" drawer.
+  const otherGroups = useMemo(
+    () => [...OTHER_RAIDS, ...extraRaids(fights, KNOWN_RAID_NAMES)],
+    [fights],
+  )
 
   const matches = useMemo(
     () => (query ? searchPlayers(fights, query).slice(0, 8) : []),
@@ -61,40 +104,44 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
       </div>
 
       <nav className="raid-nav">
-        {raids.map((raid) => {
-          const counts = bossCounts(fights, raid.name)
-          const isOpen = openRaids.has(raid.name)
-          return (
-            <div key={raid.name} className="raid-group">
-              <button className="raid-header" onClick={() => toggleRaid(raid.name)}>
-                <span className={`chevron ${isOpen ? 'open' : ''}`}>▸</span>
-                <span>{raid.name}</span>
-              </button>
-              {isOpen && (
-                <ul className="boss-list">
-                  {raid.bosses.map((boss) => {
-                    const active =
-                      selection?.view === 'boss' &&
-                      selection.boss === boss &&
-                      selection.raid === raid.name
-                    const count = counts[boss] || 0
-                    return (
-                      <li key={boss}>
-                        <button
-                          className={`boss-item ${active ? 'active' : ''}`}
-                          onClick={() => onSelectBoss(raid.name, boss)}
-                        >
-                          <span className="boss-name">{boss}</span>
-                          <span className={`boss-count ${count ? '' : 'zero'}`}>{count}</span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-          )
-        })}
+        {MAIN_RAIDS.map((raid) => (
+          <RaidGroup
+            key={raid.name}
+            raid={raid}
+            fights={fights}
+            selection={selection}
+            isOpen={openRaids.has(raid.name)}
+            onToggle={toggleRaid}
+            onSelectBoss={onSelectBoss}
+          />
+        ))}
+
+        {otherGroups.length > 0 && (
+          <div className="other-section">
+            <button
+              className="raid-header other-header"
+              onClick={() => setOtherOpen((v) => !v)}
+            >
+              <span className={`chevron ${otherOpen ? 'open' : ''}`}>▸</span>
+              <span>Other</span>
+            </button>
+            {otherOpen && (
+              <div className="other-body">
+                {otherGroups.map((raid) => (
+                  <RaidGroup
+                    key={raid.name}
+                    raid={raid}
+                    fights={fights}
+                    selection={selection}
+                    isOpen={openRaids.has(raid.name)}
+                    onToggle={toggleRaid}
+                    onSelectBoss={onSelectBoss}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
     </aside>
   )

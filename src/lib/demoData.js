@@ -6,7 +6,7 @@ import { RAIDS } from './raids.js'
 import { roleOf } from './classes.js'
 import { formatDay } from '../parser.js'
 
-const HIGHMAUL = RAIDS[0].bosses
+const HIGHMAUL = RAIDS.find((r) => r.name === 'Highmaul').bosses
 
 // [name, skill multiplier, class, spec, ilvl, faction, talentColumns(1-3 per row)]
 const DEMO_PLAYERS = [

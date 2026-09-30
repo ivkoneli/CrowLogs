@@ -267,6 +267,32 @@ code {
   opacity: 0.35;
 }
 
+/* "Other" drawer: retired raids + unrecognized encounters, tucked below the
+   current progression sections and collapsed by default. */
+.other-section {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+.other-header {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.other-body {
+  padding-left: 0.4rem;
+}
+.other-body .raid-header {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.other-body .raid-header:hover {
+  color: var(--text);
+}
+
 /* ---------- topbar ---------- */
 .topbar {
   display: flex;
