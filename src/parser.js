@@ -158,6 +158,22 @@ function eventsInWindow(events, loTs, hiTs) {
 }
 
 // Aggregate one encounter window into per-player records.
+// A geared player soloing (or duoing) an old boss is not raid data, but it lands on the
+// same leaderboard and buries real pulls: on a genuine 20-man kill the top player does
+// ~12% of raid damage, while a solo run gives them 100% of it at several times the DPS.
+//
+// Participant count is the reliable signal, NOT duration. The solo clears that polluted
+// Highmaul ran 8s to 186s — a duration cutoff caught under half of them — but every one
+// had exactly two players. Real pulls in this data never drop below five participants,
+// and a boss attempted by one or two people is not a raid pull at any length.
+const SOLO_MAX_PLAYERS = 2
+
+function isSoloClear(recs) {
+  const players = new Set()
+  for (const r of recs) if (!r.pet) players.add(r.player)
+  return players.size > 0 && players.size <= SOLO_MAX_PLAYERS
+}
+
 function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endMs, events, petOwners, petBaseOwners }) {
   const players = new Map()
   const lusts = [] // { name, ts } — Bloodlust/Heroism/Time Warp casts this fight
@@ -439,7 +455,9 @@ export function createLogParser() {
       const winLo = Number.isFinite(seg.startMs) ? seg.startMs - 20000 : -Infinity
       const winHi = Number.isFinite(seg.endMs) ? seg.endMs : Infinity
       const segEvents = eventsInWindow(events, winLo, winHi)
-      for (const rec of buildRecords({ ...seg, events: segEvents, petOwners, petBaseOwners })) records.push(rec)
+      const segRecords = buildRecords({ ...seg, events: segEvents, petOwners, petBaseOwners })
+      // Skip solo/duo trash clears rather than letting them outrank real raid pulls.
+      if (!isSoloClear(segRecords)) for (const rec of segRecords) records.push(rec)
       report((s + 1) / segTotal)
     }
     return records

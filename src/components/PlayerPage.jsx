@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RAIDS } from '../lib/raids.js'
+import { MAIN_RAIDS } from '../lib/raids.js'
 import { playerSummary, playerProfile, playerLogs } from '../lib/rankings.js'
 import { formatDps, formatDuration } from '../parser.js'
 import { classColor, specsOf, specIconUrl } from '../lib/classes.js'
@@ -281,7 +281,7 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
                   healLabel={rankSpec ? healLabelFor(rankSpec) : 'Healing'}
                 />
               </div>
-              {RAIDS.map((raid) => (
+              {MAIN_RAIDS.map((raid) => (
                 <RaidRankCard
                   key={raid.name}
                   fights={fights}
