@@ -111,9 +111,9 @@ export function MeterRow({
         {ilvl == null ? (
           '—'
         ) : ilvlIsLive ? (
-          // Not captured on this pull — shown muted with a '~' so a drifting current
-          // value is never mistaken for the gear they actually wore.
-          <span className="ilvl-live" title="Current armory item level — not captured on this pull">
+          // Not captured on this pull, so shown muted with a '~': a drifting current
+          // value must never be mistaken for the gear they actually wore.
+          <span className="ilvl-live" title="Live data, not captured at pull">
             ~{ilvl}
           </span>
         ) : (

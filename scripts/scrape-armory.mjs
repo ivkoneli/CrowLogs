@@ -39,12 +39,26 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1`
 const dbHeaders = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
 
+// PostgREST silently caps a select at 1000 rows, so this pages until a short page
+// comes back. Without it the scraper only ever saw the players in the first 1000
+// fights — 30 of 110 raiders were never scraped at all, and their ilvl stayed blank
+// site-wide no matter how often this ran. (Same cap `getFights` pages past in store.js.)
+const PAGE = 1000
+
 async function dbSelectPlayers() {
-  const res = await fetch(`${REST}/fights?select=player,pet`, { headers: dbHeaders })
-  if (!res.ok) throw new Error(`select fights: HTTP ${res.status} — ${await res.text()}`)
+  const rows = []
+  for (let offset = 0; ; offset += PAGE) {
+    const res = await fetch(`${REST}/fights?select=player,pet&order=id&offset=${offset}&limit=${PAGE}`, {
+      headers: dbHeaders,
+    })
+    if (!res.ok) throw new Error(`select fights: HTTP ${res.status} — ${await res.text()}`)
+    const page = await res.json()
+    rows.push(...page)
+    if (page.length < PAGE) break
+  }
   // Skip pet rows (e.g. an unfolded "Water Elemental") — they aren't armory characters,
   // so scraping them just wastes a request and logs a spurious not-found error.
-  return [...new Set((await res.json()).filter((r) => !r.pet).map((r) => r.player))]
+  return [...new Set(rows.filter((r) => !r.pet).map((r) => r.player))]
 }
 
 // Existing stored gear per character key — used to reuse gems/enchants for items whose
