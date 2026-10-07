@@ -2360,7 +2360,7 @@ img.icon-slot.trinket {
 /* Fixed columns so paging/toggling only swaps the content, never re-flows widths. */
 .mp-meter {
   table-layout: fixed;
-  min-width: 840px; /* scrolls inside .table-scroll on narrow screens */
+  min-width: 860px; /* scrolls inside .table-scroll on narrow screens */
 }
 .mp-col-dungeon {
   width: 300px;
@@ -2375,7 +2375,7 @@ img.icon-slot.trinket {
   width: 84px;
 }
 .mp-col-day {
-  width: 70px;
+  width: 96px;
 }
 .mp-meter .name-cell {
   width: auto;

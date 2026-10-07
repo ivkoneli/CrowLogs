@@ -96,13 +96,13 @@ export function formatRunTime(ms) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
 }
 
-// "2026-10-07" → "Oct 7, 2026", or "Oct 7" with { short: true } (parsed as a plain date,
-// never shifted by timezone).
-export function formatRunDay(day, { short = false } = {}) {
+// "2026-10-07" → "10/7/2026" (month first, like the Tauri armory), or "Oct 7, 2026" with
+// { long: true } for tooltips. Parsed as a plain date, never shifted by timezone.
+export function formatRunDay(day, { long = false } = {}) {
   const [y, mo, d] = (day || '').split('-').map(Number)
   if (!y) return day || ''
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return short ? `${MONTHS[mo - 1]} ${d}` : `${MONTHS[mo - 1]} ${d}, ${y}`
+  return long ? `${MONTHS[mo - 1]} ${d}, ${y}` : `${mo}/${d}/${y}`
 }
 
 // Players seen in any M+ run whose name starts with `query` (case-insensitive), for the

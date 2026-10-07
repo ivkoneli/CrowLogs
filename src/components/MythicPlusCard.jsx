@@ -120,8 +120,8 @@ function RunCells({ run, selfName, realm, onSelectPlayer }) {
       <td>
         <Party party={run.party} selfName={selfName} realm={realm} onSelectPlayer={onSelectPlayer} />
       </td>
-      <td className="num muted mp-day" title={formatRunDay(run.day)}>
-        {formatRunDay(run.day, { short: true })}
+      <td className="num muted mp-day" title={formatRunDay(run.day, { long: true })}>
+        {formatRunDay(run.day)}
       </td>
     </>
   )

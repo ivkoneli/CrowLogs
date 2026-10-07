@@ -34,11 +34,20 @@ CROPS = {
 
 
 # Wide banners for the best-runs table: the dungeon cell's whole background (fixed size,
-# so every name sits on the same strip whatever its length). Same art, a 4.5:1 crop.
-# armory map id -> (banner instance id, crop center y fraction)
-BANNER_W, BANNER_H = 864, 192  # 2x the on-page 432x96 max
+# so every name sits on the same strip whatever its length). The page fades each strip
+# out to the right, so the crop puts the dungeon's signature feature on the LEFT.
+# armory map id -> (banner instance id, crop start x, crop width, center y (fractions), flip)
+BANNER_W, BANNER_H = 864, 192  # 2x the on-page size
 BANNERS = {
-    197: (1456, 0.40),  # Eye of Azshara — serpent + storm across the strip
+    197: (1456, 0.00, 1.00, 0.40, False),  # Eye of Azshara — serpent + storm
+    198: (1466, 0.14, 0.80, 0.56, False),  # Darkheart Thicket — corrupted portal
+    199: (1501, 0.12, 0.80, 0.28, False),  # Black Rook Hold — raven crest
+    200: (1477, 0.14, 0.80, 0.40, False),  # Halls of Valor — winged statue
+    206: (1458, 0.12, 0.80, 0.60, False),  # Neltharion's Lair — lava river
+    207: (1493, 0.00, 0.80, 0.30, False),  # Vault of the Wardens — the Warden
+    208: (1492, 0.22, 0.78, 0.40, False),  # Maw of Souls — drake skull
+    209: (1516, 0.28, 0.72, 0.32, False),  # The Arcway — arcane orbs
+    210: (1571, 0.20, 0.80, 0.45, True),   # Court of Stars — palace, mirrored onto the left
 }
 
 
@@ -50,12 +59,16 @@ def fetch(src):
 def make_banners():
     out = os.path.join(OUT, 'banner')
     os.makedirs(out, exist_ok=True)
-    for map_id, (src, cy) in BANNERS.items():
+    for map_id, (src, x0f, wf, cy, flip) in BANNERS.items():
         im = fetch(src)
         w, h = im.size
-        ch = round(w * BANNER_H / BANNER_W)  # full width, 4.5:1 strip
+        cw = round(w * wf)
+        x0 = min(max(round(w * x0f), 0), w - cw)
+        ch = round(cw * BANNER_H / BANNER_W)
         y0 = min(max(int(cy * h - ch / 2), 0), h - ch)
-        b = im.crop((0, y0, w, y0 + ch)).resize((BANNER_W, BANNER_H), Image.LANCZOS)
+        b = im.crop((x0, y0, x0 + cw, y0 + ch)).resize((BANNER_W, BANNER_H), Image.LANCZOS)
+        if flip:
+            b = b.transpose(Image.FLIP_LEFT_RIGHT)
         b = ImageEnhance.Contrast(b).enhance(1.08)
         path = os.path.join(out, f'{map_id}.webp')
         b.save(path, 'WEBP', quality=82, method=6)

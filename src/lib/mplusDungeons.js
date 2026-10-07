@@ -10,14 +10,14 @@
 // each dungeon's look (Azshara's sea, Halls' gold, the Arcway's arcane purple, …).
 export const MPLUS_DUNGEONS = [
   { id: 197, name: 'Eye of Azshara', colors: ['#14607e', '#3fc6d1'], banner: true },
-  { id: 198, name: 'Darkheart Thicket', colors: ['#3d5a1e', '#8fbf3a'] },
-  { id: 199, name: 'Black Rook Hold', colors: ['#3c4654', '#93a3b8'] },
-  { id: 200, name: 'Halls of Valor', colors: ['#8a6410', '#f2c94c'] },
-  { id: 206, name: "Neltharion's Lair", colors: ['#8a3512', '#f08a3c'] },
-  { id: 207, name: 'Vault of the Wardens', colors: ['#1f6b2a', '#6ee05a'] },
-  { id: 208, name: 'Maw of Souls', colors: ['#24486e', '#7fb3e0'] },
-  { id: 209, name: 'The Arcway', colors: ['#5a1f86', '#c77dff'] },
-  { id: 210, name: 'Court of Stars', colors: ['#27307f', '#7c8cff'] },
+  { id: 198, name: 'Darkheart Thicket', colors: ['#3d5a1e', '#8fbf3a'], banner: true },
+  { id: 199, name: 'Black Rook Hold', colors: ['#3c4654', '#93a3b8'], banner: true },
+  { id: 200, name: 'Halls of Valor', colors: ['#8a6410', '#f2c94c'], banner: true },
+  { id: 206, name: "Neltharion's Lair", colors: ['#8a3512', '#f08a3c'], banner: true },
+  { id: 207, name: 'Vault of the Wardens', colors: ['#1f6b2a', '#6ee05a'], banner: true },
+  { id: 208, name: 'Maw of Souls', colors: ['#24486e', '#7fb3e0'], banner: true },
+  { id: 209, name: 'The Arcway', colors: ['#5a1f86', '#c77dff'], banner: true },
+  { id: 210, name: 'Court of Stars', colors: ['#27307f', '#7c8cff'], banner: true },
 ]
 
 // Realm slug used in fight `player` keys ("Name-evermoon") ↔ armory realm string.
