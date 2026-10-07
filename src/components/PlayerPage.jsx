@@ -8,6 +8,7 @@ import TalentStrip from './TalentStrip.jsx'
 import FactionIcon from './FactionIcon.jsx'
 import { SpecRaceSlots } from './IconSlots.jsx'
 import PlayerGear from './PlayerGear.jsx'
+import MythicPlusCard from './MythicPlusCard.jsx'
 
 // Difficulty sections inside the Rankings tab (hardest first).
 const DIFF_TABS = ['Mythic', 'Heroic', 'Normal', 'LFR']
@@ -122,7 +123,7 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
   )
 }
 
-export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, onUpdateProfile }) {
+export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, onSelectPlayer, onUpdateProfile }) {
   const [tab, setTab] = useState('rankings')
   const [diff, setDiff] = useState('Mythic')
   const [histMetric, setHistMetric] = useState('dps')
@@ -295,6 +296,9 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
                   onSelectBoss={onSelectBoss}
                 />
               ))}
+              {/* M+ comes from the Tauri armory mirror, not logs, so the difficulty /
+                  spec / metric controls above don't apply to it. */}
+              <MythicPlusCard key={player} player={player} klass={profile.class} onSelectPlayer={onSelectPlayer} />
             </>
           )}
 

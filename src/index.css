@@ -2326,3 +2326,173 @@ img.icon-slot.trinket {
   opacity: 0.45;
   font-style: italic;
 }
+
+/* ---------- Mythic+ card (profile) ---------- */
+.mp-head {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.mp-head-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.mp-view-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.15rem;
+}
+/* Fixed columns so paging/toggling only swaps the content, never re-flows widths. */
+.mp-meter {
+  table-layout: fixed;
+  min-width: 760px; /* scrolls inside .table-scroll on narrow screens */
+}
+.mp-col-dungeon {
+  width: 182px;
+}
+.mp-col-key {
+  width: 54px;
+}
+.mp-col-time {
+  width: 104px;
+}
+.mp-col-affixes {
+  width: 84px;
+}
+.mp-col-day {
+  width: 70px;
+}
+.mp-meter .name-cell {
+  width: auto;
+}
+.mp-meter thead th,
+.mp-meter td {
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+}
+.mp-meter .name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-key {
+  color: var(--accent-2);
+}
+.mp-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mp-time > span {
+  display: inline-block;
+  min-width: 3.4rem;
+}
+.mp-medal {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+  margin-left: 0.3rem;
+}
+.mp-depleted {
+  fill: rgba(224, 122, 122, 0.12);
+  stroke: #e07a7a;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.mp-affixes {
+  white-space: nowrap;
+}
+.mp-affix {
+  width: 21px;
+  height: 21px;
+  border-radius: 4px;
+  margin-right: 3px;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+}
+.mp-party {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.mp-party-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.65rem;
+}
+.mp-day {
+  white-space: nowrap;
+}
+.mp-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.mp-member-name.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.mp-member-name.link:hover {
+  text-decoration: underline;
+}
+.mp-member.self .mp-member-name {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.mp-role {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.mp-role.tank {
+  fill: #7fb8e6;
+}
+.mp-role.healer {
+  fill: #6fd38f;
+}
+.mp-empty {
+  padding: 1.2rem 0.5rem;
+}
+.mp-pager {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.9rem;
+}
+.mp-page {
+  min-width: 2rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.mp-page:hover:not(:disabled):not(.on) {
+  border-color: var(--accent);
+}
+.mp-page.on {
+  background: var(--highlight);
+  border-color: var(--highlight);
+  color: #042430;
+}
+.mp-page:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mp-page-gap {
+  color: var(--muted);
+  padding: 0.25rem 0.2rem;
+}

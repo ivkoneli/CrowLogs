@@ -91,3 +91,30 @@ create table app_config (
   updated_at timestamptz default now()
 );
 alter table app_config enable row level security;
+
+-- Mythic+ (challenge mode) runs scraped from the Tauri armory leaderboards by
+-- scripts/scrape-mythic-plus.mjs (hourly GitHub Action). Tauri's leaderboard keeps EVERY
+-- run, but only as one huge per-dungeon page, so we mirror it here and the profile asks
+-- for one player's runs with an indexed array lookup instead of re-downloading ~170 MB.
+-- Written only by the scraper (service-role key); public read-only like the other tables.
+create table if not exists mplus_runs (
+  -- sha1 of realm|map|day|level|exact time|sorted party. Tauri has no run id, and rank
+  -- shifts as new runs land, so the id is built only from fields that never change.
+  id text primary key,
+  realm text not null,
+  map_id int not null,
+  dungeon text not null,
+  level int not null,
+  time_ms int,                      -- exact clear time; null only if Tauri sent none
+  medal smallint not null,          -- 3 = gold (+3), 2 = silver (+2), 1 = bronze (+1), 0 = depleted
+  affixes jsonb,                    -- [{ name, icon }]
+  party jsonb not null,             -- [{ name, class, role }], role = tank | healer | dps
+  members text[] not null,          -- lowercased party names: the player-search key
+  day date not null,                -- completion day (Tauri gives no time of day)
+  first_seen timestamptz not null default now() -- first scrape that saw it; orders same-day runs
+);
+create index if not exists mplus_runs_members_idx on mplus_runs using gin (members);
+create index if not exists mplus_runs_realm_day_idx on mplus_runs (realm, day desc);
+alter table mplus_runs enable row level security;
+drop policy if exists "public read mplus" on mplus_runs;
+create policy "public read mplus" on mplus_runs for select using (true);

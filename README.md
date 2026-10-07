@@ -10,6 +10,8 @@ the Tauri armory.
 
 - **Per-boss leaderboards** by difficulty and spec, ranked on DPS or HPS.
 - **Player profiles** — rankings, log history, talents, and full equipment (gems & enchants).
+- **Mythic+** on every profile — best run per dungeon plus the full key history, mirrored
+  hourly from the Tauri armory's challenge-mode leaderboards.
 - **Optional companion addon** (CrowLogsHelper) freezes each pull's exact spec/talents/gear,
   so old logs keep the build you actually ran.
 - **Open contribution** — no accounts; anyone can import a log and the rankings update for all.

@@ -267,6 +267,7 @@ export default function App() {
               player={selection.player}
               onSelectBoss={onSelectBoss}
               onSelectLog={onSelectLog}
+              onSelectPlayer={onSelectPlayer}
               onUpdateProfile={onUpdateProfile}
             />
           )}
