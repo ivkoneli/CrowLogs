@@ -2360,10 +2360,10 @@ img.icon-slot.trinket {
 /* Fixed columns so paging/toggling only swaps the content, never re-flows widths. */
 .mp-meter {
   table-layout: fixed;
-  min-width: 760px; /* scrolls inside .table-scroll on narrow screens */
+  min-width: 840px; /* scrolls inside .table-scroll on narrow screens */
 }
 .mp-col-dungeon {
-  width: 216px;
+  width: 300px;
 }
 .mp-col-key {
   width: 54px;
@@ -2408,24 +2408,34 @@ img.icon-slot.trinket {
 .mp-meter td.mp-banner-cell {
   padding-top: 0.35rem;
   padding-bottom: 0.35rem;
+  padding-right: 0;
 }
 .mp-banner {
+  position: relative;
   height: 48px;
   width: 100%;
   display: flex;
   align-items: center;
   padding: 0 0.75rem;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background-size: cover;
-  background-position: center;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
 }
-.mp-banner.empty {
+/* The art lives on a layer behind the name so only the picture fades: solid on the
+   left, dissolving into the card's purple toward the key column. */
+.mp-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px 0 0 8px;
+  background-image: var(--mp-banner);
+  background-size: cover;
+  background-position: left center;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 45%, rgba(0, 0, 0, 0.55) 72%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 45%, rgba(0, 0, 0, 0.55) 72%, transparent 100%);
+}
+.mp-banner.empty::before {
   filter: grayscale(0.85) brightness(0.6);
 }
 .mp-banner-name {
+  position: relative; /* above the faded art */
   color: #fff;
   font-weight: 800;
   font-size: 1.02rem;

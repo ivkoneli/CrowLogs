@@ -246,7 +246,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
                     // changes where it starts or ends) with the name outlined on top.
                     <div
                       className={`mp-banner ${run ? '' : 'empty'}`}
-                      style={{ backgroundImage: `url(${dungeonBannerUrl(dungeon.id)})` }}
+                      style={{ '--mp-banner': `url(${dungeonBannerUrl(dungeon.id)})` }}
                     >
                       <span className="mp-banner-name">{dungeon.name}</span>
                     </div>
