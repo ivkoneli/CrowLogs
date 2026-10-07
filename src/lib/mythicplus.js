@@ -99,3 +99,21 @@ export function formatRunDay(day, { short = false } = {}) {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return short ? `${MONTHS[mo - 1]} ${d}` : `${MONTHS[mo - 1]} ${d}, ${y}`
 }
+
+// Players seen in any M+ run whose name starts with `query` (case-insensitive), for the
+// sidebar search — this is how someone with no imported raid logs can still be found.
+// Returns [{ player: "Name-realmslug", name, class, runs }], most active first.
+export async function searchMplusPlayers(query, limit = 8) {
+  const q = (query || '').trim().toLowerCase()
+  if (!supabase || q.length < 2) return []
+  // Escape LIKE wildcards so a typed % or _ is matched literally.
+  const pattern = `${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`
+  const { data, error } = await supabase
+    .from('mplus_players')
+    .select('realm, name, class, runs')
+    .like('name_lower', pattern)
+    .order('runs', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return (data || []).map((p) => ({ player: memberPlayerKey(p.name, p.realm), name: p.name, class: p.class, runs: p.runs }))
+}

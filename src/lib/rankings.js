@@ -84,8 +84,25 @@ export function searchPlayers(fights, query) {
 
 // Character info for a player, gathered from their fight records (which the
 // armory cache enriches). Picks the first non-empty value for each field.
-export function playerProfile(fights, player) {
+// `character` is the player's armory cache row: used directly when they have no fights
+// at all (e.g. found through the M+ leaderboards), so "Update profile" still fills the
+// header and gear for someone who has never been in an imported log.
+export function playerProfile(fights, player, character = null) {
   const recs = fights.filter((f) => f.player === player)
+  if (!recs.length && character) {
+    return {
+      class: character.class ?? null,
+      spec: character.spec ?? null,
+      race: character.race ?? null,
+      gender: character.gender ?? null,
+      faction: character.faction ?? null,
+      guild: character.guild ?? null,
+      ilvl: character.ilvl ?? null,
+      specIcon: character.spec_icon ?? null,
+      talents: character.talents || [],
+      gear: character.gear || [],
+    }
+  }
   const first = (k) => {
     for (const r of recs) if (r[k] != null && r[k] !== '') return r[k]
     return null

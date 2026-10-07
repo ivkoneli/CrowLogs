@@ -179,6 +179,16 @@ code {
   background: var(--accent);
   cursor: pointer;
 }
+.search-tag {
+  margin-left: 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  vertical-align: middle;
+}
 .no-match {
   font-size: 0.8rem;
   color: var(--muted);

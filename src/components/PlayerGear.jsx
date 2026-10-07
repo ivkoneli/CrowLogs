@@ -1,7 +1,34 @@
 // Fixed right-hand stats panel on the player page: equipped gear (live from the
 // armory cache, refreshed by "Update profile"). Falls back to demo data until a
 // real scrape has run for this character.
+import { useEffect, useState } from 'react'
 import { DEMO_GEAR, DEMO_ARTIFACT, ARTIFACT_RELIC_SLOTS } from '../lib/demoGear.js'
+
+const ICON_BASE = 'https://legion-static.tauri.hu/images/icons/large/'
+
+// The on-demand "Update profile" scrape (edge function) stores relics as bare item ids,
+// because the id -> name/icon map is too big to bundle there. Resolve those here from the
+// same RELIC_ICONS map, loaded lazily only when a profile actually has unnamed relics.
+function useResolvedRelics(relics) {
+  const needs = (relics || []).some((r) => r?.id && !r.name)
+  const [map, setMap] = useState(null)
+  useEffect(() => {
+    if (!needs || map) return
+    let cancelled = false
+    import('../lib/itemIcons.js')
+      .then((m) => !cancelled && setMap(m.RELIC_ICONS))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [needs, map])
+  if (!needs || !map) return relics || []
+  return relics.map((r) => {
+    if (!r?.id || r.name) return r
+    const meta = map[String(r.id)]
+    return meta ? { ...r, name: meta.name, icon: meta.icon ? `${ICON_BASE}${meta.icon}.png` : null } : r
+  })
+}
 
 const QUALITY_COLOR = {
   artifact: '#e6cc80',
@@ -59,10 +86,9 @@ export default function PlayerGear({ profile }) {
   // Relics hang off the artifact weapon; a Legion artifact always has three slots, so
   // pad to three and let unfilled ones render as empty.
   const artifact = items.find((g) => g.quality === 'artifact') || null
-  const relics = Array.from(
-    { length: ARTIFACT_RELIC_SLOTS },
-    (_, i) => (artifact?.relics || [])[i] || DEMO_ARTIFACT[i],
-  )
+  const resolved = useResolvedRelics(artifact?.relics)
+  // Exactly three slots: a Legion artifact never has more, whatever the data says.
+  const relics = Array.from({ length: ARTIFACT_RELIC_SLOTS }, (_, i) => resolved[i] || DEMO_ARTIFACT[i])
 
   const withIlvl = items.filter((g) => g.ilvl > 1)
   const avg = isDemo
@@ -103,7 +129,9 @@ export default function PlayerGear({ profile }) {
                 </span>
               </td>
               <td className="num gear-ilvl-cell">{g.ilvl}</td>
-              <td className="gear-gems"><Gems gems={g.gems} /></td>
+              {/* An artifact's sockets are its relics — listed under Artifact, never as gems
+                  (rows saved by older scrapes may still carry them in `gems`). */}
+              <td className="gear-gems">{g.quality !== 'artifact' && <Gems gems={g.gems} />}</td>
               <td className="gear-ench"><Enchant enchant={g.enchant} /></td>
             </tr>
           ))}

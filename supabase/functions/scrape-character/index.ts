@@ -20,6 +20,10 @@
 
 const ARMORY_AJAX = 'https://tauriwow.com/sys/mod/armory.php'
 
+// Tauri's armory reports every Legion legendary as ilvl 910; on this server they are 895.
+// Same correction as scripts/scrape-armory.mjs (keep the two in sync).
+const LEGENDARY_ILVL = 895
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const TAURI_COOKIE = Deno.env.get('TAURI_COOKIE') || ''
@@ -183,11 +187,15 @@ const SLOT_ORDER = [
 const QUALITY_BY_RARITY: Record<number, string> = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
 
 type Gem = { icon: string; stat: string }
+// Relic name + icon are resolved in the browser from RELIC_ICONS (src/lib/itemIcons.js,
+// ~360 KB — too big to bundle here), so this function only stores the item id.
+type Relic = { id: number; name: string | null; icon: string | null }
 type GearItem = {
   slot: string; id: number; quality: string; icon: string; name: string; ilvl: number
   // `instanceId` is internal (used to fetch the per-item tooltip) and stripped before
   // storage; gems/enchant are filled from that tooltip (see scrapeOne).
   instanceId: string | null; gems?: Gem[]; enchant?: string | null
+  artifactName?: string | null; relics?: Relic[]
 }
 
 const GEAR_ROW_RE =
@@ -272,6 +280,28 @@ function parseTooltip(html: string): { gems: Gem[]; enchant: string | null } {
   return { gems, enchant }
 }
 
+// The artifact page embeds its data as a JS literal:
+//   var artifactData = [{"class":11,"relics":[{"item":137339,…}],"artifactName":"…"}]
+// The item tooltip only labels relic sockets "Relic Enhancement", so the equipped relics'
+// item ids can ONLY be had from here. Mirrors parseArtifact in scripts/scrape-armory.mjs.
+function parseArtifact(html: string): { artifactName: string | null; relics: Relic[] } | null {
+  const m = html.match(/var\s+artifactData\s*=\s*(\[[\s\S]*?\]);/)
+  if (!m) return null
+  let data: unknown
+  try {
+    data = JSON.parse(m[1])
+  } catch {
+    return null
+  }
+  // deno-lint-ignore no-explicit-any
+  const a: any = Array.isArray(data) ? data[0] : data
+  if (!a) return null
+  const relics: Relic[] = (a.relics || [])
+    .filter((r: { item?: number }) => r && r.item)
+    .map((r: { item: number }) => ({ id: +r.item, name: null, icon: null }))
+  return { artifactName: a.artifactName || null, relics }
+}
+
 async function upsertCharacters(rows: unknown[]) {
   if (rows.length === 0) return
   const res = await fetch(`${REST}/characters`, {
@@ -295,6 +325,25 @@ async function scrapeOne(player: string, cookie: string) {
   const { hash, specIcon } = parseTalents(talentsRaw, sheet.spec)
   const talents = decodeTalents(hash)
   const gear = parseGear(sheetRaw)
+  // Legendaries come off the armory at 910 but are 895 here; fix the rows first so the
+  // average computed below is built from corrected numbers.
+  let fixedLegendaries = 0
+  for (const g of gear) {
+    if (g.quality === 'legendary' && g.ilvl !== LEGENDARY_ILVL) {
+      g.ilvl = LEGENDARY_ILVL
+      fixedLegendaries += 1
+    }
+  }
+  // Equipped relics hang off the artifact weapon. Its tooltip "sockets" ARE the relic
+  // slots, so they must never be stored as gems (cleared below).
+  try {
+    const artifact = parseArtifact(await fetchArmory('character-artifact/ajax', name, realm, cookie))
+    const weapon = gear.find((g) => g.quality === 'artifact')
+    if (artifact && weapon) {
+      weapon.artifactName = artifact.artifactName
+      weapon.relics = artifact.relics
+    }
+  } catch { /* no artifact page (never picked one up) — not an error */ }
   // Gems/enchants live only in each item's tooltip — one extra request per equipped
   // item. We do this on the on-demand "Update profile" path (here), NOT in the nightly
   // CI scrape (scrape-armory.mjs), so the batch run stays light. A failed tooltip just
@@ -305,7 +354,8 @@ async function scrapeOne(player: string, cookie: string) {
       if (!it.instanceId) return
       try {
         const { gems, enchant } = parseTooltip(await fetchTooltip(it.instanceId, realm, pcs, cookie))
-        it.gems = gems
+        // On an artifact those "sockets" are relic slots — kept in `relics`, not `gems`.
+        it.gems = it.quality === 'artifact' ? [] : gems
         it.enchant = enchant
       } catch { /* tooltip fetch/parse failed — leave gems/enchant unset */ }
     }),
@@ -314,8 +364,9 @@ async function scrapeOne(player: string, cookie: string) {
   // re-fetching tooltips for unchanged gear (gems/enchants only change with the instance id).
   // Tauri's armory mis-reports Demon Hunter ilvl, so compute it ourselves: the mean of
   // equipped item levels (DH dual-wields, so there's no 2H double-count to worry about).
+  // Same when a legendary was corrected, since the sheet's average was built from 910s.
   let ilvl = sheet.ilvl
-  if (sheet.class === 'Demon Hunter') {
+  if (sheet.class === 'Demon Hunter' || fixedLegendaries) {
     const eq = gear.filter((g) => g.ilvl > 1)
     if (eq.length) ilvl = Math.round(eq.reduce((s, g) => s + g.ilvl, 0) / eq.length)
   }

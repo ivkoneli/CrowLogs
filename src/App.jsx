@@ -264,6 +264,7 @@ export default function App() {
           {!loading && selection.view === 'player' && (
             <PlayerPage
               fights={fights}
+              characters={characters}
               player={selection.player}
               onSelectBoss={onSelectBoss}
               onSelectLog={onSelectLog}

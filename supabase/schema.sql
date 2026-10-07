@@ -118,3 +118,50 @@ create index if not exists mplus_runs_realm_day_idx on mplus_runs (realm, day de
 alter table mplus_runs enable row level security;
 drop policy if exists "public read mplus" on mplus_runs;
 create policy "public read mplus" on mplus_runs for select using (true);
+
+-- Every player seen in any M+ run, so the sidebar search can find people who have no
+-- imported raid logs. Kept in sync by a trigger on mplus_runs (no scraper changes needed);
+-- name_lower + text_pattern_ops makes the prefix search (`like 'abc%'`) an index lookup.
+create table if not exists mplus_players (
+  realm text not null,
+  name_lower text not null,
+  name text not null,
+  class text,
+  runs int not null default 0,
+  last_day date,
+  primary key (realm, name_lower)
+);
+create index if not exists mplus_players_prefix_idx on mplus_players (name_lower text_pattern_ops);
+alter table mplus_players enable row level security;
+drop policy if exists "public read mplus players" on mplus_players;
+create policy "public read mplus players" on mplus_players for select using (true);
+
+create or replace function mplus_players_track() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into mplus_players as mp (realm, name_lower, name, class, runs, last_day)
+  select new.realm, lower(p->>'name'), p->>'name', p->>'class', 1, new.day
+  from jsonb_array_elements(new.party) p
+  where coalesce(p->>'name', '') <> ''
+  on conflict (realm, name_lower) do update
+    set runs = mp.runs + 1,
+        last_day = greatest(mp.last_day, excluded.last_day),
+        name = excluded.name,
+        class = coalesce(excluded.class, mp.class);
+  return new;
+end $$;
+drop trigger if exists mplus_runs_track_players on mplus_runs;
+create trigger mplus_runs_track_players after insert on mplus_runs
+  for each row execute function mplus_players_track();
+
+-- One-time backfill from runs already stored (safe to re-run: it rebuilds the counts).
+insert into mplus_players (realm, name_lower, name, class, runs, last_day)
+select r.realm, lower(p->>'name'),
+       (array_agg(p->>'name' order by r.day desc))[1],
+       (array_agg(p->>'class' order by r.day desc))[1],
+       count(*), max(r.day)
+from mplus_runs r, jsonb_array_elements(r.party) p
+where coalesce(p->>'name', '') <> ''
+group by r.realm, lower(p->>'name')
+on conflict (realm, name_lower) do update
+  set runs = excluded.runs, last_day = excluded.last_day, name = excluded.name, class = excluded.class;

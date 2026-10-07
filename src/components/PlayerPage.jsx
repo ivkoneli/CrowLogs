@@ -9,6 +9,7 @@ import FactionIcon from './FactionIcon.jsx'
 import { SpecRaceSlots } from './IconSlots.jsx'
 import PlayerGear from './PlayerGear.jsx'
 import MythicPlusCard from './MythicPlusCard.jsx'
+import { charKey } from '../lib/characters.js'
 
 // Difficulty sections inside the Rankings tab (hardest first).
 const DIFF_TABS = ['Mythic', 'Heroic', 'Normal', 'LFR']
@@ -123,7 +124,7 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
   )
 }
 
-export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, onSelectPlayer, onUpdateProfile }) {
+export default function PlayerPage({ fights, characters, player, onSelectBoss, onSelectLog, onSelectPlayer, onUpdateProfile }) {
   const [tab, setTab] = useState('rankings')
   const [diff, setDiff] = useState('Mythic')
   const [histMetric, setHistMetric] = useState('dps')
@@ -132,7 +133,11 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
   const [rankSpec, setRankSpec] = useState(null) // null = All specs
   const [updating, setUpdating] = useState(false)
   const [updateMsg, setUpdateMsg] = useState(null) // { ok, msg }
-  const profile = playerProfile(fights, player)
+  const character = useMemo(
+    () => (characters || []).find((c) => charKey(c.key || c.name) === charKey(player)) || null,
+    [characters, player],
+  )
+  const profile = playerProfile(fights, player, character)
   const logs = useMemo(() => playerLogs(fights, player), [fights, player])
 
   // All of the class's specs (not just ones with logs) for the spec sub-tabs.

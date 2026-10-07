@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { RAIDS, MAIN_RAIDS, OTHER_RAIDS } from '../lib/raids.js'
 import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
+import { searchMplusPlayers } from '../lib/mythicplus.js'
+import { classColor } from '../lib/classes.js'
 import logo from '../CrowsLogo.jpg'
 
 const KNOWN_RAID_NAMES = RAIDS.map((r) => r.name)
@@ -54,10 +56,43 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
     [fights],
   )
 
-  const matches = useMemo(
+  // Players from imported logs match instantly (any part of the name)…
+  const logMatches = useMemo(
     () => (query ? searchPlayers(fights, query).slice(0, 8) : []),
     [fights, query],
   )
+  // …and anyone on the M+ leaderboards is looked up server-side by name prefix, so a
+  // player with no raid logs can still be found. Debounced; stale answers are dropped.
+  const [mplus, setMplus] = useState({ q: '', list: [] })
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) return
+    let cancelled = false
+    const t = setTimeout(() => {
+      searchMplusPlayers(q)
+        .then((list) => !cancelled && setMplus({ q, list }))
+        .catch(() => !cancelled && setMplus({ q, list: [] }))
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [query])
+  const mplusPending = query.trim().length >= 2 && mplus.q !== query.trim()
+
+  const matches = useMemo(() => {
+    const out = logMatches.map((p) => ({ player: p, label: p, class: null, mplusOnly: false }))
+    const seen = new Set(logMatches.map((p) => p.toLowerCase()))
+    if (mplus.q && mplus.q === query.trim()) {
+      for (const m of mplus.list) {
+        if (out.length >= 8) break
+        if (seen.has(m.player.toLowerCase())) continue
+        seen.add(m.player.toLowerCase())
+        out.push({ player: m.player, label: m.player, class: m.class, mplusOnly: true })
+      }
+    }
+    return out
+  }, [logMatches, mplus, query])
 
   const toggleRaid = (name) => {
     setOpenRaids((prev) => {
@@ -87,20 +122,25 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
         />
         {matches.length > 0 && (
           <ul className="search-results">
-            {matches.map((p) => (
+            {matches.map((m) => (
               <li
-                key={p}
+                key={m.player}
                 onClick={() => {
-                  onSelectPlayer(p)
+                  onSelectPlayer(m.player)
                   setQuery('')
                 }}
               >
-                {p}
+                <span style={m.class ? { color: classColor(m.class) } : undefined}>{m.label}</span>
+                {m.mplusOnly && (
+                  <span className="search-tag" title="Found on the Mythic+ leaderboards">
+                    M+
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         )}
-        {query && matches.length === 0 && <p className="no-match">No player found</p>}
+        {query && matches.length === 0 && !mplusPending && <p className="no-match">No player found</p>}
       </div>
 
       <nav className="raid-nav">
