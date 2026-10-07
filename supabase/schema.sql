@@ -165,3 +165,54 @@ where coalesce(p->>'name', '') <> ''
 group by r.realm, lower(p->>'name')
 on conflict (realm, name_lower) do update
   set runs = excluded.runs, last_day = excluded.last_day, name = excluded.name, class = excluded.class;
+
+-- Fuzzy player search: names are compared accent-free ("Rúne", "Rùne" and "Rune" all fold
+-- to "rune"; ø→o, æ→ae, ß→ss …), as substrings, with a trigram similarity fallback for typos.
+create extension if not exists unaccent with schema extensions;
+create extension if not exists pg_trgm with schema extensions;
+
+-- unaccent() is only STABLE; this wrapper pins the dictionary so it can feed an index.
+create or replace function name_fold(t text) returns text
+language sql immutable parallel safe set search_path = extensions, public as $$
+  select lower(extensions.unaccent('extensions.unaccent'::regdictionary, coalesce(t, '')))
+$$;
+
+alter table mplus_players add column if not exists name_fold text;
+update mplus_players set name_fold = name_fold(name) where name_fold is distinct from name_fold(name);
+create index if not exists mplus_players_fold_trgm_idx
+  on mplus_players using gin (name_fold extensions.gin_trgm_ops);
+
+-- Keep name_fold filled for players the insert trigger adds or renames.
+create or replace function mplus_players_fold() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  new.name_fold := name_fold(new.name);
+  return new;
+end $$;
+drop trigger if exists mplus_players_set_fold on mplus_players;
+create trigger mplus_players_set_fold before insert or update of name on mplus_players
+  for each row execute function mplus_players_fold();
+
+-- search_mplus_players('rune') → best matches first: name starts with the query, then
+-- contains it, then (3+ letters) trigram-similar names, each tier ordered by activity.
+create or replace function search_mplus_players(q text, lim int default 8)
+returns table (realm text, name text, class text, runs int)
+language sql stable set search_path = extensions, public as $$
+  with p as (
+    select name_fold(q) as fq,
+           replace(replace(replace(name_fold(q), '\', '\'), '%', '\%'), '_', '\_') as esc
+  )
+  select m.realm, m.name, m.class, m.runs
+  from mplus_players m, p
+  where length(p.fq) >= 2
+    and (m.name_fold like '%' || p.esc || '%'
+         or (length(p.fq) >= 3 and similarity(m.name_fold, p.fq) >= 0.35))
+  order by
+    case when m.name_fold like p.esc || '%' then 0
+         when m.name_fold like '%' || p.esc || '%' then 1
+         else 2 end,
+    similarity(m.name_fold, p.fq) desc,
+    m.runs desc
+  limit least(greatest(lim, 1), 25)
+$$;
+grant execute on function search_mplus_players(text, int) to anon, authenticated;

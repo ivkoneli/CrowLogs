@@ -14,6 +14,7 @@ import {
   memberPlayerKey,
 } from '../lib/mythicplus.js'
 import { classColor } from '../lib/classes.js'
+import { selectionToHash, inAppClick } from '../lib/router.js'
 
 const PAGE_SIZE = 10
 const ROLE_ORDER = { tank: 0, healer: 1, dps: 2 }
@@ -77,14 +78,16 @@ function Member({ p, selfName, realm, onSelectPlayer }) {
           {p.name}
         </span>
       ) : (
-        <button
+        // A real link, so right-click → "Open in new tab" and middle-click work.
+        <a
           className="mp-member-name link"
           style={{ color: classColor(p.class) }}
-          onClick={() => onSelectPlayer(memberPlayerKey(p.name, realm))}
+          href={selectionToHash({ view: 'player', player: memberPlayerKey(p.name, realm) })}
+          onClick={inAppClick(() => onSelectPlayer(memberPlayerKey(p.name, realm)))}
           title={`Open ${p.name}'s profile`}
         >
           {p.name}
-        </button>
+        </a>
       )}
     </span>
   )

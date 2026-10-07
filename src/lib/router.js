@@ -26,6 +26,17 @@ export function selectionToHash(sel) {
   }
 }
 
+// Click handler for an in-app <a href={selectionToHash(…)}>: a plain left click navigates
+// in place (no reload), while ctrl/cmd/shift/middle click and the right-click menu keep
+// the browser's own behaviour — "open in new tab" works because the href is real.
+export function inAppClick(navigate) {
+  return (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    navigate()
+  }
+}
+
 export function selectionFromHash(hash) {
   // Split BEFORE decoding so encoded slashes inside a name don't create segments.
   const parts = (hash || '')

@@ -105,20 +105,15 @@ export function formatRunDay(day, { long = false } = {}) {
   return long ? `${MONTHS[mo - 1]} ${d}, ${y}` : `${mo}/${d}/${y}`
 }
 
-// Players seen in any M+ run whose name starts with `query` (case-insensitive), for the
+// Players seen in any M+ run matching `query` (accent-free, fuzzy), for the
 // sidebar search — this is how someone with no imported raid logs can still be found.
 // Returns [{ player: "Name-realmslug", name, class, runs }], most active first.
 export async function searchMplusPlayers(query, limit = 8) {
-  const q = (query || '').trim().toLowerCase()
+  const q = (query || '').trim()
   if (!supabase || q.length < 2) return []
-  // Escape LIKE wildcards so a typed % or _ is matched literally.
-  const pattern = `${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`
-  const { data, error } = await supabase
-    .from('mplus_players')
-    .select('realm, name, class, runs')
-    .like('name_lower', pattern)
-    .order('runs', { ascending: false })
-    .limit(limit)
+  // Fuzzy on the server (search_mplus_players in schema.sql): accent-free, substring, and
+  // trigram-similar for typos, so "bomba" finds "Bömba". Best matches come back first.
+  const { data, error } = await supabase.rpc('search_mplus_players', { q, lim: limit })
   if (error) throw error
   return (data || []).map((p) => ({ player: memberPlayerKey(p.name, p.realm), name: p.name, class: p.class, runs: p.runs }))
 }

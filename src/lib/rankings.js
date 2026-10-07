@@ -73,13 +73,32 @@ export function bossCounts(fights, raid, difficulty) {
 }
 
 // Unique player names, optionally filtered by a search query.
+// Accent-free lowercase form for search, matching the database's name_fold(): "Rúne",
+// "Rùne" and "Rune" all fold to "rune". NFD splits off combining accents; the map covers
+// letters that aren't a base letter + accent (ø, æ, ß, …).
+const FOLD_MAP = { ø: 'o', đ: 'd', ð: 'd', ł: 'l', æ: 'ae', œ: 'oe', ß: 'ss', þ: 'th', ı: 'i' }
+export function foldName(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[øđðłæœßþı]/g, (c) => FOLD_MAP[c])
+}
+
+// Players from imported logs whose name contains the query, ignoring accents. Names that
+// START with it come first, then alphabetical.
 export function searchPlayers(fights, query) {
   const seen = new Set()
   for (const f of fights) seen.add(f.player)
   const all = [...seen].sort((a, b) => a.localeCompare(b))
   if (!query) return all
-  const q = query.toLowerCase()
-  return all.filter((p) => p.toLowerCase().includes(q))
+  const q = foldName(query.trim())
+  const hits = []
+  for (const p of all) {
+    const i = foldName(p).indexOf(q)
+    if (i !== -1) hits.push({ p, starts: i === 0 })
+  }
+  return hits.sort((a, b) => Number(b.starts) - Number(a.starts)).map((h) => h.p)
 }
 
 // Character info for a player, gathered from their fight records (which the

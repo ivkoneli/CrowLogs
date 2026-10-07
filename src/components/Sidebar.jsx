@@ -3,6 +3,7 @@ import { RAIDS, MAIN_RAIDS, OTHER_RAIDS } from '../lib/raids.js'
 import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
 import { searchMplusPlayers } from '../lib/mythicplus.js'
 import { classColor } from '../lib/classes.js'
+import { selectionToHash, inAppClick } from '../lib/router.js'
 import logo from '../CrowsLogo.jpg'
 
 const KNOWN_RAID_NAMES = RAIDS.map((r) => r.name)
@@ -123,19 +124,21 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
         {matches.length > 0 && (
           <ul className="search-results">
             {matches.map((m) => (
-              <li
-                key={m.player}
-                onClick={() => {
-                  onSelectPlayer(m.player)
-                  setQuery('')
-                }}
-              >
-                <span style={m.class ? { color: classColor(m.class) } : undefined}>{m.label}</span>
-                {m.mplusOnly && (
-                  <span className="search-tag" title="Found on the Mythic+ leaderboards">
-                    M+
-                  </span>
-                )}
+              <li key={m.player}>
+                <a
+                  href={selectionToHash({ view: 'player', player: m.player })}
+                  onClick={inAppClick(() => {
+                    onSelectPlayer(m.player)
+                    setQuery('')
+                  })}
+                >
+                  <span style={m.class ? { color: classColor(m.class) } : undefined}>{m.label}</span>
+                  {m.mplusOnly && (
+                    <span className="search-tag" title="Found on the Mythic+ leaderboards">
+                      M+
+                    </span>
+                  )}
+                </a>
               </li>
             ))}
           </ul>
