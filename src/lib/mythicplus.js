@@ -21,6 +21,8 @@ export const MEDALS = {
 // Small dungeon icon (public/dungeons/<mapId>.webp, made by scripts/gen-dungeon-icons.py).
 export const dungeonIconUrl = (mapId) => `${import.meta.env.BASE_URL}dungeons/${mapId}.webp`
 
+export const dungeonBannerUrl = (mapId) => `${import.meta.env.BASE_URL}dungeons/banner/${mapId}.webp`
+
 export const medalIconUrl = (key) => `https://tauriwow.com/sys/img/armory/images/challengemode_medal_${key}.png`
 
 // "Ivkomdfk-evermoon" → { name: 'Ivkomdfk', realm: '[EN] Evermoon' }

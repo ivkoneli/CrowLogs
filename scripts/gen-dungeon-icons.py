@@ -33,11 +33,39 @@ CROPS = {
 }
 
 
+# Wide banners for the best-runs table: the dungeon cell's whole background (fixed size,
+# so every name sits on the same strip whatever its length). Same art, a 4.5:1 crop.
+# armory map id -> (banner instance id, crop center y fraction)
+BANNER_W, BANNER_H = 864, 192  # 2x the on-page 432x96 max
+BANNERS = {
+    197: (1456, 0.40),  # Eye of Azshara — serpent + storm across the strip
+}
+
+
+def fetch(src):
+    req = urllib.request.Request(SRC.format(src), headers={'User-Agent': 'Mozilla/5.0'})
+    return Image.open(io.BytesIO(urllib.request.urlopen(req).read())).convert('RGB')
+
+
+def make_banners():
+    out = os.path.join(OUT, 'banner')
+    os.makedirs(out, exist_ok=True)
+    for map_id, (src, cy) in BANNERS.items():
+        im = fetch(src)
+        w, h = im.size
+        ch = round(w * BANNER_H / BANNER_W)  # full width, 4.5:1 strip
+        y0 = min(max(int(cy * h - ch / 2), 0), h - ch)
+        b = im.crop((0, y0, w, y0 + ch)).resize((BANNER_W, BANNER_H), Image.LANCZOS)
+        b = ImageEnhance.Contrast(b).enhance(1.08)
+        path = os.path.join(out, f'{map_id}.webp')
+        b.save(path, 'WEBP', quality=82, method=6)
+        print(f'{path}  ({os.path.getsize(path)} bytes)')
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     for map_id, (src, cx, cy, side) in CROPS.items():
-        req = urllib.request.Request(SRC.format(src), headers={'User-Agent': 'Mozilla/5.0'})
-        im = Image.open(io.BytesIO(urllib.request.urlopen(req).read())).convert('RGB')
+        im = fetch(src)
         w, h = im.size
         x0 = min(max(int(cx * w - side / 2), 0), w - side)
         y0 = min(max(int(cy * h - side / 2), 0), h - side)
@@ -49,6 +77,7 @@ def main():
         path = os.path.join(OUT, f'{map_id}.webp')
         ic.save(path, 'WEBP', quality=88, method=6)
         print(f'{path}  ({os.path.getsize(path)} bytes)')
+    make_banners()
 
 
 if __name__ == '__main__':

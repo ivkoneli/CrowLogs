@@ -4,10 +4,12 @@
 // Tauri armory map ids, in the armory's own order. Karazhan (227/234), Cathedral (233)
 // and Seat (239) exist on the armory but aren't implemented on the server yet — add them
 // here when they open and both the scraper and the profile pick them up.
+// `banner: true` = has a wide art strip (public/dungeons/banner/<id>.webp) used as the whole
+// dungeon cell's background in the best-runs table instead of icon + colored bar.
 // `colors` = [dark, light] gradient for the dungeon's bar on the profile, picked from
 // each dungeon's look (Azshara's sea, Halls' gold, the Arcway's arcane purple, …).
 export const MPLUS_DUNGEONS = [
-  { id: 197, name: 'Eye of Azshara', colors: ['#14607e', '#3fc6d1'] },
+  { id: 197, name: 'Eye of Azshara', colors: ['#14607e', '#3fc6d1'], banner: true },
   { id: 198, name: 'Darkheart Thicket', colors: ['#3d5a1e', '#8fbf3a'] },
   { id: 199, name: 'Black Rook Hold', colors: ['#3c4654', '#93a3b8'] },
   { id: 200, name: 'Halls of Valor', colors: ['#8a6410', '#f2c94c'] },

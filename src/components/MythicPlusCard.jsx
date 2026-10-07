@@ -4,6 +4,7 @@ import {
   MEDALS,
   medalIconUrl,
   dungeonIconUrl,
+  dungeonBannerUrl,
   getPlayerRuns,
   bestRuns,
   sortRunsByRecent,
@@ -239,7 +240,17 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
           <tbody>
             {best.map(({ dungeon, run }) => (
               <tr key={dungeon.id}>
-                <td className="name-cell">
+                <td className={`name-cell ${dungeon.banner ? 'mp-banner-cell' : ''}`}>
+                  {dungeon.banner ? (
+                    // Art strip filling the whole cell (fixed size, so the name length never
+                    // changes where it starts or ends) with the name outlined on top.
+                    <div
+                      className={`mp-banner ${run ? '' : 'empty'}`}
+                      style={{ backgroundImage: `url(${dungeonBannerUrl(dungeon.id)})` }}
+                    >
+                      <span className="mp-banner-name">{dungeon.name}</span>
+                    </div>
+                  ) : (
                   <div className="bar-wrap">
                     <div
                       className="bar"
@@ -251,6 +262,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
                     <DungeonIcon mapId={dungeon.id} />
                     <span className="name">{dungeon.name}</span>
                   </div>
+                  )}
                 </td>
                 {run ? (
                   <RunCells run={run} {...cellProps} />
