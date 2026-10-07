@@ -2363,7 +2363,7 @@ img.icon-slot.trinket {
   min-width: 760px; /* scrolls inside .table-scroll on narrow screens */
 }
 .mp-col-dungeon {
-  width: 182px;
+  width: 216px;
 }
 .mp-col-key {
   width: 54px;
@@ -2389,6 +2389,27 @@ img.icon-slot.trinket {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.mp-dicon {
+  position: relative; /* sits above the level bar */
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-left: 0.3rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  object-fit: cover;
+}
+.mp-meter .bar-wrap .name,
+.mp-dname .name {
+  padding-left: 0.45rem;
+}
+.mp-dname {
+  display: flex;
+  align-items: center;
+  min-height: 1.7rem;
+  min-width: 0;
 }
 .mp-key {
   color: var(--accent-2);

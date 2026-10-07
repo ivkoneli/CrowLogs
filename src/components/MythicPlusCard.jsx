@@ -3,6 +3,7 @@ import {
   MPLUS_DUNGEONS,
   MEDALS,
   medalIconUrl,
+  dungeonIconUrl,
   getPlayerRuns,
   bestRuns,
   sortRunsByRecent,
@@ -15,6 +16,19 @@ import { classColor } from '../lib/classes.js'
 
 const PAGE_SIZE = 10
 const ROLE_ORDER = { tank: 0, healer: 1, dps: 2 }
+
+function DungeonIcon({ mapId }) {
+  return (
+    <img
+      className="mp-dicon"
+      src={dungeonIconUrl(mapId)}
+      alt=""
+      onError={(e) => {
+        e.currentTarget.style.visibility = 'hidden'
+      }}
+    />
+  )
+}
 
 // Tauri's party markers: a shield before the tank, a plus before the healer.
 function RoleIcon({ role }) {
@@ -234,6 +248,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
                         background: `linear-gradient(90deg, ${dungeon.colors[0]}, ${dungeon.colors[1]})`,
                       }}
                     />
+                    <DungeonIcon mapId={dungeon.id} />
                     <span className="name">{dungeon.name}</span>
                   </div>
                 </td>
@@ -265,7 +280,10 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
               {pageRuns.map((run) => (
                 <tr key={run.id}>
                   <td className="name-cell">
-                    <span className="name">{run.dungeon}</span>
+                    <div className="mp-dname">
+                      <DungeonIcon mapId={run.map_id} />
+                      <span className="name">{run.dungeon}</span>
+                    </div>
                   </td>
                   <RunCells run={run} {...cellProps} />
                 </tr>
