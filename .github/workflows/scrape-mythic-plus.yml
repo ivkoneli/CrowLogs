@@ -1,0 +1,41 @@
+name: Scrape Mythic+ leaderboards
+
+# Mirrors Tauri's armory Challenge Mode leaderboards into the Supabase `mplus_runs`
+# table, so a player's M+ best runs + history are one indexed lookup on the profile.
+# Hourly; after the first backfill each run only checks the last couple of days of runs.
+# Same TAURI_COOKIE / SUPABASE_SERVICE_KEY secrets as the armory scrape. Fails on purpose
+# (GitHub emails the repo owner) if the cookie stops working or Tauri changes the page.
+# NOTE: GitHub auto-disables scheduled workflows after 60 days with no repo commits.
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: 'Re-check every run on the boards (backfill / repair), not just recent days'
+        type: boolean
+        default: false
+
+# Never let two scrapes overlap (a slow run + the next hour's trigger).
+concurrency:
+  group: scrape-mythic-plus
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/scrape-mythic-plus.mjs
+        env:
+          TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DEFAULT_REALM: '[EN] Evermoon'
+          MPLUS_FULL: ${{ inputs.full && '1' || '' }}
