@@ -4,16 +4,18 @@
 // Tauri armory map ids, in the armory's own order. Karazhan (227/234), Cathedral (233)
 // and Seat (239) exist on the armory but aren't implemented on the server yet — add them
 // here when they open and both the scraper and the profile pick them up.
+// `colors` = [dark, light] gradient for the dungeon's bar on the profile, picked from
+// each dungeon's look (Azshara's sea, Halls' gold, the Arcway's arcane purple, …).
 export const MPLUS_DUNGEONS = [
-  { id: 197, name: 'Eye of Azshara' },
-  { id: 198, name: 'Darkheart Thicket' },
-  { id: 199, name: 'Black Rook Hold' },
-  { id: 200, name: 'Halls of Valor' },
-  { id: 206, name: "Neltharion's Lair" },
-  { id: 207, name: 'Vault of the Wardens' },
-  { id: 208, name: 'Maw of Souls' },
-  { id: 209, name: 'The Arcway' },
-  { id: 210, name: 'Court of Stars' },
+  { id: 197, name: 'Eye of Azshara', colors: ['#14607e', '#3fc6d1'] },
+  { id: 198, name: 'Darkheart Thicket', colors: ['#3d5a1e', '#8fbf3a'] },
+  { id: 199, name: 'Black Rook Hold', colors: ['#3c4654', '#93a3b8'] },
+  { id: 200, name: 'Halls of Valor', colors: ['#8a6410', '#f2c94c'] },
+  { id: 206, name: "Neltharion's Lair", colors: ['#8a3512', '#f08a3c'] },
+  { id: 207, name: 'Vault of the Wardens', colors: ['#1f6b2a', '#6ee05a'] },
+  { id: 208, name: 'Maw of Souls', colors: ['#24486e', '#7fb3e0'] },
+  { id: 209, name: 'The Arcway', colors: ['#5a1f86', '#c77dff'] },
+  { id: 210, name: 'Court of Stars', colors: ['#27307f', '#7c8cff'] },
 ]
 
 // Realm slug used in fight `player` keys ("Name-evermoon") ↔ armory realm string.

@@ -2416,13 +2416,8 @@ img.icon-slot.trinket {
 }
 .mp-party {
   display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-.mp-party-line {
-  display: flex;
   flex-wrap: wrap;
-  gap: 0 0.65rem;
+  gap: 0.1rem 0.7rem;
 }
 .mp-day {
   white-space: nowrap;

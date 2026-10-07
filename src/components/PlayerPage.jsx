@@ -298,7 +298,7 @@ export default function PlayerPage({ fights, player, onSelectBoss, onSelectLog, 
               ))}
               {/* M+ comes from the Tauri armory mirror, not logs, so the difficulty /
                   spec / metric controls above don't apply to it. */}
-              <MythicPlusCard key={player} player={player} klass={profile.class} onSelectPlayer={onSelectPlayer} />
+              <MythicPlusCard key={player} player={player} onSelectPlayer={onSelectPlayer} />
             </>
           )}
 

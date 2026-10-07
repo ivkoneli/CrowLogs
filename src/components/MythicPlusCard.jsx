@@ -75,23 +75,15 @@ function Member({ p, selfName, realm, onSelectPlayer }) {
   )
 }
 
-// Tank + healer on the first line, the dps on the second (Tauri's order), so every
-// row keeps the same two-line height instead of wrapping wherever a name runs long.
+// Tauri's order: tank, healer, then the dps, all on one line (wraps only when the
+// column is genuinely too narrow).
 function Party({ party, ...memberProps }) {
   const members = [...party].sort((a, b) => (ROLE_ORDER[a.role] ?? 2) - (ROLE_ORDER[b.role] ?? 2))
-  const lines = [members.filter((p) => p.role !== 'dps'), members.filter((p) => p.role === 'dps')]
   return (
     <div className="mp-party">
-      {lines.map(
-        (line, i) =>
-          line.length > 0 && (
-            <div key={i} className="mp-party-line">
-              {line.map((p) => (
-                <Member key={p.name} p={p} {...memberProps} />
-              ))}
-            </div>
-          ),
-      )}
+      {members.map((p) => (
+        <Member key={p.name} p={p} {...memberProps} />
+      ))}
     </div>
   )
 }
@@ -187,7 +179,7 @@ function Pager({ page, pages, onChange }) {
 // it) or the full run history, newest first, 10 per page. Paging and the Best/History
 // switch only re-render this card; the runs are fetched once per player. The parent keys
 // it by player, so opening another profile starts fresh on Best runs, page 1.
-export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
+export default function MythicPlusCard({ player, onSelectPlayer }) {
   const { name, realm } = splitPlayerKey(player)
   const selfName = name.toLowerCase()
   const [state, setState] = useState({ loading: true, runs: [], error: null })
@@ -211,7 +203,6 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
   const pageRuns = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const done = best.filter((b) => b.run).length
   const topLevel = Math.max(1, ...best.map((b) => b.run?.level || 0))
-  const barBg = klass ? `linear-gradient(90deg, ${classColor(klass)}33, ${classColor(klass)}cc)` : undefined
   const cellProps = { selfName, realm, onSelectPlayer }
 
   let body
@@ -238,7 +229,10 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
                   <div className="bar-wrap">
                     <div
                       className="bar"
-                      style={{ width: run ? `${(run.level / topLevel) * 100}%` : '0%', background: run ? barBg : undefined }}
+                      style={{
+                        width: run ? `${(run.level / topLevel) * 100}%` : '0%',
+                        background: `linear-gradient(90deg, ${dungeon.colors[0]}, ${dungeon.colors[1]})`,
+                      }}
                     />
                     <span className="name">{dungeon.name}</span>
                   </div>
