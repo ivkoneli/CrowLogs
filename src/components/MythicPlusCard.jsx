@@ -7,6 +7,9 @@ import {
   dungeonBannerUrl,
   getPlayerRuns,
   bestRuns,
+  runScore,
+  playerScore,
+  formatScore,
   sortRunsByRecent,
   formatRunTime,
   formatRunDay,
@@ -111,6 +114,7 @@ function RunCells({ run, selfName, realm, onSelectPlayer }) {
   return (
     <>
       <td className="num strong mp-key">+{run.level}</td>
+      <td className="num mp-score">{formatScore(runScore(run))}</td>
       <td className="mp-time">
         <span className={run.medal ? '' : 'muted'}>{formatRunTime(run.time_ms)}</span>
         <Medal medal={run.medal} />
@@ -135,6 +139,7 @@ function Cols() {
     <colgroup>
       <col className="mp-col-dungeon" />
       <col className="mp-col-key" />
+      <col className="mp-col-score" />
       <col className="mp-col-time" />
       <col className="mp-col-affixes" />
       <col />
@@ -149,6 +154,9 @@ function Head() {
       <tr>
         <th>Dungeon</th>
         <th className="num">Key</th>
+        <th className="num" title="M+ score: 50 + 7.5 per key level, ± up to 12.5 for the clear time">
+          Score
+        </th>
         <th>Time</th>
         <th>Affixes</th>
         <th>Party</th>
@@ -193,8 +201,8 @@ function Pager({ page, pages, onChange }) {
   )
 }
 
-// The profile's Mythic+ section: best run per dungeon (highest key, then fastest time on
-// it) or the full run history, newest first, 10 per page. Paging and the Best/History
+// The profile's Mythic+ section: best run per dungeon (highest score, then fastest time)
+// with the player's total M+ score, or the full run history, newest first, 10 per page. Paging and the Best/History
 // switch only re-render this card; the runs are fetched once per player. The parent keys
 // it by player, so opening another profile starts fresh on Best runs, page 1.
 export default function MythicPlusCard({ player, onSelectPlayer }) {
@@ -220,6 +228,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
   const pages = Math.max(1, Math.ceil(history.length / PAGE_SIZE))
   const pageRuns = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const done = best.filter((b) => b.run).length
+  const total = playerScore(best)
   const topLevel = Math.max(1, ...best.map((b) => b.run?.level || 0))
   const cellProps = { selfName, realm, onSelectPlayer }
 
@@ -272,6 +281,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
                 ) : (
                   <>
                     <td className="num muted">—</td>
+                    <td className="num muted">—</td>
                     <td className="muted" colSpan={3}>
                       no run
                     </td>
@@ -314,7 +324,18 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
   return (
     <div className="player-card mp-card">
       <div className="card-head mp-head">
-        <h3>Mythic+</h3>
+        <h3 className="mp-title">
+          Mythic+
+          {!loading && !state.error && runs.length > 0 && (
+            <span
+              className="mp-total"
+              title="M+ score: the sum of the best run score in each dungeon (same scoring as Tauri Achievements)"
+            >
+              <span className="mp-total-label">Score</span>
+              {formatScore(total)}
+            </span>
+          )}
+        </h3>
         <div className="mp-head-right">
           {!loading && !state.error && (
             <span className="muted">

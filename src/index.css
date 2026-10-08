@@ -2366,13 +2366,16 @@ img.icon-slot.trinket {
 /* Fixed columns so paging/toggling only swaps the content, never re-flows widths. */
 .mp-meter {
   table-layout: fixed;
-  min-width: 860px; /* scrolls inside .table-scroll on narrow screens */
+  min-width: 920px; /* scrolls inside .table-scroll on narrow screens */
 }
 .mp-col-dungeon {
-  width: 300px;
+  width: 262px;
 }
 .mp-col-key {
   width: 54px;
+}
+.mp-col-score {
+  width: 66px;
 }
 .mp-col-time {
   width: 104px;
@@ -2381,7 +2384,7 @@ img.icon-slot.trinket {
   width: 84px;
 }
 .mp-col-day {
-  width: 96px;
+  width: 92px;
 }
 .mp-meter .name-cell {
   width: auto;
@@ -2462,6 +2465,36 @@ img.icon-slot.trinket {
   align-items: center;
   min-height: 1.7rem;
   min-width: 0;
+}
+.mp-score {
+  font-weight: 700;
+  color: #f2c94c;
+  font-variant-numeric: tabular-nums;
+}
+.mp-title {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.mp-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(242, 201, 76, 0.45);
+  background: rgba(242, 201, 76, 0.1);
+  color: #f2c94c;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.mp-total-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 .mp-key {
   color: var(--accent-2);

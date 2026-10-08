@@ -60,19 +60,42 @@ export async function getPlayerRuns(player) {
 }
 
 const timeOrInf = (r) => (r.time_ms == null ? Infinity : r.time_ms)
+const TIMER_BY_MAP = new Map(MPLUS_DUNGEONS.map((d) => [d.id, d.timer]))
 
-// One best run per dungeon: highest key, then fastest time on that key.
+// M+ score, same formula as tauriachievements.github.io/mythic-plus/scoring (verified
+// identical on all 41k of their scored runs):
+//   timed:    50 + 7.5 × level       + 12.5 × (1 − time ÷ timer)
+//   depleted: 50 + 7.5 × (level − 1) − 20   × (time ÷ timer − 1), never below 0
+// Rounded to one decimal. Null when the clear time or the dungeon's timer is unknown.
+export function runScore(run) {
+  const timer = TIMER_BY_MAP.get(run?.map_id)
+  if (!timer || run.time_ms == null) return null
+  const ratio = run.time_ms / 1000 / timer
+  const raw = ratio <= 1 ? 50 + 7.5 * run.level + 12.5 * (1 - ratio) : 50 + 7.5 * (run.level - 1) - 20 * (ratio - 1)
+  return Math.round(Math.max(0, raw) * 10) / 10
+}
+
+// One best run per dungeon: the highest-scoring one (ties: the faster clear). Score
+// decides, so a timed +11 beats a depleted +12 — the same rule as the score total.
 // Returns MPLUS_DUNGEONS order with `run: null` for dungeons never run.
 export function bestRuns(runs) {
   const best = new Map()
   for (const r of runs) {
     const cur = best.get(r.map_id)
-    if (!cur || r.level > cur.level || (r.level === cur.level && timeOrInf(r) < timeOrInf(cur))) {
-      best.set(r.map_id, r)
-    }
+    const s = runScore(r) ?? -1
+    const cs = cur ? (runScore(cur) ?? -1) : -1
+    if (!cur || s > cs || (s === cs && timeOrInf(r) < timeOrInf(cur))) best.set(r.map_id, r)
   }
   return MPLUS_DUNGEONS.map((d) => ({ dungeon: d, run: best.get(d.id) || null }))
 }
+
+// A player's M+ score: the sum of their best run score in each dungeon.
+export function playerScore(best) {
+  const total = best.reduce((sum, b) => sum + (b.run ? runScore(b.run) || 0 : 0), 0)
+  return Math.round(total * 10) / 10
+}
+
+export const formatScore = (s) => (s == null ? '—' : s.toFixed(1))
 
 // Most recent first. Tauri only gives the completion DAY, so same-day runs fall back
 // to when the hourly scraper first saw them, then to the higher key.
