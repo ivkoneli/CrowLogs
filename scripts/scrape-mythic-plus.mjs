@@ -166,23 +166,53 @@ async function latestDay(realm) {
   return (await res.json())[0]?.day || null
 }
 
+// Database writes run ONE AT A TIME even though boards download in parallel: every insert
+// fires the mplus_players trigger, and the same players appear in several dungeons, so two
+// concurrent inserts can lock those player rows in opposite orders and deadlock (Postgres
+// 40P01 — it killed whole dungeons' inserts in the hourly runs on 2026-10-08).
+let writeChain = Promise.resolve()
+function serialWrite(fn) {
+  const run = writeChain.then(fn, fn)
+  writeChain = run.catch(() => {})
+  return run
+}
+
+// POST to PostgREST, retrying a deadlock (40P01) a few times with a short backoff.
+async function postWithRetry(url, init, what) {
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, init)
+    if (res.ok) return res
+    const body = await res.text()
+    if (attempt < 4 && body.includes('40P01')) {
+      await new Promise((r) => setTimeout(r, 500 * attempt))
+      continue
+    }
+    throw new Error(`${what}: HTTP ${res.status} — ${body}`)
+  }
+}
+
 // Insert new runs only (existing ids are skipped); returns how many were actually new.
 async function insertRuns(rows) {
-  let inserted = 0
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const res = await fetch(`${REST}/mplus_runs?on_conflict=id&select=id`, {
-      method: 'POST',
-      headers: {
-        ...dbHeaders,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=ignore-duplicates,return=representation',
-      },
-      body: JSON.stringify(rows.slice(i, i + BATCH)),
-    })
-    if (!res.ok) throw new Error(`insert mplus_runs: HTTP ${res.status} — ${await res.text()}`)
-    inserted += (await res.json()).length
-  }
-  return inserted
+  return serialWrite(async () => {
+    let inserted = 0
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const res = await postWithRetry(
+        `${REST}/mplus_runs?on_conflict=id&select=id`,
+        {
+          method: 'POST',
+          headers: {
+            ...dbHeaders,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=ignore-duplicates,return=representation',
+          },
+          body: JSON.stringify(rows.slice(i, i + BATCH)),
+        },
+        'insert mplus_runs',
+      )
+      inserted += (await res.json()).length
+    }
+    return inserted
+  })
 }
 
 // Full-row upsert that UPDATES existing runs (used to write specs onto them). first_seen
