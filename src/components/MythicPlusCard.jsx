@@ -192,6 +192,60 @@ function Head() {
   )
 }
 
+const BEST_SORTS = [
+  { id: 'score', label: 'Highest score' },
+  { id: 'key', label: 'Highest key' },
+]
+
+// The "best runs" half of the view toggle, as a dropdown: picking a sort also switches to
+// the best-runs view. Closes on outside click and Escape.
+function BestSortDropdown({ active, sort, onPick }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => !ref.current?.contains(e.target) && setOpen(false)
+    const onKey = (e) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const current = BEST_SORTS.find((s) => s.id === sort) || BEST_SORTS[0]
+  return (
+    <div className="mp-sort" ref={ref}>
+      <button
+        className={`seg mp-sort-btn ${active ? 'on' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {current.label}
+        <span className={`mp-sort-caret ${open ? 'open' : ''}`}>▾</span>
+      </button>
+      {open && (
+        <ul className="mp-sort-menu" role="listbox">
+          {BEST_SORTS.map((s) => (
+            <li key={s.id} role="option" aria-selected={s.id === sort}>
+              <button
+                className={s.id === sort && active ? 'on' : ''}
+                onClick={() => {
+                  onPick(s.id)
+                  setOpen(false)
+                }}
+              >
+                {s.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // Page buttons: always first + last, plus a window around the current page.
 function pageList(page, pages) {
   const out = []
@@ -236,6 +290,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
   const selfName = name.toLowerCase()
   const [state, setState] = useState({ loading: true, runs: [], error: null })
   const [view, setView] = useState('best')
+  const [bestSort, setBestSort] = useState('score') // 'score' | 'key'
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -249,12 +304,14 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
   }, [player])
 
   const { loading, runs } = state
-  const best = useMemo(() => bestRuns(runs), [runs])
+  // The total is always built from the best SCORE per dungeon, whichever sort is shown.
+  const bestByScore = useMemo(() => bestRuns(runs, 'score'), [runs])
+  const best = useMemo(() => (bestSort === 'key' ? bestRuns(runs, 'key') : bestByScore), [runs, bestSort, bestByScore])
   const history = useMemo(() => sortRunsByRecent(runs), [runs])
   const pages = Math.max(1, Math.ceil(history.length / PAGE_SIZE))
   const pageRuns = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const done = best.filter((b) => b.run).length
-  const total = playerScore(best)
+  const total = playerScore(bestByScore)
   const topLevel = Math.max(1, ...best.map((b) => b.run?.level || 0))
   const cellProps = { selfName, realm, onSelectPlayer }
 
@@ -371,9 +428,18 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
             </span>
           )}
           <div className="mp-view-toggle">
-            <button className={`seg ${view === 'best' ? 'on' : ''}`} onClick={() => setView('best')}>
-              Best runs
-            </button>
+            {/* Absolutely positioned above the toggle, so the header keeps its height. */}
+            <span className="mp-sort-label" aria-hidden="true">
+              Sort by
+            </span>
+            <BestSortDropdown
+              active={view === 'best'}
+              sort={bestSort}
+              onPick={(s) => {
+                setBestSort(s)
+                setView('best')
+              }}
+            />
             <button className={`seg ${view === 'history' ? 'on' : ''}`} onClick={() => setView('history')}>
               History{runs.length ? ` (${runs.length})` : ''}
             </button>

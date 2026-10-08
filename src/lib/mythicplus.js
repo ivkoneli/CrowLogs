@@ -75,16 +75,24 @@ export function runScore(run) {
   return Math.round(Math.max(0, raw) * 10) / 10
 }
 
-// One best run per dungeon: the highest-scoring one (ties: the faster clear). Score
-// decides, so a timed +11 beats a depleted +12 — the same rule as the score total.
+// One best run per dungeon. `by`:
+//   'score' (default) — the highest-scoring run (ties: faster clear). A timed +11 beats a
+//                       depleted +12; this is the rule the player's score total is built on.
+//   'key'             — the highest key level, then the higher score on it (= faster clear).
 // Returns MPLUS_DUNGEONS order with `run: null` for dungeons never run.
-export function bestRuns(runs) {
+export function bestRuns(runs, by = 'score') {
   const best = new Map()
+  const better =
+    by === 'key'
+      ? (r, cur) => r.level > cur.level || (r.level === cur.level && (runScore(r) ?? -1) > (runScore(cur) ?? -1))
+      : (r, cur) => {
+          const s = runScore(r) ?? -1
+          const cs = runScore(cur) ?? -1
+          return s > cs || (s === cs && timeOrInf(r) < timeOrInf(cur))
+        }
   for (const r of runs) {
     const cur = best.get(r.map_id)
-    const s = runScore(r) ?? -1
-    const cs = cur ? (runScore(cur) ?? -1) : -1
-    if (!cur || s > cs || (s === cs && timeOrInf(r) < timeOrInf(cur))) best.set(r.map_id, r)
+    if (!cur || better(r, cur)) best.set(r.map_id, r)
   }
   return MPLUS_DUNGEONS.map((d) => ({ dungeon: d, run: best.get(d.id) || null }))
 }
