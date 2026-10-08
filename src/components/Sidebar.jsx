@@ -132,7 +132,9 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
                     setQuery('')
                   })}
                 >
-                  <span style={m.class ? { color: classColor(m.class) } : undefined}>{m.label}</span>
+                  <span className="search-name" title={m.label} style={m.class ? { color: classColor(m.class) } : undefined}>
+                    {m.label}
+                  </span>
                   {m.mplusOnly && (
                     <span className="search-tag" title="Found on the Mythic+ leaderboards">
                       M+

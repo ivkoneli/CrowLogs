@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   MPLUS_DUNGEONS,
   MEDALS,
@@ -96,12 +96,38 @@ function Member({ p, selfName, realm, onSelectPlayer }) {
   )
 }
 
-// Tauri's order: tank, healer, then the dps, all on one line (wraps only when the
-// column is genuinely too narrow).
+// Font sizes tried, largest first, until the whole party fits on one line.
+const PARTY_FONT_STEPS = ['0.84rem', '0.78rem', '0.73rem', '0.68rem', '0.64rem']
+
+// Keep `el`'s single line of names inside its cell: step the font down until it fits,
+// and only if even the smallest step overflows (very narrow screens) let it wrap.
+// Re-fits whenever the cell is resized.
+function useFitOneLine(ref) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      el.style.flexWrap = 'nowrap'
+      for (const size of PARTY_FONT_STEPS) {
+        el.style.fontSize = size
+        if (el.scrollWidth <= el.clientWidth + 1) return
+      }
+      el.style.flexWrap = 'wrap'
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el.parentElement || el)
+    return () => ro.disconnect()
+  }, [ref])
+}
+
+// Tauri's order: tank, healer, then the dps, on one line (see useFitOneLine).
 function Party({ party, ...memberProps }) {
   const members = [...party].sort((a, b) => (ROLE_ORDER[a.role] ?? 2) - (ROLE_ORDER[b.role] ?? 2))
+  const ref = useRef(null)
+  useFitOneLine(ref)
   return (
-    <div className="mp-party">
+    <div className="mp-party" ref={ref}>
       {members.map((p) => (
         <Member key={p.name} p={p} {...memberProps} />
       ))}
