@@ -9,6 +9,7 @@ import FactionIcon from './FactionIcon.jsx'
 import { SpecRaceSlots } from './IconSlots.jsx'
 import PlayerGear from './PlayerGear.jsx'
 import MythicPlusCard from './MythicPlusCard.jsx'
+import SpecTabs from './SpecTabs.jsx'
 import { charKey } from '../lib/characters.js'
 
 // Difficulty sections inside the Rankings tab (hardest first).
@@ -19,37 +20,6 @@ const rankClass = (rank) => {
   if (rank === 2) return 'silver'
   if (rank === 3) return 'bronze'
   return ''
-}
-
-// All | <spec> | … sub-tabs. `specs` is [{ spec, icon }]; `value` null = All.
-function SpecTabs({ specs, value, onChange }) {
-  return (
-    <div className="spec-tabs">
-      <button className={`seg ${value === null ? 'on' : ''}`} onClick={() => onChange(null)}>
-        All
-      </button>
-      {specs.map((s) => (
-        <button
-          key={s.spec}
-          className={`seg ${value === s.spec ? 'on' : ''}`}
-          onClick={() => onChange(s.spec)}
-          title={s.spec}
-        >
-          {s.icon && (
-            <img
-              className="spec-tab-icon"
-              src={s.icon}
-              alt=""
-              onError={(e) => {
-                e.currentTarget.style.display = 'none'
-              }}
-            />
-          )}
-          {s.spec}
-        </button>
-      ))}
-    </div>
-  )
 }
 
 // One raid's per-boss ranking for the selected difficulty + metric. `klass` colors
@@ -303,7 +273,7 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
               ))}
               {/* M+ comes from the Tauri armory mirror, not logs, so the difficulty /
                   spec / metric controls above don't apply to it. */}
-              <MythicPlusCard key={player} player={player} onSelectPlayer={onSelectPlayer} />
+              <MythicPlusCard key={player} player={player} klass={profile.class} onSelectPlayer={onSelectPlayer} />
             </>
           )}
 

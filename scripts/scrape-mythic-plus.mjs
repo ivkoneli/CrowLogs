@@ -23,6 +23,11 @@
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { MPLUS_DUNGEONS, DEFAULT_MPLUS_REALM } from '../src/lib/mplusDungeons.js'
+import { specsOf } from '../src/lib/classes.js'
+
+// Tauri's leaderboard has no spec, but tauriachievements.github.io publishes every run
+// with each member's spec (refreshed about once a day). Specs are matched from there.
+const TA_DATA = 'https://tauriachievements.github.io/mythic-plus-data'
 
 const { TAURI_COOKIE, SUPABASE_URL, SUPABASE_SERVICE_KEY, DEFAULT_REALM, MPLUS_FULL } = process.env
 const REALMS = (process.env.MPLUS_REALMS || DEFAULT_REALM || DEFAULT_MPLUS_REALM)
@@ -180,6 +185,105 @@ async function insertRuns(rows) {
   return inserted
 }
 
+// Full-row upsert that UPDATES existing runs (used to write specs onto them). first_seen
+// is never sent, so an update keeps it and the player-index insert trigger doesn't fire.
+async function updateRuns(rows) {
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const res = await fetch(`${REST}/mplus_runs?on_conflict=id`, {
+      method: 'POST',
+      headers: {
+        ...dbHeaders,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(rows.slice(i, i + BATCH)),
+    })
+    if (!res.ok) throw new Error(`update mplus_runs: HTTP ${res.status} — ${await res.text()}`)
+  }
+}
+
+// Every stored run whose specs aren't matched yet (all columns but first_seen).
+async function pendingSpecRuns(realm) {
+  const cols = 'id,realm,map_id,dungeon,level,time_ms,medal,affixes,party,members,day,specs_matched'
+  const out = []
+  for (let offset = 0; ; offset += 1000) {
+    const q = new URLSearchParams({ select: cols, realm: `eq.${realm}`, specs_matched: 'eq.false', order: 'id', offset: String(offset), limit: '1000' })
+    const res = await fetch(`${REST}/mplus_runs?${q}`, { headers: dbHeaders })
+    if (!res.ok) throw new Error(`pending specs: HTTP ${res.status} — ${await res.text()}`)
+    const page = await res.json()
+    out.push(...page)
+    if (page.length < 1000) break
+  }
+  return out
+}
+
+// ── SPECS ───────────────────────────────────────────────────────────────────
+// tauriachievements' data: index.json lists players ([name, realm, …]) and specs
+// ([{ class, name, role }]); <dungeon>.json has runs as
+// [level, clearMs, timestamp, score, affixIds, [[playerIndex, specIndex] × 5]].
+// Returns lookup(run) → Map(lowercased name → spec) for the matching run, or null.
+// No realm filter: Legion realms share groups, so an Evermoon board run can hold players
+// from [HU] Tauri. Dungeon + key + exact clear time + 3 shared names is specific enough.
+async function loadSpecSource() {
+  const get = async (path) => {
+    const res = await fetch(`${TA_DATA}/${path}`)
+    if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
+    return res.json()
+  }
+  const index = await get('index.json')
+  const byKey = new Map() // "mapId|level|clearMs" → [Map(name → spec)]
+  for (const d of index.dungeons) {
+    if (!MPLUS_DUNGEONS.some((x) => x.id === d.challengeId)) continue
+    const file = await get(`${d.id}.json`)
+    for (const r of file.runs) {
+      const specs = new Map()
+      for (const [pi, si] of r[5]) {
+        const p = index.players[pi]
+        const s = index.specs[si]
+        if (p && s) specs.set(p[0].toLowerCase(), s.name)
+      }
+      if (!specs.size) continue
+      const key = `${d.challengeId}|${r[0]}|${r[1]}`
+      const list = byKey.get(key) || []
+      list.push(specs)
+      byKey.set(key, list)
+    }
+  }
+  console.log(`  spec source: ${byKey.size} runs (tauriachievements, generated ${index.generatedAt})`)
+  return (run) => {
+    // Same dungeon, key and exact clear time; then the candidate sharing the most party
+    // names. Needs 3+ shared names: a renamed character can differ, a different group can't.
+    let best = null
+    let bestHits = 0
+    for (const specs of byKey.get(`${run.map_id}|${run.level}|${run.time_ms}`) || []) {
+      const hits = run.party.filter((p) => specs.has(p.name.toLowerCase())).length
+      if (hits > bestHits) {
+        best = specs
+        bestHits = hits
+      }
+    }
+    return bestHits >= 3 ? best : null
+  }
+}
+
+// The one spec a class can play in a role, or null when the role leaves a choice
+// (a Warrior tank is Protection; a Warrior dps could be Arms or Fury).
+function specFromRole(klass, role) {
+  const fits = specsOf(klass).filter((s) => s.role === role)
+  return fits.length === 1 ? fits[0].name : null
+}
+
+// Returns the run with party[].spec filled and specs_matched set. Matched specs win;
+// otherwise a spec the role decides; otherwise whatever was already stored.
+function withSpecs(run, lookup) {
+  const matched = lookup ? lookup(run) : null
+  const party = run.party.map((p) => ({
+    ...p,
+    spec: matched?.get(p.name.toLowerCase()) || specFromRole(p.class, p.role) || p.spec || null,
+  }))
+  return { ...run, party, specs_matched: !!matched }
+}
+
 // Run `fn` over `items` with at most `n` in flight.
 async function pool(items, n, fn) {
   let next = 0
@@ -201,6 +305,15 @@ async function main() {
       : null
     console.log(`\n${realm}: ${cutoff ? `incremental, runs since ${cutoff}` : 'full backfill'}`)
 
+    // Best effort: without the spec source, runs still land (with role-decided specs only)
+    // and stay pending, so a later scrape fills them in.
+    let lookup = null
+    try {
+      lookup = await loadSpecSource()
+    } catch (e) {
+      console.warn(`  spec source unavailable (${e.message}) — specs will be filled on a later run`)
+    }
+
     let seen = 0
     let sent = 0
     let added = 0
@@ -208,7 +321,9 @@ async function main() {
       try {
         const runs = parseBoard(await fetchBoard(realm, dungeon.id), realm, dungeon)
         // The same id twice in one insert makes Postgres reject the whole batch.
-        const fresh = [...new Map(runs.filter((r) => !cutoff || r.day >= cutoff).map((r) => [r.id, r])).values()]
+        const fresh = [
+          ...new Map(runs.filter((r) => !cutoff || r.day >= cutoff).map((r) => [r.id, withSpecs(r, lookup)])).values(),
+        ]
         const n = fresh.length ? await insertRuns(fresh) : 0
         seen += runs.length
         sent += fresh.length
@@ -220,6 +335,23 @@ async function main() {
       }
     })
     console.log(`  total: ${seen} on boards, ${sent} checked, ${added} new`)
+
+    // Specs for runs stored before they could be matched (the source updates daily).
+    try {
+      const pending = await pendingSpecRuns(realm)
+      const changed = []
+      for (const r of pending) {
+        const next = withSpecs(r, lookup)
+        const specsChanged = next.party.some((p, i) => p.spec !== (r.party[i]?.spec ?? null))
+        if (next.specs_matched || specsChanged) changed.push(next)
+      }
+      if (changed.length) await updateRuns(changed)
+      const nowMatched = changed.filter((r) => r.specs_matched).length
+      console.log(`  specs: ${pending.length} pending, ${nowMatched} matched now, ${pending.length - nowMatched} still pending`)
+    } catch (e) {
+      failed = true
+      console.error(`  specs: ${e.message}`)
+    }
     // Every board parsing to nothing means Tauri changed the page, not that nobody played.
     if (seen === 0) {
       failed = true

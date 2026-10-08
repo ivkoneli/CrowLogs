@@ -2494,6 +2494,19 @@ img.icon-slot.trinket {
   min-height: 1.7rem;
   min-width: 0;
 }
+.mp-spec-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.mp-spec-row .spec-tabs {
+  margin: 0;
+}
+.mp-spec-note {
+  font-size: 0.78rem;
+}
 .mp-sort-label {
   position: absolute;
   bottom: calc(100% + 2px);

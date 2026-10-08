@@ -216,3 +216,11 @@ language sql stable set search_path = extensions, public as $$
   limit least(greatest(lim, 1), 25)
 $$;
 grant execute on function search_mplus_players(text, int) to anon, authenticated;
+
+-- Per-run specs. Tauri's leaderboard has no spec, so scrape-mythic-plus.mjs copies each
+-- member's spec from tauriachievements.github.io's daily M+ data (matched on dungeon, key,
+-- exact clear time and party) into party[].spec. Until a run is matched, a spec the role
+-- alone decides (a Warrior tank is Protection) is filled in and specs_matched stays false,
+-- so every scrape re-checks it.
+alter table mplus_runs add column if not exists specs_matched boolean not null default false;
+create index if not exists mplus_runs_specs_pending_idx on mplus_runs (id) where not specs_matched;

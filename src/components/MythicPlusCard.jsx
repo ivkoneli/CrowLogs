@@ -16,7 +16,8 @@ import {
   splitPlayerKey,
   memberPlayerKey,
 } from '../lib/mythicplus.js'
-import { classColor } from '../lib/classes.js'
+import { classColor, specsOf, specIconUrl } from '../lib/classes.js'
+import SpecTabs from './SpecTabs.jsx'
 import { selectionToHash, inAppClick } from '../lib/router.js'
 
 const PAGE_SIZE = 10
@@ -87,7 +88,7 @@ function Member({ p, selfName, realm, onSelectPlayer }) {
           style={{ color: classColor(p.class) }}
           href={selectionToHash({ view: 'player', player: memberPlayerKey(p.name, realm) })}
           onClick={inAppClick(() => onSelectPlayer(memberPlayerKey(p.name, realm)))}
-          title={`Open ${p.name}'s profile`}
+          title={`${p.spec ? `${p.spec} ${p.class}` : p.class || ''} · open ${p.name}'s profile`}
         >
           {p.name}
         </a>
@@ -285,12 +286,13 @@ function Pager({ page, pages, onChange }) {
 // with the player's total M+ score, or the full run history, newest first, 10 per page. Paging and the Best/History
 // switch only re-render this card; the runs are fetched once per player. The parent keys
 // it by player, so opening another profile starts fresh on Best runs, page 1.
-export default function MythicPlusCard({ player, onSelectPlayer }) {
+export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
   const { name, realm } = splitPlayerKey(player)
   const selfName = name.toLowerCase()
   const [state, setState] = useState({ loading: true, runs: [], error: null })
   const [view, setView] = useState('best')
   const [bestSort, setBestSort] = useState('score') // 'score' | 'key'
+  const [spec, setSpec] = useState(null) // null = All specs
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -303,7 +305,23 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
     }
   }, [player])
 
-  const { loading, runs } = state
+  const { loading, runs: allRuns } = state
+  // This player's own party entry in a run (carries the spec they played).
+  const selfIn = (run) => run.party.find((p) => p.name.toLowerCase() === selfName)
+  // Class from the profile, else from the runs themselves (M+-only players have no profile).
+  const playerClass = klass || allRuns.map(selfIn).find((p) => p?.class)?.class || null
+  const specTabs = useMemo(
+    () => specsOf(playerClass).map((s) => ({ spec: s.name, icon: specIconUrl(playerClass, s.name) })),
+    [playerClass],
+  )
+  // A spec filter narrows EVERYTHING below: best runs, history and the score total.
+  // Runs whose spec isn't known yet (see scrape-mythic-plus.mjs) only show under All.
+  const runs = useMemo(
+    () => (spec ? allRuns.filter((r) => selfIn(r)?.spec === spec) : allRuns),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allRuns, spec, selfName],
+  )
+  const unknownSpec = spec ? allRuns.filter((r) => !selfIn(r)?.spec).length : 0
   // The total is always built from the best SCORE per dungeon, whichever sort is shown.
   const bestByScore = useMemo(() => bestRuns(runs, 'score'), [runs])
   const best = useMemo(() => (bestSort === 'key' ? bestRuns(runs, 'key') : bestByScore), [runs, bestSort, bestByScore])
@@ -323,7 +341,7 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
   } else if (!runs.length) {
     body = (
       <div className="empty-state mp-empty">
-        <p>No Mythic+ runs on the Tauri armory for {name} yet.</p>
+        <p>{spec ? `No ${spec} runs for ${name} yet.` : `No Mythic+ runs on the Tauri armory for ${name} yet.`}</p>
       </div>
     )
   } else if (view === 'best') {
@@ -446,6 +464,23 @@ export default function MythicPlusCard({ player, onSelectPlayer }) {
           </div>
         </div>
       </div>
+      {!loading && !state.error && allRuns.length > 0 && specTabs.length > 0 && (
+        <div className="mp-spec-row">
+          <SpecTabs
+            specs={specTabs}
+            value={spec}
+            onChange={(s) => {
+              setSpec(s)
+              setPage(1)
+            }}
+          />
+          {unknownSpec > 0 && (
+            <span className="muted mp-spec-note" title="Specs come from Tauri Achievements, which updates about once a day">
+              {unknownSpec} recent {unknownSpec === 1 ? 'run has' : 'runs have'} no spec yet
+            </span>
+          )}
+        </div>
+      )}
       {body}
     </div>
   )
