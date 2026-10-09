@@ -125,13 +125,6 @@ export default function HomePage({ onSelectPlayer, onImport }) {
         </div>
       </div>
 
-      {scope === 'week' && (
-        <p className="home-reset-note muted">
-          The week resets on Wednesday. Keys finished after midnight on Tuesday night still count for the old
-          week; they are told apart by their affixes.
-        </p>
-      )}
-
       {error ? (
         <div className="error">Couldn’t load Mythic+ runs: {error}</div>
       ) : loading && !data ? (

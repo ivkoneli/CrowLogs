@@ -2792,10 +2792,6 @@ img.icon-slot.trinket {
   margin-left: 0.3rem;
   font-size: 0.85rem;
 }
-.home-reset-note {
-  margin: 0 0 1.1rem;
-  font-size: 0.82rem;
-}
 .home-cards {
   display: flex;
   flex-direction: column;

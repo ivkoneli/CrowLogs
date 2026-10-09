@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/jpeg" href="CrowsLogo.jpg" />
-    <title>CrowLogs — WoW Combat Log DPS &amp; HPS Rankings | Crows' Nest</title>
-    <meta name="description" content="CrowLogs is a free World of Warcraft combat log analyzer and DPS/HPS leaderboard by the Crows' Nest guild. Drop a WoWCombatLog.txt to get per-boss rankings, player profiles, talents, gear and Mythic+ runs." />
+    <title>CrowLogs — Tauri Legion Raid Logs &amp; Mythic+ Leaderboard</title>
+    <meta name="description" content="CrowLogs is the combat log and Mythic+ leaderboard site for Tauri WoW's Legion realm, Evermoon. Upload a WoW combat log for raid DPS and HPS rankings, and browse the best M+ keys, scores and player profiles." />
     <meta name="google-site-verification" content="lnVef9gZB8eddMkqz6x0xR-H8XIKn1u3kkr_ejiNfF4" />
     <meta name="author" content="ivkoneli" />
     <meta name="robots" content="index, follow" />
@@ -13,14 +13,18 @@
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="CrowLogs" />
-    <meta property="og:title" content="CrowLogs — WoW Combat Log DPS &amp; HPS Rankings" />
-    <meta property="og:description" content="Drop a World of Warcraft combat log and get per-boss DPS/HPS rankings, player profiles and Mythic+ runs in your browser." />
+    <meta property="og:title" content="CrowLogs — Tauri Legion Raid Logs &amp; Mythic+ Leaderboard" />
+    <meta property="og:description" content="The raid logs and Mythic+ leaderboard site for Tauri WoW Legion (Evermoon): raid DPS/HPS rankings, best M+ keys and scores, and player profiles." />
     <meta property="og:url" content="https://ivkoneli.github.io/CrowLogs/" />
-    <meta property="og:image" content="https://ivkoneli.github.io/CrowLogs/CrowsLogo.jpg" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="CrowLogs — WoW Combat Log DPS &amp; HPS Rankings" />
-    <meta name="twitter:description" content="Drop a World of Warcraft combat log and get per-boss DPS/HPS rankings, player profiles and Mythic+ runs in your browser." />
-    <meta name="twitter:image" content="https://ivkoneli.github.io/CrowLogs/CrowsLogo.jpg" />
+    <meta property="og:image" content="https://ivkoneli.github.io/CrowLogs/og-image.jpg?v=2" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="CrowLogs: raid logs and Mythic+ leaderboard for Tauri WoW Legion" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="CrowLogs — Tauri Legion Raid Logs &amp; Mythic+ Leaderboard" />
+    <meta name="twitter:description" content="The raid logs and Mythic+ leaderboard site for Tauri WoW Legion (Evermoon): raid DPS/HPS rankings, best M+ keys and scores, and player profiles." />
+    <meta name="twitter:image" content="https://ivkoneli.github.io/CrowLogs/og-image.jpg?v=2" />
 
     <script type="application/ld+json">
       {
@@ -29,7 +33,8 @@
         "name": "CrowLogs",
         "alternateName": "Crows' Nest CrowLogs",
         "url": "https://ivkoneli.github.io/CrowLogs/",
-        "description": "World of Warcraft combat log analyzer and DPS/HPS leaderboard for the Crows' Nest guild.",
+        "description": "Raid combat log analyzer and Mythic+ leaderboard for the Tauri WoW Legion private server (Evermoon realm): raid DPS/HPS rankings, best M+ keys and scores, player profiles with talents and gear.",
+        "keywords": "Tauri, Tauri WoW, Legion, Evermoon, warcraft logs, combat logs, raid logs, Mythic+, M+ leaderboard, DPS rankings",
         "applicationCategory": "GameApplication",
         "operatingSystem": "Any (web browser)",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -42,16 +47,17 @@
     <div id="root">
       <!-- Static fallback: crawlers and no-JS visitors see this; React replaces it on load. -->
       <main style="font-family: sans-serif; max-width: 720px; margin: 3rem auto; padding: 0 1rem;">
-        <h1>CrowLogs — World of Warcraft combat log DPS &amp; HPS rankings</h1>
+        <h1>CrowLogs — raid logs and Mythic+ leaderboard for Tauri WoW Legion</h1>
         <p>
-          CrowLogs is a free, open-source WoW combat log analyzer made by the Crows' Nest guild.
+          CrowLogs is a free, open-source logging site for the Tauri WoW Legion realm Evermoon, made by the Crows' Nest guild. It is a warcraft-logs style site for Tauri: raid rankings from uploaded combat logs plus a Mythic+ leaderboard.
           Drop a <code>WoWCombatLog.txt</code> file and CrowLogs reads every boss encounter,
           computes per-player damage, healing and fight duration, and builds per-boss leaderboards.
         </p>
         <ul>
           <li>Per-boss DPS and HPS leaderboards by difficulty and spec</li>
           <li>Player profiles with rankings, log history, talents and gear</li>
-          <li>Mythic+ best runs and key history from the Tauri armory</li>
+          <li>Mythic+ leaderboard: the best key and highest score in every Legion dungeon, this week and all time</li>
+          <li>Mythic+ best runs and key history for every player, from the Tauri armory</li>
           <li>Optional CrowLogsHelper addon to record your exact build per pull</li>
         </ul>
         <p>Source code: <a href="https://github.com/ivkoneli/CrowLogs">github.com/ivkoneli/CrowLogs</a></p>
