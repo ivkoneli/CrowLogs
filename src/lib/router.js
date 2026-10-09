@@ -3,7 +3,8 @@
 // Only the page identity goes in the URL — filters/tabs/metrics stay client-side
 // on purpose, so a shared link always lands on the page's default view.
 //
-//   #/                        import (home)
+//   #/                        home (best M+ runs)
+//   #/import                  import a combat log
 //   #/boss/<raid>/<boss>      boss rankings
 //   #/player/<name>           player profile
 //   #/log/<logId>             uploaded log breakdown (first encounter)
@@ -21,6 +22,8 @@ export function selectionToHash(sel) {
       return (
         `#/log/${seg(sel.logId)}` + (sel.focus?.started != null ? `/${seg(sel.focus.started)}` : '')
       )
+    case 'import':
+      return '#/import'
     default:
       return '#/'
   }
@@ -48,7 +51,8 @@ export function selectionFromHash(hash) {
   if (view === 'boss' && a && b) return { view: 'boss', raid: a, boss: b }
   if (view === 'player' && a) return { view: 'player', player: a }
   if (view === 'log' && a) return { view: 'log', logId: a, focus: b ? { started: b } : null }
-  return { view: 'import' }
+  if (view === 'import') return { view: 'import' }
+  return { view: 'home' }
 }
 
 // Push the selection's URL onto the history stack (no-op if already there),

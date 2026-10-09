@@ -137,7 +137,7 @@ function Party({ party, ...memberProps }) {
 }
 
 // Key / time+medal / affixes / party / date — shared by the best-runs and history tables.
-function RunCells({ run, selfName, realm, onSelectPlayer }) {
+export function RunCells({ run, selfName, realm, onSelectPlayer }) {
   return (
     <>
       <td className="num strong mp-key">+{run.level}</td>
@@ -161,7 +161,49 @@ function RunCells({ run, selfName, realm, onSelectPlayer }) {
   )
 }
 
-function Cols() {
+// The best-runs table's dungeon cell: the banner art strip, or icon + level bar for
+// dungeons without art (bar length = this run's key vs the table's highest key).
+export function DungeonCell({ dungeon, run, topLevel }) {
+  return (
+    <td className={`name-cell ${dungeon.banner ? 'mp-banner-cell' : ''}`}>
+      {dungeon.banner ? (
+        // Art strip filling the whole cell (fixed size, so the name length never
+        // changes where it starts or ends) with the name outlined on top.
+        <div className={`mp-banner ${run ? '' : 'empty'}`} style={{ '--mp-banner': `url(${dungeonBannerUrl(dungeon.id)})` }}>
+          <span className="mp-banner-name">{dungeon.name}</span>
+        </div>
+      ) : (
+        <div className="bar-wrap">
+          <div
+            className="bar"
+            style={{
+              width: run ? `${(run.level / topLevel) * 100}%` : '0%',
+              background: `linear-gradient(90deg, ${dungeon.colors[0]}, ${dungeon.colors[1]})`,
+            }}
+          />
+          <DungeonIcon mapId={dungeon.id} />
+          <span className="name">{dungeon.name}</span>
+        </div>
+      )}
+    </td>
+  )
+}
+
+// Placeholder cells for a dungeon with no run (matches RunCells' six columns).
+export function EmptyRunCells() {
+  return (
+    <>
+      <td className="num muted">—</td>
+      <td className="num muted">—</td>
+      <td className="muted" colSpan={3}>
+        no run
+      </td>
+      <td className="num muted">—</td>
+    </>
+  )
+}
+
+export function Cols() {
   return (
     <colgroup>
       <col className="mp-col-dungeon" />
@@ -175,7 +217,7 @@ function Cols() {
   )
 }
 
-function Head() {
+export function Head() {
   return (
     <thead>
       <tr>
@@ -353,41 +395,11 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
           <tbody>
             {best.map(({ dungeon, run }) => (
               <tr key={dungeon.id}>
-                <td className={`name-cell ${dungeon.banner ? 'mp-banner-cell' : ''}`}>
-                  {dungeon.banner ? (
-                    // Art strip filling the whole cell (fixed size, so the name length never
-                    // changes where it starts or ends) with the name outlined on top.
-                    <div
-                      className={`mp-banner ${run ? '' : 'empty'}`}
-                      style={{ '--mp-banner': `url(${dungeonBannerUrl(dungeon.id)})` }}
-                    >
-                      <span className="mp-banner-name">{dungeon.name}</span>
-                    </div>
-                  ) : (
-                  <div className="bar-wrap">
-                    <div
-                      className="bar"
-                      style={{
-                        width: run ? `${(run.level / topLevel) * 100}%` : '0%',
-                        background: `linear-gradient(90deg, ${dungeon.colors[0]}, ${dungeon.colors[1]})`,
-                      }}
-                    />
-                    <DungeonIcon mapId={dungeon.id} />
-                    <span className="name">{dungeon.name}</span>
-                  </div>
-                  )}
-                </td>
+                <DungeonCell dungeon={dungeon} run={run} topLevel={topLevel} />
                 {run ? (
                   <RunCells run={run} {...cellProps} />
                 ) : (
-                  <>
-                    <td className="num muted">—</td>
-                    <td className="num muted">—</td>
-                    <td className="muted" colSpan={3}>
-                      no run
-                    </td>
-                    <td className="num muted">—</td>
-                  </>
+                  <EmptyRunCells />
                 )}
               </tr>
             ))}

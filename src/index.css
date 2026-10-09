@@ -2744,3 +2744,79 @@ img.icon-slot.trinket {
     font-size: 0.85rem;
   }
 }
+
+/* ---------- Home (site-wide best M+ runs) ---------- */
+.home-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+.home-head-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.home-import {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.9rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.home-import:hover {
+  background: var(--accent-2);
+}
+.home-week {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  font-size: 0.95rem;
+}
+.home-week strong {
+  color: var(--accent-2);
+}
+.home-week-affixes {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.home-week-affixes .muted {
+  margin-left: 0.3rem;
+  font-size: 0.85rem;
+}
+.home-reset-note {
+  margin: 0 0 1.1rem;
+  font-size: 0.82rem;
+}
+.home-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  transition: opacity 0.15s;
+}
+.home-cards.is-loading {
+  opacity: 0.55;
+}
+.home-card-hint {
+  margin: -0.4rem 0 0.2rem;
+  font-size: 0.8rem;
+}
+.home-scope-pill {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--highlight);
+  color: var(--highlight);
+  background: rgba(92, 210, 255, 0.08);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

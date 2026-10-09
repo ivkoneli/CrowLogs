@@ -148,3 +148,139 @@ export async function searchMplusPlayers(query, limit = 8) {
   if (error) throw error
   return (data || []).map((p) => ({ player: memberPlayerKey(p.name, p.realm), name: p.name, class: p.class, runs: p.runs }))
 }
+
+// ---------- Site-wide best runs (home page) ----------
+//
+// The M+ week runs Wednesday → Tuesday (server time, Europe/Budapest). Tauri only gives a
+// run's completion DAY, so Wednesday is ambiguous: keys finished after midnight on Tuesday
+// night still carry LAST week's affixes but are dated Wednesday. Affixes settle it: a
+// Wednesday run whose affixes match last week's set belongs to last week. Keys below +4
+// have no affixes at all, so a Wednesday run without affixes can't be placed and is left
+// out of the week (it never matters: anything +4 or higher outranks it).
+
+const SERVER_TZ = 'Europe/Budapest'
+const RUN_COLS = 'id, realm, map_id, dungeon, level, time_ms, medal, affixes, party, day'
+
+// Today's date on the game server, "YYYY-MM-DD".
+export function serverToday(now = new Date()) {
+  // Built from parts: a locale's own date format isn't guaranteed to be YYYY-MM-DD.
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: SERVER_TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(now)
+    .reduce((o, p) => ({ ...o, [p.type]: p.value }), {})
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+// Plain-date arithmetic in UTC, so no timezone or DST shift ever moves the day.
+export function addDays(day, n) {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+// The Wednesday a day's M+ week starts on.
+export function weekStartOf(day) {
+  const dow = new Date(`${day}T00:00:00Z`).getUTCDay() // 0 = Sunday … 3 = Wednesday
+  return addDays(day, -((dow - 3 + 7) % 7))
+}
+
+const affixNames = (run) => (run?.affixes || []).map((a) => a.name)
+
+// True when `run`'s affixes are (a prefix of) `set` — lower keys carry only the first
+// one or two affixes of the week, in the same order.
+function matchesAffixSet(run, set) {
+  const names = affixNames(run)
+  return names.length > 0 && set.length > 0 && names.every((n, i) => set[i] === n)
+}
+
+// The full affix set of the week that ends on `lastDay` (a Tuesday), from its highest key.
+async function affixSetEndingOn(lastDay, realm) {
+  const { data, error } = await supabase
+    .from('mplus_runs')
+    .select('affixes, level')
+    .eq('realm', realm)
+    .eq('day', lastDay)
+    .gte('level', 4)
+    .order('level', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  return affixNames(data?.[0])
+}
+
+// Is `run` part of the week starting on `start`? `prevSet` = the previous week's affixes.
+function inWeek(run, start, prevSet) {
+  if (run.day < start || run.day > addDays(start, 6)) return false
+  if (run.day !== start) return true
+  // Wednesday: only runs that visibly carry the NEW week's affixes.
+  return affixNames(run).length > 0 && !matchesAffixSet(run, prevSet)
+}
+
+// The current M+ week: { start, end, prevSet }. On a Wednesday before anyone has finished
+// a key on the new affixes, it's still last week's (the reset hasn't really happened yet
+// as far as the boards can tell), so the window stays on last week until it does.
+async function currentWeek(realm) {
+  const today = serverToday()
+  let start = weekStartOf(today)
+  let prevSet = await affixSetEndingOn(addDays(start, -1), realm)
+  if (today === start) {
+    const { data, error } = await supabase
+      .from('mplus_runs')
+      .select('affixes, day')
+      .eq('realm', realm)
+      .eq('day', start)
+      .gte('level', 4)
+      .order('level', { ascending: false })
+      .limit(200)
+    if (error) throw error
+    if (!(data || []).some((r) => inWeek(r, start, prevSet))) {
+      start = addDays(start, -7)
+      prevSet = await affixSetEndingOn(addDays(start, -1), realm)
+    }
+  }
+  return { start, end: addDays(start, 6), prevSet }
+}
+
+// A dungeon's top runs in a day range: the highest keys (incl. depleted) plus the best
+// timed keys, so both the "highest key" and "highest score" picks are always in the set.
+async function topRunsForDungeon(mapId, realm, from, to) {
+  const base = () => {
+    let q = supabase.from('mplus_runs').select(RUN_COLS).eq('realm', realm).eq('map_id', mapId)
+    if (from) q = q.gte('day', from)
+    if (to) q = q.lte('day', to)
+    return q.order('level', { ascending: false }).order('time_ms', { ascending: true, nullsFirst: false })
+  }
+  const [top, timed] = await Promise.all([base().limit(100), base().gt('medal', 0).limit(25)])
+  if (top.error) throw top.error
+  if (timed.error) throw timed.error
+  return [...new Map([...(top.data || []), ...(timed.data || [])].map((r) => [r.id, r])).values()]
+}
+
+// Best run per dungeon, site-wide, for `scope` = 'week' | 'all':
+//   { keys: bestRuns(…,'key'), scores: bestRuns(…,'score'), week: { start, end, affixes } | null }
+// `week.affixes` is the current week's full affix set (icons), for the header.
+const scopeCache = new Map()
+export function getTopRuns(scope = 'week', realm = DEFAULT_MPLUS_REALM) {
+  const ck = `${scope}|${realm}`
+  if (!scopeCache.has(ck)) {
+    const p = loadTopRuns(scope, realm)
+    p.catch(() => scopeCache.delete(ck)) // let a failed load retry
+    scopeCache.set(ck, p)
+  }
+  return scopeCache.get(ck)
+}
+
+async function loadTopRuns(scope, realm) {
+  if (!supabase) return { keys: bestRuns([], 'key'), scores: bestRuns([], 'score'), week: null }
+  const week = scope === 'week' ? await currentWeek(realm) : null
+  const lists = await Promise.all(
+    MPLUS_DUNGEONS.map((d) => topRunsForDungeon(d.id, realm, week?.start, week?.end)),
+  )
+  let runs = lists.flat()
+  let weekInfo = null
+  if (week) {
+    runs = runs.filter((r) => inWeek(r, week.start, week.prevSet))
+    // The week's affixes = the most affixes any of its runs shows (its highest keys).
+    const full = runs.reduce((a, r) => ((r.affixes?.length || 0) > (a?.affixes?.length || 0) ? r : a), null)
+    weekInfo = { start: week.start, end: week.end, affixes: full?.affixes || [] }
+  }
+  return { keys: bestRuns(runs, 'key'), scores: bestRuns(runs, 'score'), week: weekInfo }
+}
