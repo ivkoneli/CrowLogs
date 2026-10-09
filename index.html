@@ -4,11 +4,59 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/jpeg" href="CrowsLogo.jpg" />
-    <title>Crows' Nest — CrowLogs</title>
-    <meta name="description" content="Crows' Nest guild combat-log DPS rankings. Drop a World of Warcraft combat log and get DPS and fight duration instantly, in your browser." />
+    <title>CrowLogs — WoW Combat Log DPS &amp; HPS Rankings | Crows' Nest</title>
+    <meta name="description" content="CrowLogs is a free World of Warcraft combat log analyzer and DPS/HPS leaderboard by the Crows' Nest guild. Drop a WoWCombatLog.txt to get per-boss rankings, player profiles, talents, gear and Mythic+ runs." />
+    <meta name="google-site-verification" content="lnVef9gZB8eddMkqz6x0xR-H8XIKn1u3kkr_ejiNfF4" />
+    <meta name="author" content="ivkoneli" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://ivkoneli.github.io/CrowLogs/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CrowLogs" />
+    <meta property="og:title" content="CrowLogs — WoW Combat Log DPS &amp; HPS Rankings" />
+    <meta property="og:description" content="Drop a World of Warcraft combat log and get per-boss DPS/HPS rankings, player profiles and Mythic+ runs in your browser." />
+    <meta property="og:url" content="https://ivkoneli.github.io/CrowLogs/" />
+    <meta property="og:image" content="https://ivkoneli.github.io/CrowLogs/CrowsLogo.jpg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="CrowLogs — WoW Combat Log DPS &amp; HPS Rankings" />
+    <meta name="twitter:description" content="Drop a World of Warcraft combat log and get per-boss DPS/HPS rankings, player profiles and Mythic+ runs in your browser." />
+    <meta name="twitter:image" content="https://ivkoneli.github.io/CrowLogs/CrowsLogo.jpg" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "CrowLogs",
+        "alternateName": "Crows' Nest CrowLogs",
+        "url": "https://ivkoneli.github.io/CrowLogs/",
+        "description": "World of Warcraft combat log analyzer and DPS/HPS leaderboard for the Crows' Nest guild.",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Any (web browser)",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "ivkoneli", "url": "https://github.com/ivkoneli" },
+        "sameAs": ["https://github.com/ivkoneli/CrowLogs"]
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static fallback: crawlers and no-JS visitors see this; React replaces it on load. -->
+      <main style="font-family: sans-serif; max-width: 720px; margin: 3rem auto; padding: 0 1rem;">
+        <h1>CrowLogs — World of Warcraft combat log DPS &amp; HPS rankings</h1>
+        <p>
+          CrowLogs is a free, open-source WoW combat log analyzer made by the Crows' Nest guild.
+          Drop a <code>WoWCombatLog.txt</code> file and CrowLogs reads every boss encounter,
+          computes per-player damage, healing and fight duration, and builds per-boss leaderboards.
+        </p>
+        <ul>
+          <li>Per-boss DPS and HPS leaderboards by difficulty and spec</li>
+          <li>Player profiles with rankings, log history, talents and gear</li>
+          <li>Mythic+ best runs and key history from the Tauri armory</li>
+          <li>Optional CrowLogsHelper addon to record your exact build per pull</li>
+        </ul>
+        <p>Source code: <a href="https://github.com/ivkoneli/CrowLogs">github.com/ivkoneli/CrowLogs</a></p>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
