@@ -81,8 +81,11 @@ const MAX_SPELLS = 30
 
 // Add `amount` to a player's per-spell tally. Pet abilities are keyed apart from the
 // owner's own (a Felguard's Legion Strike vs the warlock's), with the pet's name kept.
+// Keyed by spell NAME, not id: one ability is often logged under several ids (Rampage's
+// five hits, main/off-hand strikes, an artifact proc of the same spell, direct + periodic
+// parts), and a damage meter should show it as one line. The first id seen is kept.
 function tally(map, id, name, school, petName, amount) {
-  const key = petName ? `${id}|${petName}` : id
+  const key = `${name || id}|${petName || ''}`
   const cur = map.get(key)
   if (cur) cur[2] += amount
   else map.set(key, [Number(id) || 0, name || 'Unknown', amount, Number(school) || 0, petName || null])

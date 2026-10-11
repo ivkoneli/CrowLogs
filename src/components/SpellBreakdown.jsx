@@ -25,6 +25,23 @@ function schoolColor(school) {
   return '#a78bfa'
 }
 
+// One line per ability: rows that share a spell name (and pet) are summed. Logs imported
+// before the parser merged by name stored them per spell id (Rampage as five rows), so
+// merging here fixes those too. The "Other" bucket stays separate.
+function mergeByName(list) {
+  const byKey = new Map()
+  for (const r of list) {
+    const key = r[1] === 'Other' && !r[0] ? '\0other' : `${r[1]}|${r[4] || ''}`
+    const cur = byKey.get(key)
+    if (cur) cur[2] += r[2]
+    else byKey.set(key, [...r])
+  }
+  const other = byKey.get('\0other')
+  byKey.delete('\0other')
+  const rows = [...byKey.values()].sort((a, b) => b[2] - a[2])
+  return other ? [...rows, other] : rows
+}
+
 function compact(n) {
   return formatDps(n)
 }
@@ -59,7 +76,7 @@ export function SpellPanel({ fightId, metric, total, durationMs, name, anchor })
     setPos({ left, top })
   }, [anchor, state])
 
-  const list = state.spells ? (metric === 'hps' ? state.spells.heal : state.spells.dmg) || [] : []
+  const list = mergeByName(state.spells ? (metric === 'hps' ? state.spells.heal : state.spells.dmg) || [] : [])
   const shown = list.slice(0, MAX_ROWS)
   const rest = list.slice(MAX_ROWS).reduce((s, r) => s + r[2], 0)
   const sum = total || list.reduce((s, r) => s + r[2], 0) || 1
