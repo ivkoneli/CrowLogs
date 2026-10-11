@@ -46,3 +46,27 @@ export function TrinketSlots({ trinkets }) {
     </span>
   )
 }
+
+// Equipped legendaries (Legion allows two). `legendaries` is [{ name, ilvl, icon }]
+// frozen from the addon snapshot or the armory; empty squares when there are none.
+export function LegendarySlots({ legendaries }) {
+  const list = Array.isArray(legendaries) ? legendaries : []
+  return (
+    <span className="icon-slots">
+      {[0, 1].map((i) => {
+        const t = list[i]
+        return t && t.icon ? (
+          <img
+            key={i}
+            className="icon-slot trinket legendary"
+            src={t.icon}
+            alt=""
+            title={`${t.name}${t.ilvl ? ` (${t.ilvl})` : ''}`}
+          />
+        ) : (
+          <span key={i} className="icon-slot trinket" title="No legendary" />
+        )
+      })}
+    </span>
+  )
+}

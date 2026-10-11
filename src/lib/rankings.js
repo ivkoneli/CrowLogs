@@ -214,6 +214,8 @@ export function logSummary(fights, logId) {
     }
     enc.duration = Math.max(enc.duration, f.duration)
     enc.rows.push({
+      // The fight row's id: the meter's hover fetches its per-spell breakdown by it.
+      id: f.id,
       player: f.player,
       class: f.class,
       spec: f.spec,
@@ -225,6 +227,7 @@ export function logSummary(fights, logId) {
       ilvlIsLive: f.ilvlIsLive === true,
       talents: f.talents,
       trinkets: f.trinkets,
+      legendaries: f.legendaries,
       pet: f.pet,
       // Frozen per-fight: did they run the addon on this pull? Drives the "no addon" badge.
       fromAddon: f.from_addon === true,

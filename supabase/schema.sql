@@ -14,6 +14,9 @@ create table fights (
   -- Did the player run the CrowLogsHelper addon on this pull? Frozen at import (not
   -- retroactive); drives the "no addon" badge in the log view.
   from_addon boolean,
+  -- Equipped legendaries (frozen like trinkets) and the per-spell damage/healing
+  -- breakdown the meter shows on hover ({ dmg: [[id,name,amount,school,pet]], heal: [...] }).
+  legendaries jsonb, spells jsonb,
   duration bigint, hits int, day text, started bigint, logid text,
   created_at timestamptz default now()
 );
@@ -31,6 +34,8 @@ create table fights (
 --   alter table fights add column if not exists spec_icon text;
 --   alter table fights add column if not exists class text;
 --   alter table fights add column if not exists from_addon boolean;
+--   alter table fights add column if not exists legendaries jsonb;
+--   alter table fights add column if not exists spells jsonb;
 alter table fights enable row level security;
 -- The public (browser anon key) may ONLY read. All writes go through the `submit-log`
 -- edge function (service-role key), which validates, recomputes dps/hps, and rate-limits.

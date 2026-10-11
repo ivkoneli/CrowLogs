@@ -29,6 +29,7 @@ const FIELDS = [
   'ilvl',
   'talents',
   'trinkets',
+  'legendaries',
   'spec',
   'spec_icon',
   // Whether the player ran the CrowLogsHelper addon on this pull (frozen at import).
@@ -39,7 +40,12 @@ const FIELDS = [
   'day',
   'started',
   'logid',
+  // Per-spell damage/healing totals for the meter's hover breakdown (see parser.js).
+  // Persisted with the row, but NOT loaded in bulk: getSpells fetches it on hover.
+  'spells',
 ]
+// Everything the app loads up front (all of FIELDS except the heavy per-spell breakdown).
+const LIST_COLUMNS = FIELDS.filter((f) => f !== 'spells').join(',')
 
 function pick(rec) {
   const out = {}
@@ -72,7 +78,7 @@ export async function getFights() {
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await supabase
         .from('fights')
-        .select('*')
+        .select(LIST_COLUMNS)
         .order('id')
         .range(from, from + PAGE - 1)
       if (error) throw error
@@ -82,6 +88,24 @@ export async function getFights() {
     return all
   }
   return readLocal()
+}
+
+// Per-spell breakdown for one fight row, fetched on demand (hover) and cached.
+// Resolves { dmg: [[spellId, name, amount, school, petName], …], heal: […] } or null when
+// the row predates the breakdown (logs imported before it existed have none).
+const spellCache = new Map()
+export function getSpells(id) {
+  if (!spellCache.has(id)) {
+    const p = (async () => {
+      if (!supabase) return readLocal().find((f) => f.id === id)?.spells || null
+      const { data, error } = await supabase.from('fights').select('spells').eq('id', id).maybeSingle()
+      if (error) throw error
+      return data?.spells || null
+    })()
+    p.catch(() => spellCache.delete(id)) // a failed fetch can be retried on the next hover
+    spellCache.set(id, p)
+  }
+  return spellCache.get(id)
 }
 
 // A short human label for a batch, stored on the logs audit row so the owner can tell

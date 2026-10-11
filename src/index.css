@@ -1042,11 +1042,15 @@ code {
   width: 84px;
 }
 .boss-meter th:nth-child(8),
-.boss-meter td:nth-child(8) { /* Duration */
-  width: 72px;
+.boss-meter td:nth-child(8) { /* Legendaries */
+  width: 84px;
 }
 .boss-meter th:nth-child(9),
-.boss-meter td:nth-child(9) { /* When */
+.boss-meter td:nth-child(9) { /* Duration */
+  width: 72px;
+}
+.boss-meter th:nth-child(10),
+.boss-meter td:nth-child(10) { /* When */
   width: 92px;
 }
 .talent-strip {
@@ -2292,7 +2296,9 @@ img.icon-slot.trinket {
   .boss-meter th:nth-child(7),
   .boss-meter td:nth-child(7),
   .boss-meter th:nth-child(8),
-  .boss-meter td:nth-child(8) {
+  .boss-meter td:nth-child(8),
+  .boss-meter th:nth-child(9),
+  .boss-meter td:nth-child(9) {
     display: none;
   }
   .talent-slot {
@@ -2815,4 +2821,123 @@ img.icon-slot.trinket {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* ---------- Legendary icons + per-spell hover breakdown ---------- */
+img.icon-slot.trinket.legendary {
+  border-color: #ff8000;
+  box-shadow: 0 0 6px rgba(255, 128, 0, 0.45);
+}
+.name-cell.has-spells {
+  cursor: help;
+}
+.log-row .name-cell.has-spells {
+  cursor: pointer;
+}
+.spell-panel {
+  position: fixed;
+  z-index: 60;
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 0.6rem 0.7rem 0.55rem;
+  pointer-events: none;
+  font-size: 0.8rem;
+}
+.sb-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.sb-title {
+  font-weight: 800;
+  color: var(--accent-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+}
+.sb-who {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-cols,
+.sb-table tr {
+  display: grid;
+  grid-template-columns: 1fr 48px 56px 56px;
+  gap: 0 0.4rem;
+  align-items: center;
+}
+.sb-cols {
+  color: var(--muted);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 0 0.2rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.2rem;
+}
+.sb-cols span:not(:first-child),
+.sb-pct,
+.sb-amt,
+.sb-rate {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sb-table td {
+  padding: 0;
+  border: none;
+}
+.sb-name {
+  position: relative;
+  height: 20px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.sb-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  opacity: 0.32;
+  border-radius: 3px;
+}
+.sb-label {
+  position: relative;
+  display: block;
+  line-height: 20px;
+  padding-left: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.sb-pet {
+  color: var(--muted);
+}
+.sb-pct {
+  font-weight: 700;
+}
+.sb-amt,
+.sb-rate {
+  color: var(--muted);
+}
+.sb-rest .sb-label {
+  color: var(--muted);
+  font-style: italic;
+}
+.sb-table tr + tr {
+  margin-top: 2px;
+}
+.sb-note {
+  color: var(--muted);
+  padding: 0.2rem 0;
 }

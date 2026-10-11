@@ -24,7 +24,7 @@ const CORS = {
 
 // ── Limits ──────────────────────────────────────────────────────────────────
 const MAX_ROWS = 5000 // a raid night is a few hundred rows; 5000 is generous headroom
-const MAX_BODY_BYTES = 4 * 1024 * 1024 // 4 MB
+const MAX_BODY_BYTES = 8 * 1024 * 1024 // 8 MB (rows carry a per-spell breakdown, ~0.6 KB each)
 const MAX_DPS = 100_000_000 // sanity ceiling (ICC-era values are << this); rejects fakes
 const MAX_DURATION_MS = 2 * 60 * 60 * 1000 // 2h — longer than any single encounter
 const MAX_STR = 200 // cap free-text fields so nobody stuffs the DB with megabyte strings
@@ -91,7 +91,43 @@ function sanitize(row: Record<string, unknown>) {
   out.bloodlust = jsonOrNull(row.bloodlust)
   out.talents = jsonOrNull(row.talents)
   out.trinkets = jsonOrNull(row.trinkets)
+  out.legendaries = cleanItems(row.legendaries)
+  out.spells = cleanSpells(row.spells, damage, healing)
   return out
+}
+
+// Equipped legendaries: [{ id, name, icon, ilvl, quality }], at most a handful.
+const MAX_LEGENDARIES = 4
+function cleanItems(v: unknown) {
+  if (!Array.isArray(v)) return null
+  return v.slice(0, MAX_LEGENDARIES).flatMap((it) => {
+    if (!it || typeof it !== 'object') return []
+    const o = it as Record<string, unknown>
+    return [{ id: num(o.id), name: str(o.name), icon: str(o.icon), ilvl: o.ilvl == null ? null : num(o.ilvl), quality: str(o.quality) }]
+  })
+}
+
+// Per-spell breakdown: { dmg: [[spellId, name, amount, school, petName|null], …], heal: […] }.
+// Capped in length, every field type-checked, and dropped entirely if a list claims more
+// than the row's (already capped) total — the breakdown can't inflate what the meter shows.
+const MAX_SPELLS = 40
+function cleanSpellList(v: unknown, total: number) {
+  if (!Array.isArray(v)) return []
+  const out = v.slice(0, MAX_SPELLS).flatMap((r) => {
+    if (!Array.isArray(r)) return []
+    const amount = Math.max(num(r[2]), 0)
+    if (amount <= 0) return []
+    return [[num(r[0]), (str(r[1]) || 'Unknown').slice(0, 80), amount, num(r[3]), r[4] == null ? null : (str(r[4]) || '').slice(0, 40)]]
+  })
+  const sum = out.reduce((s, r) => s + (r[2] as number), 0)
+  return sum > total * 1.001 + 1 ? [] : out
+}
+function cleanSpells(v: unknown, damage: number, healing: number) {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  const dmg = cleanSpellList(o.dmg, damage)
+  const heal = cleanSpellList(o.heal, healing)
+  return dmg.length || heal.length ? { dmg, heal } : null
 }
 
 async function upsertFights(rows: unknown[]) {

@@ -16,6 +16,11 @@ export function trinketsOf(gear) {
   return (gear || []).filter((g) => g.slot === 'trinket')
 }
 
+// Equipped legendaries out of a full armory gear array (quality-tagged by the scraper).
+export function legendariesOf(gear) {
+  return (gear || []).filter((g) => g.quality === 'legendary')
+}
+
 function readLocal() {
   try {
     return JSON.parse(localStorage.getItem(LS_KEY) || '[]')
@@ -113,6 +118,8 @@ export function mergeCharacters(fights, characters) {
       // Frozen trinkets win; otherwise derive from the live armory gear. `gear` is
       // the live equipped set (for the gear tab), never frozen per-fight.
       trinkets: f.trinkets && f.trinkets.length ? f.trinkets : trinketsOf(c.gear),
+      // Same rule: legendaries frozen on the pull win, else the player's CURRENT ones.
+      legendaries: f.legendaries && f.legendaries.length ? f.legendaries : legendariesOf(c.gear),
       gear: c.gear || f.gear || [],
       specIcon: f.spec_icon ?? f.specIcon ?? c.spec_icon ?? null,
     }

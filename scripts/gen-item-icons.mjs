@@ -16,6 +16,9 @@ const TRINKET_INVTYPE = 12
 // table's class pair: ClassID 3 (Gem) / SubclassID 11 (Artifact Relic).
 const RELIC_CLASS = 3
 const RELIC_SUBCLASS = 11
+// Legendary quality (orange). Legion's 2-equippable legendaries are all this quality; the
+// addon snapshots every slot, so any equipped item found here is shown as a legendary.
+const LEGENDARY_QUALITY = 5
 const QUALITY = { 0: 'common', 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
 
 async function csv(table) {
@@ -49,9 +52,11 @@ function splitCsv(line) {
 }
 
 console.log('Fetching DB2 tables…')
-const [itemRows, sparseRows, iconsJson] = await Promise.all([
+const [itemRows, sparseRows, imaRows, appRows, iconsJson] = await Promise.all([
   csv('Item').then(parseCsv),
   csv('ItemSparse').then(parseCsv),
+  csv('ItemModifiedAppearance').then(parseCsv),
+  csv('ItemAppearance').then(parseCsv),
   fetch('https://wago.tools/api/files?search=interface/icons/').then((r) => r.json()),
 ])
 
@@ -61,8 +66,24 @@ for (const [fdid, path] of Object.entries(iconsJson)) {
   fdidName.set(fdid, path.replace(/^interface\/icons\//i, '').replace(/\.blp$/i, ''))
 }
 
-// itemID -> icon name (Item.IconFileDataID -> listfile).
-const itemIcon = new Map()
+// Most gear has no Item.IconFileDataID; its icon lives on the default appearance
+// (ItemModifiedAppearance → ItemAppearance.DefaultIconFileDataID). Lowest OrderIndex wins.
+const appIcon = new Map(appRows.map((a) => [a.ID, a.DefaultIconFileDataID]))
+const appearanceIcon = new Map()
+const appearanceOrder = new Map()
+for (const m of imaRows) {
+  const fdid = appIcon.get(m.ItemAppearanceID)
+  const name = fdid && fdidName.get(String(fdid))
+  if (!name) continue
+  const order = +m.OrderIndex || 0
+  if (!appearanceIcon.has(m.ItemID) || order < appearanceOrder.get(m.ItemID)) {
+    appearanceIcon.set(m.ItemID, name)
+    appearanceOrder.set(m.ItemID, order)
+  }
+}
+
+// itemID -> icon name (Item.IconFileDataID -> listfile, else the appearance's icon).
+const itemIcon = new Map(appearanceIcon)
 const relicIds = new Set()
 for (const it of itemRows) {
   const name = fdidName.get(String(it.IconFileDataID))
@@ -73,11 +94,13 @@ for (const it of itemRows) {
 // Emit trinkets and relics: { id: { name, icon, ilvl, quality } } each.
 const out = {}
 const relics = {}
+const legendaries = {}
 let withIcon = 0
 for (const s of sparseRows) {
   const isTrinket = +s.InventoryType === TRINKET_INVTYPE
   const isRelic = relicIds.has(s.ID)
-  if (!isTrinket && !isRelic) continue
+  const isLegendary = +s.OverallQualityID === LEGENDARY_QUALITY && +s.InventoryType > 0
+  if (!isTrinket && !isRelic && !isLegendary) continue
   const name = (s.Display_lang || '').trim()
   if (!name) continue
   const icon = itemIcon.get(s.ID) || ''
@@ -92,6 +115,7 @@ for (const s of sparseRows) {
     out[s.ID] = rec
   }
   if (isRelic) relics[s.ID] = rec
+  if (isLegendary) legendaries[s.ID] = rec
 }
 
 const banner =
@@ -102,12 +126,18 @@ const banner =
   `// RELIC_ICONS — artifact relics (Item ClassID 3 / SubclassID 11), same shape. The armory
 ` +
   `//               reports only a relic's item id, so name + icon are resolved from here.
+` +
+  `// LEGENDARY_ICONS — every legendary-quality equippable item, same shape (CrowLogsHelper
+` +
+  `//               gear snapshots carry only item ids).
 `
 writeFileSync(
   'src/lib/itemIcons.js',
   `${banner}export const ITEM_ICONS = ${JSON.stringify(out)}
 
 export const RELIC_ICONS = ${JSON.stringify(relics)}
+
+export const LEGENDARY_ICONS = ${JSON.stringify(legendaries)}
 `,
 )
 
@@ -115,6 +145,8 @@ const total = Object.keys(out).length
 console.log(`\nWrote src/lib/itemIcons.js`)
 console.log(`trinkets: ${total}, with icon: ${withIcon}, missing icon: ${total - withIcon}`)
 console.log(`relics: ${Object.keys(relics).length}`)
+console.log(`legendaries: ${Object.keys(legendaries).length}`)
+console.log('sample legendary 132452:', legendaries['132452'])
 console.log('sample relic 133687:', relics['133687'])
 console.log('sample 128024:', out['128024'])
 console.log('sample 124546:', out['124546'])

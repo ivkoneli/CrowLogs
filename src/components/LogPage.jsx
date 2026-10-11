@@ -168,6 +168,10 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
                     ilvlIsLive={r.ilvlIsLive}
                     talents={r.talents}
                     trinkets={r.trinkets}
+                    legendaries={r.legendaries}
+                    fightId={r.id}
+                    metric={metric}
+                    total={metric === 'hps' ? r.healing : r.damage}
                     duration={r.duration}
                     when={enc.day}
                     onClick={() => onSelectPlayer(r.player)}

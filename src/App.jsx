@@ -10,7 +10,7 @@ import DuplicatePrompt from './components/DuplicatePrompt.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
 import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
-import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf } from './lib/characters.js'
+import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf, legendariesOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
 import { initAdminFromUrl } from './lib/admin.js'
 import { selectionFromHash, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
@@ -172,6 +172,7 @@ export default function App() {
               ilvl: r.ilvl ?? c.ilvl,
               talents: r.talents?.length ? r.talents : c.talents,
               trinkets: r.trinkets?.length ? r.trinkets : trinketsOf(c.gear),
+              legendaries: r.legendaries?.length ? r.legendaries : legendariesOf(c.gear),
               spec: r.spec ?? c.spec,
               spec_icon: r.spec_icon ?? c.spec_icon ?? null,
             }

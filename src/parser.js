@@ -67,6 +67,36 @@ const HEAL_OVERHEAL_FROM_END = 3
 const ABSORB_CASTER_GUID_FROM_END = 8
 const ABSORB_CASTER_NAME_FROM_END = 7
 const ABSORB_AMOUNT_FROM_END = 1
+const ABSORB_SPELL_ID_FROM_END = 4
+const ABSORB_SPELL_NAME_FROM_END = 3
+const ABSORB_SCHOOL_FROM_END = 2
+// Spell prefix of *_DAMAGE / *_HEAL events (after the 8 source/dest fields).
+const SPELL_ID = 9
+const SPELL_NAME = 10
+const SPELL_SCHOOL = 11
+// Melee has no spell prefix; shown as the Auto Attack spell, physical school.
+const MELEE = { id: 6603, name: 'Melee', school: 1 }
+// Per-spell breakdown kept per fight row: the top N spells, the rest summed as "Other".
+const MAX_SPELLS = 30
+
+// Add `amount` to a player's per-spell tally. Pet abilities are keyed apart from the
+// owner's own (a Felguard's Legion Strike vs the warlock's), with the pet's name kept.
+function tally(map, id, name, school, petName, amount) {
+  const key = petName ? `${id}|${petName}` : id
+  const cur = map.get(key)
+  if (cur) cur[2] += amount
+  else map.set(key, [Number(id) || 0, name || 'Unknown', amount, Number(school) || 0, petName || null])
+}
+
+// Map → compact sorted array [[spellId, name, amount, school, petName|null], …].
+function spellList(map) {
+  const all = [...map.values()].sort((a, b) => b[2] - a[2])
+  if (all.length <= MAX_SPELLS) return all
+  const kept = all.slice(0, MAX_SPELLS - 1)
+  const rest = all.slice(MAX_SPELLS - 1).reduce((sum, r) => sum + r[2], 0)
+  kept.push([0, 'Other', rest, 0, null])
+  return kept
+}
 
 function splitFields(record) {
   const out = []
@@ -183,7 +213,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
   const credit = (guid, name) => {
     let p = players.get(name)
     if (!p) {
-      p = { player: name, guid, pet: false, damage: 0, hits: 0, healing: 0, potions: 0 }
+      p = { player: name, guid, pet: false, damage: 0, hits: 0, healing: 0, potions: 0, dmgSpells: new Map(), healSpells: new Map() }
       players.set(name, p)
     }
     return p
@@ -220,6 +250,10 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
       if (who.pet) p.pet = true
       p.damage += amount
       p.hits += 1
+      // A folded pet's hits are labelled with its name; an unmapped pet row is its own actor.
+      const petName = isPetGuid(srcGuid) && !who.pet ? f[2] : null
+      if (ev.event === 'SWING_DAMAGE') tally(p.dmgSpells, MELEE.id, MELEE.name, MELEE.school, petName, amount)
+      else tally(p.dmgSpells, f[SPELL_ID], f[SPELL_NAME], f[SPELL_SCHOOL], petName, amount)
       if (firstActivity === null) firstActivity = ev.ts
       lastActivity = ev.ts
     } else if (HEAL_EVENTS.has(ev.event)) {
@@ -233,6 +267,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
       const p = credit(who.guid, who.name)
       if (who.pet) p.pet = true
       p.healing += effective
+      tally(p.healSpells, f[SPELL_ID], f[SPELL_NAME], f[SPELL_SCHOOL], isPetGuid(srcGuid) && !who.pet ? f[2] : null, effective)
       if (firstActivity === null) firstActivity = ev.ts
       lastActivity = ev.ts
     } else if (ev.event === 'SPELL_ABSORBED') {
@@ -245,6 +280,14 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
       const p = credit(who.guid, who.name)
       if (who.pet) p.pet = true
       p.healing += amount
+      tally(
+        p.healSpells,
+        f[f.length - ABSORB_SPELL_ID_FROM_END],
+        f[f.length - ABSORB_SPELL_NAME_FROM_END],
+        f[f.length - ABSORB_SCHOOL_FROM_END],
+        isPetGuid(casterGuid) && !who.pet ? f[f.length - ABSORB_CASTER_NAME_FROM_END] : null,
+        amount,
+      )
       if (firstActivity === null) firstActivity = ev.ts
       lastActivity = ev.ts
     }
@@ -283,6 +326,8 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
       healing: p.healing,
       hps: durationSec > 0 ? Math.round(p.healing / durationSec) : 0,
       potions: p.potions,
+      // Per-spell totals for the meter's hover breakdown (see spellList for the shape).
+      spells: { dmg: spellList(p.dmgSpells), heal: spellList(p.healSpells) },
       duration: durationMs,
       hits: p.hits,
       started: startedMs,

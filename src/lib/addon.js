@@ -10,7 +10,7 @@
 
 import { parseLua, luaArray } from './luaParse.js'
 import { TALENT_BY_ID } from './talentIcons.js'
-import { ITEM_ICONS } from './itemIcons.js'
+import { ITEM_ICONS, LEGENDARY_ICONS } from './itemIcons.js'
 import { iconUrl, specIconUrl } from './classes.js'
 import { foldPetsByOwner } from './petfold.js'
 
@@ -21,6 +21,8 @@ const CLASS_TOKEN = {
   WARLOCK: 'Warlock', MONK: 'Monk', DRUID: 'Druid', DEMONHUNTER: 'Demon Hunter',
 }
 const TALENT_ROWS = 7
+// A snapshot older than this (relative to its pull) is from another raid night: not trusted.
+const SNAPSHOT_MAX_AGE_SEC = 12 * 60 * 60
 
 // Parse a SavedVariables file into { loadouts: {hash->loadout}, pulls: [pull] }.
 // Returns null if it doesn't look like a CrowLogsHelper DB.
@@ -60,6 +62,18 @@ function trinket(link) {
   return { id: +id, name: it.name, icon: iconUrl(it.icon), ilvl: it.ilvl, quality: it.quality }
 }
 
+// Every equipped legendary, in slot order -> [{ id, name, icon, ilvl, quality }]. The
+// addon records all 19 slots, so legendaries are read from the same snapshot as trinkets.
+function legendariesOf(gear) {
+  const out = []
+  for (let slot = 1; slot <= 19; slot++) {
+    const id = itemId(gear[slot])
+    const it = id && LEGENDARY_ICONS[id]
+    if (it) out.push({ id: +id, name: it.name, icon: iconUrl(it.icon), ilvl: it.ilvl, quality: it.quality })
+  }
+  return out
+}
+
 // Turn a Lua loadout into the frozen character fields a fight row carries.
 export function loadoutSnapshot(loadout) {
   if (!loadout) return null
@@ -73,6 +87,10 @@ export function loadoutSnapshot(loadout) {
   }
   const gear = loadout.gear || {}
   const trinkets = [trinket(gear[13]), trinket(gear[14])].filter(Boolean)
+  const legendaries = legendariesOf(gear)
+  // Same threshold as the addon's Capture.IsComplete: 12+ filled slots = a fully loaded gear
+  // read (inspects included), so "no legendary" really means none was equipped.
+  const gearComplete = Object.keys(gear).length >= 12
   const ilvl = loadout.ilvl || null
   // "Complete" = has the fields inspect can't give (real ilvl + both trinkets). Comm/self
   // snapshots are complete; inspect ones (ilvl 0, sometimes a half-read gear set) are not,
@@ -85,6 +103,8 @@ export function loadoutSnapshot(loadout) {
     ilvl,
     talents,
     trinkets,
+    legendaries,
+    gearComplete,
     complete,
     // The player was actually running the addon on this pull only if their snapshot came
     // from a comm reply (or is the recorder's own). An `inspect` snapshot means the leader
@@ -158,7 +178,14 @@ export function freezeFromAddon(fights, addon) {
     const pull = matchPull(f, addon.pulls)
     // Even with no matched pull / snapshot, a confirmed addon user still counts as one.
     if (!pull) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
-    const snap = snapshotFor(pull.participants[f.guid])
+    const hash = pull.participants[f.guid]
+    // Addon versions before 1.12 attached the newest stored snapshot at pull start with no
+    // age limit, so a build inspected on a past raid night (a different spec, old talents
+    // and gear) could be frozen onto tonight's pull. Ignore any snapshot captured more than
+    // 12h before the pull; the player then falls back to the armory like an uncovered one.
+    const lo = addon.loadouts[hash]
+    const stale = lo?.capturedAt && pull.startEpoch && pull.startEpoch - lo.capturedAt > SNAPSHOT_MAX_AGE_SEC
+    const snap = stale ? null : snapshotFor(hash)
     if (!snap) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
     // Only a COMPLETE snapshot marks the player covered (skips the armory). A partial one
     // (inspect) still freezes the reliable spec/talents, but leaves ilvl/trinkets unset so
@@ -172,6 +199,9 @@ export function freezeFromAddon(fights, addon) {
       ilvl: snap.ilvl ?? f.ilvl,
       talents: snap.talents.length ? snap.talents : f.talents,
       trinkets: snap.trinkets.length >= 2 ? snap.trinkets : f.trinkets,
+      // Legendaries are trusted whenever the gear read was fully loaded (inspects included,
+      // unlike ilvl); a half-loaded read could miss one, so then the armory fills them in.
+      legendaries: snap.gearComplete ? snap.legendaries : f.legendaries,
       // Confirmed running the addon: broadcast their build (comm/self) OR replied over
       // comms (hasAddon) even though this pull's build was frozen from an inspect.
       from_addon: !!snap.hadAddon || hasAddon(f.guid),

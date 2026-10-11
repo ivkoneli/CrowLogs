@@ -5,7 +5,9 @@ import { classColor } from '../lib/classes.js'
 import { formatDps, formatDuration } from '../parser.js'
 import TalentStrip from './TalentStrip.jsx'
 import FactionIcon from './FactionIcon.jsx'
-import { SpecRaceSlots, TrinketSlots } from './IconSlots.jsx'
+import { SpecRaceSlots, TrinketSlots, LegendarySlots } from './IconSlots.jsx'
+import { SpellPanel } from './SpellBreakdown.jsx'
+import { useSpellHover } from '../lib/useSpellHover.js'
 
 export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
   return (
@@ -18,6 +20,7 @@ export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
         <th className="num">ilvl</th>
         <th className="talents-col">Talents</th>
         <th className="talents-col">Trinkets</th>
+        <th className="talents-col">Legendaries</th>
         <th className="num">Duration</th>
         <th className="num">When</th>
       </tr>
@@ -49,6 +52,7 @@ export function MeterRow({
   ilvlIsLive = false,
   talents,
   trinkets,
+  legendaries,
   duration,
   when,
   onClick,
@@ -56,11 +60,27 @@ export function MeterRow({
   // 'inspect' | 'armory' — provenance tag (admin-only; caller passes null otherwise).
   // 'addon'/unset shows nothing, matching the "addon users are unmarked" convention.
   source = null,
+  // Hover breakdown: the fight row's id (fetches its per-spell data), the active metric,
+  // and the player's total damage/healing (the 100% the spell shares are taken of).
+  fightId = null,
+  metric = 'dps',
+  total = 0,
 }) {
+  const hover = useSpellHover(!!fightId)
   return (
     <tr className={onRowClick ? 'log-row' : undefined} onClick={onRowClick || undefined}>
       <td className="rank">{rank}</td>
-      <td className="name-cell">
+      <td className={`name-cell${fightId ? ' has-spells' : ''}`} {...hover.handlers}>
+        {hover.anchor && (
+          <SpellPanel
+            fightId={fightId}
+            metric={metric}
+            total={total}
+            durationMs={duration}
+            name={name}
+            anchor={hover.anchor}
+          />
+        )}
         <div className="bar-wrap">
           <div
             className="bar"
@@ -125,6 +145,9 @@ export function MeterRow({
       </td>
       <td className="talents-col">
         <TrinketSlots trinkets={trinkets} />
+      </td>
+      <td className="talents-col">
+        <LegendarySlots legendaries={legendaries} />
       </td>
       <td className="num muted">{formatDuration(duration)}</td>
       <td className="num muted">{when}</td>
