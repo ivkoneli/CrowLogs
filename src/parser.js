@@ -15,6 +15,7 @@
 //   SPELL_ABSORBED: …, absorbCasterGUID, "name", flags, raidFlags, spellId, "spell", school, amount
 
 import { matchBoss, difficultyFromId, DEFAULT_DIFFICULTY } from './lib/raids.js'
+import { specFromSpells } from './lib/specDetect.js'
 
 const DAMAGE_EVENTS = new Set([
   'SWING_DAMAGE',
@@ -311,37 +312,42 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
 
   return [...players.values()]
     .filter((p) => p.damage > 0 || p.healing > 0)
-    .map((p) => ({
-      id: `${raid}::${boss}::${difficulty}::${p.player}::${startedMs}`,
-      raid,
-      boss,
-      difficulty,
-      // Numeric ENCOUNTER_START id (null when the log had no markers). Used to join
-      // fights onto CrowLogsHelper addon pulls (see lib/addon.js).
-      encounterID: encounterID ?? null,
-      kill,
-      bloodlust,
-      player: p.player,
-      guid: p.guid,
-      pet: p.pet,
-      damage: p.damage,
-      dps: durationSec > 0 ? Math.round(p.damage / durationSec) : 0,
-      healing: p.healing,
-      hps: durationSec > 0 ? Math.round(p.healing / durationSec) : 0,
-      potions: p.potions,
-      // Per-spell totals for the meter's hover breakdown (see spellList for the shape).
-      spells: { dmg: spellList(p.dmgSpells), heal: spellList(p.healSpells) },
-      duration: durationMs,
-      hits: p.hits,
-      started: startedMs,
-      day: formatDay(startedMs),
-      // Populated later from COMBATANT_INFO (advanced logging). Null/empty for now.
-      class: null,
-      spec: null,
-      faction: null,
-      ilvl: null,
-      talents: [],
-    }))
+    .map((p) => {
+      const spells = { dmg: spellList(p.dmgSpells), heal: spellList(p.healSpells) }
+      return {
+        id: `${raid}::${boss}::${difficulty}::${p.player}::${startedMs}`,
+        raid,
+        boss,
+        difficulty,
+        // Numeric ENCOUNTER_START id (null when the log had no markers). Used to join
+        // fights onto CrowLogsHelper addon pulls (see lib/addon.js).
+        encounterID: encounterID ?? null,
+        kill,
+        bloodlust,
+        player: p.player,
+        guid: p.guid,
+        pet: p.pet,
+        damage: p.damage,
+        dps: durationSec > 0 ? Math.round(p.damage / durationSec) : 0,
+        healing: p.healing,
+        hps: durationSec > 0 ? Math.round(p.healing / durationSec) : 0,
+        potions: p.potions,
+        // Per-spell totals for the meter's hover breakdown (see spellList for the shape).
+        spells,
+        duration: durationMs,
+        hits: p.hits,
+        started: startedMs,
+        day: formatDay(startedMs),
+        // Spec comes from the spells used on this pull (see lib/specDetect.js); an addon
+        // snapshot overrides it, the armory only fills it when the log couldn't tell. The
+        // rest is filled later by the addon snapshot / armory.
+        class: null,
+        spec: p.pet ? null : (specFromSpells(spells)?.spec ?? null),
+        faction: null,
+        ilvl: null,
+        talents: [],
+      }
+    })
 }
 
 // Incremental log parser. Feed it raw lines one at a time with `pushLine` (in file order),

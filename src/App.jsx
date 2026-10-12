@@ -13,6 +13,7 @@ import { getFights, addFights, isShared } from './lib/store.js'
 import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf, legendariesOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
+import { specIconUrl } from './lib/classes.js'
 import { initAdminFromUrl } from './lib/admin.js'
 import { selectionFromHash, selectionToHash, inAppClick, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
 import { useMediaQuery } from './lib/useMediaQuery.js'
@@ -179,14 +180,17 @@ export default function App() {
           const frozen = recs.map((r) => {
             const c = byKey.get(charKey(r.player))
             if (!c) return r
+            // The log (or addon) says they played another spec than the armory shows now:
+            // the armory's talents and spec icon belong to that other spec, so leave them off.
+            const offSpec = r.spec != null && c.spec != null && r.spec !== c.spec
             return {
               ...r,
               ilvl: r.ilvl ?? c.ilvl,
-              talents: r.talents?.length ? r.talents : c.talents,
+              talents: r.talents?.length || offSpec ? r.talents : c.talents,
               trinkets: r.trinkets?.length ? r.trinkets : trinketsOf(c.gear),
               legendaries: r.legendaries?.length ? r.legendaries : legendariesOf(c.gear),
               spec: r.spec ?? c.spec,
-              spec_icon: r.spec_icon ?? c.spec_icon ?? null,
+              spec_icon: r.spec_icon ?? (offSpec ? specIconUrl(c.class, r.spec) : c.spec_icon) ?? null,
             }
           })
           onProgress(0.8, 'Applying profiles…')

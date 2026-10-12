@@ -86,6 +86,9 @@ export function mergeCharacters(fights, characters) {
     const snapshotSrc = snapshotSourceOf(f)
     const c = byKey.get(charKey(f.player))
     if (!c) return { ...f, snapshotSrc }
+    // The pull was played in another spec than the armory shows now, so the armory's
+    // talents and spec icon don't describe it.
+    const offSpec = f.spec != null && c.spec != null && f.spec !== c.spec
     return {
       ...f,
       snapshotSrc,
@@ -114,14 +117,14 @@ export function mergeCharacters(fights, characters) {
       liveSpec: c.spec ?? null,
       liveSpecIcon: c.spec_icon ?? null,
       liveTalents: c.talents ?? null,
-      talents: f.talents && f.talents.length ? f.talents : c.talents || [],
+      talents: f.talents && f.talents.length ? f.talents : (!offSpec && c.talents) || [],
       // Frozen trinkets win; otherwise derive from the live armory gear. `gear` is
       // the live equipped set (for the gear tab), never frozen per-fight.
       trinkets: f.trinkets && f.trinkets.length ? f.trinkets : trinketsOf(c.gear),
       // Same rule: legendaries frozen on the pull win, else the player's CURRENT ones.
       legendaries: f.legendaries && f.legendaries.length ? f.legendaries : legendariesOf(c.gear),
       gear: c.gear || f.gear || [],
-      specIcon: f.spec_icon ?? f.specIcon ?? c.spec_icon ?? null,
+      specIcon: f.spec_icon ?? f.specIcon ?? (offSpec ? null : c.spec_icon) ?? null,
     }
   })
 }
