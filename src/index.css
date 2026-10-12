@@ -3069,6 +3069,29 @@ a.mp-rank.link:hover {
 .mr-spec .spec-tabs {
   margin: 0;
 }
+.mr-search-box input {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.5rem 0.75rem;
+  width: 200px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mr-search-box input::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}
+.mr-search-box input:hover {
+  border-color: var(--accent);
+}
+.mr-search-box input:focus {
+  border-color: var(--highlight);
+  box-shadow: 0 0 0 2px rgba(92, 210, 255, 0.18);
+}
 .mr-loading {
   opacity: 0.55;
   transition: opacity 0.15s;

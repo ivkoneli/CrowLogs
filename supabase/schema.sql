@@ -463,10 +463,15 @@ revoke execute on function refresh_mplus_scores() from public, anon, authenticat
 --   class             → that class's players by overall score
 --   class + spec      → players of that class by their score AS that spec
 --   p_realm (armory string, optional) narrows any of them to one realm
--- `rank` is the position inside the filtered list (ties broken by name so paging is
--- stable), `total` its size. When p_find_* names a player, p_offset is ignored and the
--- page that player is on comes back instead (the profile's rank chips link here).
+-- `rank` is the position inside that list (ties broken by name so paging is stable).
+-- p_search (optional, 2+ characters) then keeps only names containing it — accent-free,
+-- like the sidebar search — WITHOUT changing anyone's rank: searching "ivko" in Fury
+-- Warriors still shows Ivkomdfk as #14. `total` is the number of rows being paged
+-- through (the whole list, or the matches when searching).
+-- When p_find_* names a player, p_offset is ignored and the page that player is on comes
+-- back instead (the profile's rank chips link here).
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text);
+drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
 create or replace function mplus_leaderboard(
   p_class text default null,
   p_spec text default null,
@@ -474,29 +479,38 @@ create or replace function mplus_leaderboard(
   p_limit int default 25,
   p_offset int default 0,
   p_find_realm text default null,
-  p_find_name text default null
+  p_find_name text default null,
+  p_search text default null
 )
 returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb)
-language sql stable set search_path = public as $$
+language sql stable set search_path = extensions, public as $$
   with lim as (select least(greatest(coalesce(p_limit, 25), 1), 50) as n),
-  f as (
+  q as ( -- the folded search text with LIKE wildcards escaped, or null when not searching
+    select case when length(name_fold(btrim(coalesce(p_search, '')))) >= 2
+      then replace(replace(replace(name_fold(btrim(p_search)), '\', '\\'), '%', '\%'), '_', '\_') end as esc
+  ),
+  ranked as (
     select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best,
-           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
-           count(*) over () as total
+           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk
     from mplus_scores s
     where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
       and (p_class is null or s.class = p_class)
       and (p_realm is null or s.realm = p_realm)
   ),
+  f as (
+    select r.*, row_number() over (order by r.rk) as pos, count(*) over () as total
+    from ranked r, q
+    where q.esc is null or name_fold(r.name) like '%' || q.esc || '%'
+  ),
   start as (
     select coalesce(
-      (select ((f.rk - 1) / lim.n) * lim.n from f, lim
+      (select ((f.pos - 1) / lim.n) * lim.n from f, lim
        where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
       greatest(coalesce(p_offset, 0), 0)) as o
   )
   select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best
   from f, lim, start
-  where f.rk > start.o and f.rk <= start.o + lim.n
-  order by f.rk
+  where f.pos > start.o and f.pos <= start.o + lim.n
+  order by f.pos
 $$;
-grant execute on function mplus_leaderboard(text, text, text, int, int, text, text) to anon, authenticated;
+grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text) to anon, authenticated;

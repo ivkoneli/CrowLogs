@@ -224,7 +224,17 @@ export default function App() {
   const onImport = () => navigate({ view: 'import' })
   const onHome = () => navigate({ view: 'home' })
   // M+ rankings; `sel` = { klass, spec, realm, page, focus } (all optional).
-  const onRankings = useCallback((sel = {}) => navigate({ view: 'mplus', ...sel }), [navigate])
+  // `replace` rewrites the current history entry instead of adding one (typing in the
+  // rankings search shouldn't leave a back-button step per keystroke).
+  const onRankings = useCallback(
+    (sel = {}, { replace = false } = {}) => {
+      const next = { view: 'mplus', ...sel }
+      if (!replace) return navigate(next)
+      replaceSelection(next)
+      setSelection(next)
+    },
+    [navigate],
+  )
 
   // Switching encounter tabs inside a log rewrites the URL in place (no history spam),
   // so copying the address always shares the boss you're looking at.
@@ -263,6 +273,7 @@ export default function App() {
               klass={selection.klass}
               spec={selection.spec}
               realm={selection.realm}
+              search={selection.search}
               page={selection.page}
               focus={selection.focus}
               onNavigate={onRankings}

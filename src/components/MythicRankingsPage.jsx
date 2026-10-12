@@ -1,7 +1,7 @@
 // Mythic+ rankings: players by M+ score, 25 per page, filterable by class, spec and realm.
 // Each row shows the player's best run in every dungeon as "key + medal" (hover for that
 // run's score and time). Filters, page and the highlighted player all live in the URL
-// (#/mplus?class=…&spec=…&realm=…&page=…&player=…), so a view can be shared and the
+// (#/mplus?class=…&spec=…&realm=…&q=…&page=…&player=…), so a view can be shared and the
 // profile's rank chips can link straight to a player's row.
 import { useEffect, useState } from 'react'
 import {
@@ -55,8 +55,13 @@ function BestCell({ dungeon, run }) {
   )
 }
 
-export default function MythicRankingsPage({ klass, spec, realm, page, focus, onNavigate, onSelectPlayer }) {
+export default function MythicRankingsPage({ klass, spec, realm, search, page, focus, onNavigate, onSelectPlayer }) {
   const [state, setState] = useState({ loading: true, rows: [], error: null })
+  // What's typed in the search box. The applied search lives in the URL (`search`); typing
+  // updates it after a short pause, and Back/Forward or a shared link fills the box.
+  const [text, setText] = useState(search || '')
+  useEffect(() => setText(search || ''), [search])
+  const query = (search || '').trim().length >= 2 ? search.trim() : null
   const armoryRealm = realm ? MPLUS_REALMS[realm] || null : null
   // A highlighted player with no explicit page = "open the page they're on".
   const find = focus && !page ? splitPlayerKey(focus) : null
@@ -66,15 +71,22 @@ export default function MythicRankingsPage({ klass, spec, realm, page, focus, on
   useEffect(() => {
     let cancelled = false
     setState((s) => ({ ...s, loading: true, error: null }))
-    getLeaderboard({ klass, spec, realm: armoryRealm, page: page || 1, findName, findRealm })
+    getLeaderboard({ klass, spec, realm: armoryRealm, page: page || 1, findName, findRealm, search: query })
       .then((rows) => !cancelled && setState({ loading: false, rows, error: null }))
       .catch((e) => !cancelled && setState({ loading: false, rows: [], error: e.message || 'Request failed.' }))
     return () => {
       cancelled = true
     }
-  }, [klass, spec, armoryRealm, page, findName, findRealm])
+  }, [klass, spec, armoryRealm, page, findName, findRealm, query])
 
   const { loading, rows, error } = state
+  // A page past the end (an old link, or a search that now has fewer matches) has no rows:
+  // fall back to page 1 rather than showing an empty list.
+  const pastEnd = !loading && !error && rows.length === 0 && page > 1
+  useEffect(() => {
+    if (pastEnd) onNavigate({ klass, spec, realm, search, focus, page: null }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastEnd])
   const total = rows[0]?.total || 0
   const pages = Math.max(1, Math.ceil(total / RANKINGS_PAGE_SIZE))
   // The page actually shown: explicit, or wherever the highlighted player turned out to be.
@@ -83,8 +95,21 @@ export default function MythicRankingsPage({ klass, spec, realm, page, focus, on
   const focusKey = focus ? focus.toLowerCase() : null
 
   // Changing a filter starts over on page 1 and drops the highlight; paging keeps both.
-  const setFilter = (patch) => onNavigate({ klass, spec, realm, ...patch, page: null, focus: null })
-  const setPage = (p) => onNavigate({ klass, spec, realm, focus, page: p })
+  const setFilter = (patch) => onNavigate({ klass, spec, realm, search, ...patch, page: null, focus: null })
+  const setPage = (p) => onNavigate({ klass, spec, realm, search, focus, page: p })
+
+  // Apply the typed search once typing pauses. It replaces the current history entry, so
+  // a search is one Back step however many letters it took.
+  useEffect(() => {
+    const next = text.trim() || null
+    if (next === (search || null)) return
+    const t = setTimeout(
+      () => onNavigate({ klass, spec, realm, search: next, page: null, focus: null }, { replace: true }),
+      300,
+    )
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text])
 
   const scope = [realm ? REALM_LABELS[realm] : null, spec, klass].filter(Boolean).join(' ') || 'All players'
   const scoreTitle = spec
@@ -98,7 +123,9 @@ export default function MythicRankingsPage({ klass, spec, realm, page, focus, on
         <h2>Mythic+ rankings</h2>
         <p className="kills">
           {scope}
-          {total > 0 && ` · ${total.toLocaleString('en-US')} ${total === 1 ? 'player' : 'players'}`}
+          {query
+            ? ` · ${total.toLocaleString('en-US')} ${total === 1 ? 'match' : 'matches'} for “${query}”`
+            : total > 0 && ` · ${total.toLocaleString('en-US')} ${total === 1 ? 'player' : 'players'}`}
         </p>
       </div>
 
@@ -119,6 +146,18 @@ export default function MythicRankingsPage({ klass, spec, realm, page, focus, on
             </option>
           ))}
         </Field>
+        <label className="filter-field mr-search">
+          <span className="field-label">Player</span>
+          <span className="mr-search-box">
+            <input
+              type="search"
+              placeholder="Search this list…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              aria-label="Search players in this ranking"
+            />
+          </span>
+        </label>
         {specTabs.length > 0 && (
           <div className="mr-spec">
             <span className="field-label">Spec</span>
@@ -132,7 +171,11 @@ export default function MythicRankingsPage({ klass, spec, realm, page, focus, on
       ) : loading && !rows.length ? (
         <div className="empty-state">Loading rankings…</div>
       ) : !rows.length ? (
-        <div className="empty-state">No {scope === 'All players' ? '' : `${scope} `}players have a Mythic+ run yet.</div>
+        <div className="empty-state">
+          {query
+            ? `No player matching “${query}” in ${scope === 'All players' ? 'the rankings' : `the ${scope} rankings`}.`
+            : `No ${scope === 'All players' ? '' : `${scope} `}players have a Mythic+ run yet.`}
+        </div>
       ) : (
         <>
           <div className={`table-scroll ${loading ? 'mr-loading' : ''}`}>

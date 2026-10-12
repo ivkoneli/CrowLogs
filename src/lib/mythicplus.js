@@ -323,10 +323,12 @@ export async function getPlayerRanks(player) {
 // One page of the M+ rankings (see mplus_leaderboard in schema.sql). `klass`/`spec` pick
 // the scope (none = everyone's overall score, class = that class by overall score, class +
 // spec = that spec's score), `realm` (armory string) narrows it. With findName/findRealm
-// the page that player is on is returned instead of `page`.
+// the page that player is on is returned instead of `page`. `search` (2+ characters) keeps
+// only names containing it; ranks stay the player's real rank in the scope, and `total`
+// becomes the number of matches.
 // → [{ rank, total, realm, name, class, spec, score, best: { mapId: [level, medal, score, ms] } }]
 export const RANKINGS_PAGE_SIZE = 25
-export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null } = {}) {
+export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null, search = null } = {}) {
   if (!supabase) return []
   const { data, error } = await supabase.rpc('mplus_leaderboard', {
     p_class: klass,
@@ -336,6 +338,7 @@ export async function getLeaderboard({ klass = null, spec = null, realm = null, 
     p_offset: (Math.max(1, page) - 1) * RANKINGS_PAGE_SIZE,
     p_find_realm: findName ? findRealm : null,
     p_find_name: findName,
+    p_search: search || null,
   })
   if (error) throw error
   return (data || []).map((r) => ({ ...r, score: Number(r.score) }))
