@@ -1,4 +1,5 @@
-// Mythic+ rankings: players by M+ score, 25 per page, filterable by class, spec and realm.
+// Mythic+ rankings: players by M+ score, 25 per page, filterable by class, spec and realm
+// (a dropdown that lists every class with its specs, or the population tiles below it).
 // Each row shows the player's best run in every dungeon as "key + medal" (hover for that
 // run's score and time). Filters, page and the highlighted player all live in the URL
 // (#/mplus?class=…&spec=…&realm=…&q=…&page=…&player=…), so a view can be shared and the
@@ -10,6 +11,7 @@ import {
   MEDALS,
   RANKINGS_PAGE_SIZE,
   getLeaderboard,
+  getPopulation,
   dungeonIconUrl,
   formatScore,
   formatRunTime,
@@ -18,12 +20,14 @@ import {
 } from '../lib/mythicplus.js'
 import { LEGION_CLASSES, classColor, specsOf, specIconUrl } from '../lib/classes.js'
 import { selectionToHash, inAppClick } from '../lib/router.js'
-import SpecTabs from './SpecTabs.jsx'
 import { Medal, Pager } from './MythicPlusCard.jsx'
 
 // Realm slug → short label for the filter and the tag after a name.
 const REALM_LABELS = { evermoon: 'Evermoon', tauri: 'Tauri', wod: 'WoD' }
 const SLUG_OF_REALM = Object.fromEntries(Object.entries(MPLUS_REALMS).map(([slug, realm]) => [realm, slug]))
+// Non-breaking spaces that indent a spec under its class in the dropdown (a plain
+// space would be collapsed by the browser).
+const SPEC_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 
 function Field({ label, value, onChange, children }) {
   return (
@@ -36,6 +40,76 @@ function Field({ label, value, onChange, children }) {
         <span className="caret">▾</span>
       </span>
     </label>
+  )
+}
+
+// Population tiles: every class as a block, split into its specs, each sized by how many
+// players have a score in it (a spec's width within its class, a class's share of its
+// row). Clicking a class header filters to the class, a spec tile to that spec; clicking
+// the active one again clears it.
+function PopulationTiles({ population, klass, spec, onPick }) {
+  const classes = LEGION_CLASSES.map((c) => ({ name: c.name, ...(population.get(c.name) || { players: 0, specs: new Map() }) }))
+    .filter((c) => c.players > 0)
+    .sort((a, b) => b.players - a.players)
+  if (!classes.length) return null
+  // Every block's starting width is its share of ALL players, times the number of rows the
+  // CSS wants (--mr-rows): blocks then wrap into about that many rows on one common scale,
+  // so sizes compare across rows too, not just inside a row.
+  const total = classes.reduce((sum, c) => sum + c.players, 0)
+  const share = (c) => ((c.players / total) * 100).toFixed(3)
+  return (
+    <div className="mr-pop" role="group" aria-label="Filter by class and spec">
+      {classes.map((c) => {
+        const color = classColor(c.name)
+        const specs = specsOf(c.name)
+          .map((s) => ({ name: s.name, players: c.specs.get(s.name) || 0 }))
+          .filter((s) => s.players > 0)
+          .sort((a, b) => b.players - a.players)
+        const classOn = klass === c.name
+        return (
+          <div
+            key={c.name}
+            className={`mr-pop-class ${classOn ? 'on' : ''}`}
+            style={{
+              flexGrow: c.players,
+              // 0.9: slack for the space a wrapped row can't use, so the blocks really fit in
+              // --mr-rows rows. A block may grow to fill its row, but only by a fifth — a
+              // class left alone on the last row stays its true size instead of spanning it.
+              flexBasis: `calc(${share(c)}% * var(--mr-rows) * 0.9)`,
+              maxWidth: `calc(${share(c)}% * var(--mr-rows) * 0.9 * 1.2)`,
+              '--class-color': color,
+            }}
+          >
+            <button
+              className={`mr-pop-head ${classOn && !spec ? 'on' : ''}`}
+              onClick={() => onPick(classOn && !spec ? { klass: null, spec: null } : { klass: c.name, spec: null })}
+              title={`${c.name}: ${c.players.toLocaleString('en-US')} players · show all ${c.name}s`}
+            >
+              <span className="mr-pop-name">{c.name}</span>
+              <span className="mr-pop-count">{c.players.toLocaleString('en-US')}</span>
+            </button>
+            <div className="mr-pop-specs">
+              {specs.map((s) => {
+                const on = classOn && spec === s.name
+                return (
+                  <button
+                    key={s.name}
+                    className={`mr-pop-spec ${on ? 'on' : ''}`}
+                    style={{ flexGrow: s.players }}
+                    onClick={() => onPick(on ? { klass: c.name, spec: null } : { klass: c.name, spec: s.name })}
+                    title={`${s.name} ${c.name}: ${s.players.toLocaleString('en-US')} players`}
+                  >
+                    <img src={specIconUrl(c.name, s.name)} alt="" />
+                    <span className="mr-pop-spec-name">{s.name}</span>
+                    <span className="mr-pop-spec-count">{s.players.toLocaleString('en-US')}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -57,6 +131,7 @@ function BestCell({ dungeon, run }) {
 
 export default function MythicRankingsPage({ klass, spec, realm, search, page, focus, onNavigate, onSelectPlayer }) {
   const [state, setState] = useState({ loading: true, rows: [], error: null })
+  const [population, setPopulation] = useState(null)
   // What's typed in the search box. The applied search lives in the URL (`search`); typing
   // updates it after a short pause, and Back/Forward or a shared link fills the box.
   const [text, setText] = useState(search || '')
@@ -79,6 +154,17 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
     }
   }, [klass, spec, armoryRealm, page, findName, findRealm, query])
 
+  // Tile sizes follow the realm filter (not class/spec/search: they ARE the class picker).
+  useEffect(() => {
+    let cancelled = false
+    getPopulation(armoryRealm)
+      .then((p) => !cancelled && setPopulation(p))
+      .catch(() => !cancelled && setPopulation(null))
+    return () => {
+      cancelled = true
+    }
+  }, [armoryRealm])
+
   const { loading, rows, error } = state
   // A page past the end (an old link, or a search that now has fewer matches) has no rows:
   // fall back to page 1 rather than showing an empty list.
@@ -91,7 +177,6 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
   const pages = Math.max(1, Math.ceil(total / RANKINGS_PAGE_SIZE))
   // The page actually shown: explicit, or wherever the highlighted player turned out to be.
   const shownPage = page || (rows[0] ? Math.floor((rows[0].rank - 1) / RANKINGS_PAGE_SIZE) + 1 : 1)
-  const specTabs = klass ? specsOf(klass).map((s) => ({ spec: s.name, icon: specIconUrl(klass, s.name) })) : []
   const focusKey = focus ? focus.toLowerCase() : null
 
   // Changing a filter starts over on page 1 and drops the highlight; paging keeps both.
@@ -130,13 +215,27 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
       </div>
 
       <div className="filter-bar mr-filters">
-        <Field label="Class" value={klass} onChange={(v) => setFilter({ klass: v || null, spec: null })}>
+        {/* One dropdown for class AND spec: each class, then its specs indented under it. */}
+        <Field
+          label="Class / spec"
+          value={klass ? (spec ? `${klass}|${spec}` : klass) : ''}
+          onChange={(v) => {
+            const [c, s] = v.split('|')
+            setFilter({ klass: c || null, spec: s || null })
+          }}
+        >
           <option value="">All classes</option>
-          {LEGION_CLASSES.map((c) => (
+          {LEGION_CLASSES.flatMap((c) => [
             <option key={c.name} value={c.name}>
               {c.name}
-            </option>
-          ))}
+            </option>,
+            ...specsOf(c.name).map((s) => (
+              <option key={`${c.name}|${s.name}`} value={`${c.name}|${s.name}`}>
+                {SPEC_INDENT}
+                {s.name}
+              </option>
+            )),
+          ])}
         </Field>
         <Field label="Realm" value={realm} onChange={(v) => setFilter({ realm: v || null })}>
           <option value="">All realms</option>
@@ -158,13 +257,9 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
             />
           </span>
         </label>
-        {specTabs.length > 0 && (
-          <div className="mr-spec">
-            <span className="field-label">Spec</span>
-            <SpecTabs specs={specTabs} value={spec || null} onChange={(s) => setFilter({ spec: s })} />
-          </div>
-        )}
       </div>
+
+      {population && <PopulationTiles population={population} klass={klass} spec={spec} onPick={setFilter} />}
 
       {error ? (
         <div className="error">Couldn’t load the rankings: {error}</div>

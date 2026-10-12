@@ -44,7 +44,7 @@ function RaidGroup({ raid, fights, selection, isOpen, onToggle, onSelectBoss }) 
   )
 }
 
-export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings }) {
+export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings, onClose }) {
   const [query, setQuery] = useState('')
   // Current progression starts expanded; everything under "Other" starts collapsed.
   const [openRaids, setOpenRaids] = useState(() => new Set(MAIN_RAIDS.map((r) => r.name)))
@@ -105,6 +105,9 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
 
   return (
     <aside className="sidebar">
+      <button className="nav-close" onClick={() => onClose?.()} aria-label="Close menu" title="Close menu">
+        ✕
+      </button>
       <div className="brand" onClick={() => onHome()} role="button" tabIndex={0} title="Home: best Mythic+ runs">
         <img className="brand-logo" src={logo} alt="Crows' Nest" />
         <span className="brand-name">CrowLogs</span>

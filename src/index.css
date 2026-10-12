@@ -77,10 +77,90 @@ code {
 }
 
 /* ---------- layout ---------- */
+/* The sidebar is either docked beside the content (.nav-docked) or tucked away: hidden
+   (.nav-hidden) with a top bar holding the ☰ button, which opens it as a drawer over the
+   page (.nav-drawer). App.jsx picks the mode from the window width, the page (the profile
+   needs more room) and whether the user closed it. */
 .layout {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100vh;
+  align-content: start;
+}
+.layout.nav-docked {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  align-content: stretch;
+}
+.layout.nav-hidden .sidebar {
+  display: none;
+}
+.layout.nav-drawer .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  width: min(300px, 86vw);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.6);
+}
+.nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  background: rgba(5, 3, 10, 0.6);
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 48px;
+  padding: 0 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.nav-toggle,
+.nav-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.nav-toggle:hover,
+.nav-close:hover {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+.nav-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  font-size: 0.8rem;
+  background: rgba(20, 14, 34, 0.75);
+}
+.topbar-brand {
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.topbar-brand:hover {
+  color: var(--accent-2);
 }
 
 .sidebar {
@@ -100,6 +180,10 @@ code {
 .content {
   padding: 1.5rem 2rem 4rem;
   max-width: 960px;
+  /* A grid item won't shrink below its content by default; wide tables then push the whole
+     page past the window (and whatever sits at the right edge off-screen). They scroll
+     inside their own .table-scroll instead. */
+  min-width: 0;
 }
 .content.content-wide {
   max-width: none;
@@ -715,10 +799,9 @@ code {
   background: var(--bg);
   overflow-y: auto;
 }
-@media (max-width: 760px) {
-  .log-loading-host {
-    left: 0;
-  }
+.layout:not(.nav-docked) .log-loading-host {
+  left: 0;
+  top: 48px; /* below the top bar */
 }
 .log-loading-skeleton {
   padding: 1.5rem 2rem 4rem;
@@ -1456,11 +1539,8 @@ code {
 .player-gear {
   width: 440px;
   flex: none;
-  position: sticky;
-  top: 1rem;
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
-  scrollbar-gutter: stable; /* gear list shouldn't reflow when it gets tall enough to scroll */
+  /* No height cap / inner scrollbar: the panel is as tall as its gear list and scrolls
+     with the page. It only pins itself while the window is tall enough to show all of it. */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -2240,33 +2320,42 @@ img.icon-slot.trinket {
 }
 
 /* ---------- responsive ---------- */
+/* The gear panel pins itself beside the rankings only when the window can show all of it. */
+@media (min-height: 760px) {
+  .player-gear {
+    position: sticky;
+    top: 1rem;
+  }
+  .layout:not(.nav-docked) .player-gear {
+    top: calc(48px + 1rem); /* clear the top bar */
+  }
+}
+/* Profile: below 1660px the sidebar is tucked away (App.jsx), which keeps the gear panel
+   beside the rankings down to here; narrower than this it can't fit next to them at all,
+   so it drops underneath at full width. */
+@media (max-width: 1207px) {
+  .player-layout {
+    flex-direction: column;
+    align-items: stretch; /* both blocks span the page instead of sizing to their content */
+  }
+  .player-main {
+    flex: none;
+    width: 100%;
+  }
+  .player-gear,
+  .layout:not(.nav-docked) .player-gear {
+    width: 100%;
+    position: static;
+  }
+}
 @media (max-width: 980px) {
   .content,
   .content.content-wide {
     padding: 1.25rem 1.25rem 3rem;
   }
-  /* stack the gear panel under the rankings instead of beside them */
-  .player-layout {
-    flex-direction: column;
-  }
-  .player-gear {
-    width: 100%;
-    position: static;
-    max-height: none;
-  }
 }
 
 @media (max-width: 760px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-  .sidebar {
-    position: static;
-    height: auto;
-    flex-direction: column;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
   .brand-logo {
     max-width: 130px;
   }
@@ -3091,6 +3180,130 @@ a.mp-rank.link:hover {
 .mr-search-box input:focus {
   border-color: var(--highlight);
   box-shadow: 0 0 0 2px rgba(92, 210, 255, 0.18);
+}
+/* Population tiles: a class block per class, split into its specs, each sized by player
+   count. A block's width is its share of all players × --mr-rows (set inline), so the
+   blocks wrap into about that many rows on one scale; narrower windows use more rows. */
+.mr-pop {
+  --mr-rows: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 1.1rem;
+}
+.mr-pop-class {
+  --class-color: var(--accent);
+  flex-shrink: 1;
+  min-width: 118px; /* room for three spec icons */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--class-color) 35%, var(--border));
+  background: var(--panel);
+  opacity: 0.88;
+  transition: opacity 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.mr-pop-class:hover,
+.mr-pop-class.on {
+  opacity: 1;
+}
+.mr-pop-class.on {
+  border-color: var(--class-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--class-color) 45%, transparent);
+}
+.mr-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.28rem 0.55rem;
+  border: none;
+  background: color-mix(in srgb, var(--class-color) 16%, transparent);
+  color: var(--class-color);
+  font-weight: 800;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+}
+.mr-pop-head:hover,
+.mr-pop-head.on {
+  background: color-mix(in srgb, var(--class-color) 34%, transparent);
+}
+.mr-pop-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mr-pop-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mr-pop-specs {
+  display: flex;
+  gap: 2px;
+  min-height: 46px;
+}
+.mr-pop-spec {
+  flex-shrink: 1;
+  flex-basis: 34px;
+  min-width: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0.25rem 0.15rem;
+  border: none;
+  background: color-mix(in srgb, var(--class-color) 9%, var(--panel-2));
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.12s;
+}
+.mr-pop-spec:hover {
+  background: color-mix(in srgb, var(--class-color) 26%, var(--panel-2));
+}
+.mr-pop-spec.on {
+  background: color-mix(in srgb, var(--class-color) 48%, var(--panel-2));
+  box-shadow: inset 0 -3px 0 var(--class-color);
+}
+.mr-pop-spec img {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.mr-pop-spec-name {
+  max-width: 100%;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mr-pop-spec-count {
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1500px) {
+  .mr-pop {
+    --mr-rows: 3;
+  }
+}
+@media (max-width: 1000px) {
+  .mr-pop {
+    --mr-rows: 4;
+  }
+}
+@media (max-width: 640px) {
+  .mr-pop {
+    --mr-rows: 6;
+  }
 }
 .mr-loading {
   opacity: 0.55;

@@ -343,3 +343,29 @@ export async function getLeaderboard({ klass = null, spec = null, realm = null, 
   if (error) throw error
   return (data || []).map((r) => ({ ...r, score: Number(r.score) }))
 }
+
+// Players per class and per class+spec, for the rankings page's population tiles (see
+// mplus_population in schema.sql). `realm` (armory string) narrows it to one realm.
+// → Map("Warrior" → { players, specs: Map("Fury" → players) }). Cached per realm.
+const populationCache = new Map()
+export function getPopulation(realm = null) {
+  const key = realm || ''
+  if (!populationCache.has(key)) {
+    const p = (async () => {
+      if (!supabase) return new Map()
+      const { data, error } = await supabase.rpc('mplus_population', { p_realm: realm })
+      if (error) throw error
+      const out = new Map()
+      for (const r of data || []) {
+        const c = out.get(r.class) || { players: 0, specs: new Map() }
+        if (r.spec) c.specs.set(r.spec, r.players)
+        else c.players = r.players
+        out.set(r.class, c)
+      }
+      return out
+    })()
+    p.catch(() => populationCache.delete(key))
+    populationCache.set(key, p)
+  }
+  return populationCache.get(key)
+}

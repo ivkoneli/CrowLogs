@@ -514,3 +514,17 @@ language sql stable set search_path = extensions, public as $$
   order by f.pos
 $$;
 grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text) to anon, authenticated;
+
+-- How many players have a score in each scope, for the rankings page's population tiles:
+-- one row per class (spec '' = everyone of that class) and per class+spec (players with at
+-- least one run as that spec — someone who plays two specs counts in both). p_realm
+-- (armory string, optional) narrows it to one realm.
+create or replace function mplus_population(p_realm text default null)
+returns table (class text, spec text, players bigint)
+language sql stable set search_path = public as $$
+  select s.class, s.spec, count(*)
+  from mplus_scores s
+  where s.class is not null and (p_realm is null or s.realm = p_realm)
+  group by s.class, s.spec
+$$;
+grant execute on function mplus_population(text) to anon, authenticated;

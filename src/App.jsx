@@ -14,7 +14,18 @@ import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf, legendariesOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
 import { initAdminFromUrl } from './lib/admin.js'
-import { selectionFromHash, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
+import { selectionFromHash, selectionToHash, inAppClick, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
+import { useMediaQuery } from './lib/useMediaQuery.js'
+
+// Narrowest window the sidebar stays docked beside the content. The player profile has a
+// third column (the gear panel), so it needs far more room than the other pages; below
+// its width the sidebar tucks away and the gear panel keeps its place (see index.css).
+// 1660 = sidebar 230 + padding 64 + the M+ card at its full table width 957 + gap 24 +
+// gear panel 360 + the page scrollbar's reserved gutter: any narrower and the M+ table
+// would need its own scrollbar.
+const DOCK_MIN_WIDTH = 1000
+const DOCK_MIN_WIDTH_PROFILE = 1660
+const NAV_COLLAPSED_KEY = 'crowlogs.nav.collapsed'
 
 // Capture ?admin=<token> from the URL before first render (unlocks owner-only controls).
 initAdminFromUrl()
@@ -217,6 +228,44 @@ export default function App() {
     [reload],
   )
 
+  // ── Sidebar: docked beside the content, or tucked away behind the ☰ button ──────────
+  // Docked when the window is wide enough for this page AND the user hasn't closed it
+  // (remembered across visits). Otherwise it's hidden, and ☰ opens it as a drawer over the
+  // page (or re-docks it, if only the user's own ✕ was keeping it closed).
+  const canDock = useMediaQuery(
+    `(min-width: ${selection.view === 'player' ? DOCK_MIN_WIDTH_PROFILE : DOCK_MIN_WIDTH}px)`,
+  )
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(NAV_COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const navDocked = canDock && !navCollapsed
+  const setCollapsed = (v) => {
+    setNavCollapsed(v)
+    try {
+      localStorage.setItem(NAV_COLLAPSED_KEY, v ? '1' : '0')
+    } catch {
+      /* private mode: the choice just isn't remembered */
+    }
+  }
+  const openNav = () => (canDock ? setCollapsed(false) : setDrawerOpen(true))
+  const closeNav = () => (navDocked ? setCollapsed(true) : setDrawerOpen(false))
+  // Picking anything in the drawer (or the window growing enough to dock) closes it.
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [selection, navDocked])
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e) => e.key === 'Escape' && setDrawerOpen(false)
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+  const navMode = navDocked ? 'nav-docked' : drawerOpen ? 'nav-drawer' : 'nav-hidden'
+
   const onSelectBoss = (raid, boss) => navigate({ view: 'boss', raid, boss })
   const onSelectPlayer = (player) => navigate({ view: 'player', player })
   // `focus` (optional) = { started } — opens the log on that encounter's tab.
@@ -249,8 +298,20 @@ export default function App() {
   }, [selection])
 
   return (
-    <div className="layout">
+    <div className={`layout ${navMode}`}>
+      {!navDocked && (
+        <header className="topbar">
+          <button className="nav-toggle" onClick={openNav} aria-label="Open menu" aria-expanded={drawerOpen}>
+            <span aria-hidden="true">☰</span>
+          </button>
+          <a className="topbar-brand" href={selectionToHash({ view: 'home' })} onClick={inAppClick(onHome)}>
+            CrowLogs
+          </a>
+        </header>
+      )}
+      {!navDocked && drawerOpen && <div className="nav-backdrop" onClick={closeNav} aria-hidden="true" />}
       <Sidebar
+        onClose={closeNav}
         fights={fights}
         selection={selection}
         onSelectBoss={onSelectBoss}
