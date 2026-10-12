@@ -1,5 +1,5 @@
 // Mythic+ rankings: players by M+ score, 25 per page, filterable by class, spec and realm
-// (a dropdown that lists every class with its specs, or the population tiles below it).
+// (a dropdown that lists every class with its specs, or the spec-popularity chart below it).
 // Each row shows the player's best run in every dungeon as "key + medal" (hover for that
 // run's score and time). Filters, page and the highlighted player all live in the URL
 // (#/mplus?class=…&spec=…&realm=…&q=…&page=…&player=…), so a view can be shared and the
@@ -43,73 +43,118 @@ function Field({ label, value, onChange, children }) {
   )
 }
 
-// Population tiles: every class as a block, split into its specs, each sized by how many
-// players have a score in it (a spec's width within its class, a class's share of its
-// row). Clicking a class header filters to the class, a spec tile to that spec; clicking
-// the active one again clears it.
-function PopulationTiles({ population, klass, spec, onPick }) {
+// A "nice" axis step for a maximum of `max` percent: about four gridlines.
+function niceStep(max) {
+  for (const s of [0.5, 1, 2, 5, 10, 20, 25]) if (max / s <= 5) return s
+  return 50
+}
+const pct = (v) => `${v.toFixed(1)}%`
+
+// Spec popularity: one group of pillars per class, one pillar per spec, its height the
+// share of all ranked players who have a score on that spec (someone who plays two specs
+// counts in both). Classes are ordered by size; the number over a group is its tallest
+// pillar, the one under the name the class's own share. Clicking a pillar (or its icon)
+// filters the rankings to that spec, the class name to the whole class; clicking the
+// active one again clears it. Colors are the game's class colors.
+function PopulationChart({ population, klass, spec, onPick }) {
   const classes = LEGION_CLASSES.map((c) => ({ name: c.name, ...(population.get(c.name) || { players: 0, specs: new Map() }) }))
     .filter((c) => c.players > 0)
     .sort((a, b) => b.players - a.players)
   if (!classes.length) return null
-  // Every block's starting width is its share of ALL players, times the number of rows the
-  // CSS wants (--mr-rows): blocks then wrap into about that many rows on one common scale,
-  // so sizes compare across rows too, not just inside a row.
   const total = classes.reduce((sum, c) => sum + c.players, 0)
-  const share = (c) => ((c.players / total) * 100).toFixed(3)
+  const groups = classes.map((c) => ({
+    ...c,
+    share: (c.players / total) * 100,
+    bars: specsOf(c.name)
+      .map((s) => ({ name: s.name, players: c.specs.get(s.name) || 0, share: ((c.specs.get(s.name) || 0) / total) * 100 }))
+      .filter((s) => s.players > 0)
+      .sort((a, b) => b.players - a.players),
+  }))
+  const max = Math.max(...groups.flatMap((g) => g.bars.map((b) => b.share)), 0.1)
+  const step = niceStep(max)
+  const top = Math.ceil(max / step) * step
+  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step)
+  const filtered = !!klass
+
   return (
-    <div className="mr-pop" role="group" aria-label="Filter by class and spec">
-      {classes.map((c) => {
-        const color = classColor(c.name)
-        const specs = specsOf(c.name)
-          .map((s) => ({ name: s.name, players: c.specs.get(s.name) || 0 }))
-          .filter((s) => s.players > 0)
-          .sort((a, b) => b.players - a.players)
-        const classOn = klass === c.name
-        return (
-          <div
-            key={c.name}
-            className={`mr-pop-class ${classOn ? 'on' : ''}`}
-            style={{
-              flexGrow: c.players,
-              // 0.9: slack for the space a wrapped row can't use, so the blocks really fit in
-              // --mr-rows rows. A block may grow to fill its row, but only by a fifth — a
-              // class left alone on the last row stays its true size instead of spanning it.
-              flexBasis: `calc(${share(c)}% * var(--mr-rows) * 0.9)`,
-              maxWidth: `calc(${share(c)}% * var(--mr-rows) * 0.9 * 1.2)`,
-              '--class-color': color,
-            }}
-          >
-            <button
-              className={`mr-pop-head ${classOn && !spec ? 'on' : ''}`}
-              onClick={() => onPick(classOn && !spec ? { klass: null, spec: null } : { klass: c.name, spec: null })}
-              title={`${c.name}: ${c.players.toLocaleString('en-US')} players · show all ${c.name}s`}
+    <figure className="mr-chart" aria-label="Spec popularity: share of ranked players on each spec">
+      <figcaption className="mr-chart-cap">
+        <span className="mr-chart-title">Spec popularity</span>
+        <span className="muted">
+          share of {total.toLocaleString('en-US')} ranked players · click a pillar to open that spec’s rankings
+        </span>
+      </figcaption>
+      <div className="mr-chart-grid">
+        {groups.map((g) => {
+          const classOn = klass === g.name
+          return (
+            <div
+              key={g.name}
+              className={`mr-chart-group ${classOn ? 'on' : ''} ${filtered && !classOn ? 'dim' : ''}`}
+              style={{ '--class-color': classColor(g.name) }}
             >
-              <span className="mr-pop-name">{c.name}</span>
-              <span className="mr-pop-count">{c.players.toLocaleString('en-US')}</span>
-            </button>
-            <div className="mr-pop-specs">
-              {specs.map((s) => {
-                const on = classOn && spec === s.name
-                return (
-                  <button
-                    key={s.name}
-                    className={`mr-pop-spec ${on ? 'on' : ''}`}
-                    style={{ flexGrow: s.players }}
-                    onClick={() => onPick(on ? { klass: c.name, spec: null } : { klass: c.name, spec: s.name })}
-                    title={`${s.name} ${c.name}: ${s.players.toLocaleString('en-US')} players`}
-                  >
-                    <img src={specIconUrl(c.name, s.name)} alt="" />
-                    <span className="mr-pop-spec-name">{s.name}</span>
-                    <span className="mr-pop-spec-count">{s.players.toLocaleString('en-US')}</span>
-                  </button>
-                )
-              })}
+              <div className="mr-chart-plot">
+                {ticks.map((t) => (
+                  <span key={t} className="mr-chart-line" style={{ bottom: `${(t / top) * 100}%` }}>
+                    <span className="mr-chart-tick">{t}%</span>
+                  </span>
+                ))}
+                <div className="mr-chart-bars">
+                  {g.bars.map((b, i) => {
+                    const on = classOn && spec === b.name
+                    return (
+                      <button
+                        key={b.name}
+                        className={`mr-chart-col ${on ? 'on' : ''} ${classOn && spec && !on ? 'dim' : ''}`}
+                        onClick={() => onPick(on ? { klass: g.name, spec: null } : { klass: g.name, spec: b.name })}
+                        aria-label={`${b.name} ${g.name}: ${pct(b.share)} of players (${b.players.toLocaleString('en-US')})`}
+                        aria-pressed={on}
+                      >
+                        <span className="mr-chart-tip" role="tooltip">
+                          <strong>
+                            {b.name} {g.name}
+                          </strong>
+                          <span>
+                            {pct(b.share)} · {b.players.toLocaleString('en-US')} players
+                          </span>
+                        </span>
+                        {/* Only the group's tallest pillar is labelled; the rest are on hover. */}
+                        {i === 0 && <span className="mr-chart-val">{pct(b.share)}</span>}
+                        <span className="mr-chart-bar" style={{ height: `${(b.share / top) * 100}%` }} />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="mr-chart-icons">
+                {g.bars.map((b) => {
+                  const on = classOn && spec === b.name
+                  return (
+                    <button
+                      key={b.name}
+                      className={`mr-chart-icon ${on ? 'on' : ''}`}
+                      onClick={() => onPick(on ? { klass: g.name, spec: null } : { klass: g.name, spec: b.name })}
+                      title={`${b.name} ${g.name}`}
+                      tabIndex={-1}
+                    >
+                      <img src={specIconUrl(g.name, b.name)} alt="" />
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                className={`mr-chart-class ${classOn && !spec ? 'on' : ''}`}
+                onClick={() => onPick(classOn && !spec ? { klass: null, spec: null } : { klass: g.name, spec: null })}
+                title={`${g.name}: ${pct(g.share)} of players (${g.players.toLocaleString('en-US')}) · show all ${g.name}s`}
+              >
+                <span className="mr-chart-class-name">{g.name}</span>
+                <span className="mr-chart-class-share">{pct(g.share)}</span>
+              </button>
             </div>
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </div>
+    </figure>
   )
 }
 
@@ -259,7 +304,7 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
         </label>
       </div>
 
-      {population && <PopulationTiles population={population} klass={klass} spec={spec} onPick={setFilter} />}
+      {population && <PopulationChart population={population} klass={klass} spec={spec} onPick={setFilter} />}
 
       {error ? (
         <div className="error">Couldn’t load the rankings: {error}</div>

@@ -3181,128 +3181,270 @@ a.mp-rank.link:hover {
   border-color: var(--highlight);
   box-shadow: 0 0 0 2px rgba(92, 210, 255, 0.18);
 }
-/* Population tiles: a class block per class, split into its specs, each sized by player
-   count. A block's width is its share of all players × --mr-rows (set inline), so the
-   blocks wrap into about that many rows on one scale; narrower windows use more rows. */
-.mr-pop {
-  --mr-rows: 2;
+/* Spec popularity chart: a group of pillars per class, one pillar per spec. The groups
+   sit in a CSS grid (12 across, fewer on narrow windows); every group draws its own
+   slice of the gridlines so they line up into continuous rules, and only the first group
+   of each row shows the axis numbers, in the gutter the figure's left padding leaves. */
+.mr-chart {
+  --mr-cols: 12;
+  margin: 0 0 1.1rem;
+  padding: 0.75rem 1rem 0.7rem 2.9rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.mr-chart-cap {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
-  margin: 0 0 1.1rem;
-}
-.mr-pop-class {
-  --class-color: var(--accent);
-  flex-shrink: 1;
-  min-width: 118px; /* room for three spec icons */
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-radius: 9px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--class-color) 35%, var(--border));
-  background: var(--panel);
-  opacity: 0.88;
-  transition: opacity 0.12s, border-color 0.12s, box-shadow 0.12s;
-}
-.mr-pop-class:hover,
-.mr-pop-class.on {
-  opacity: 1;
-}
-.mr-pop-class.on {
-  border-color: var(--class-color);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--class-color) 45%, transparent);
-}
-.mr-pop-head {
-  display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.28rem 0.55rem;
-  border: none;
-  background: color-mix(in srgb, var(--class-color) 16%, transparent);
-  color: var(--class-color);
+  gap: 0.2rem 0.75rem;
+  margin: 0 0 0.35rem -1.9rem;
+  font-size: 0.78rem;
+}
+.mr-chart-title {
+  font-size: 0.95rem;
   font-weight: 800;
-  font-size: 0.82rem;
-  cursor: pointer;
-  text-align: left;
+  color: var(--text);
 }
-.mr-pop-head:hover,
-.mr-pop-head.on {
-  background: color-mix(in srgb, var(--class-color) 34%, transparent);
+.mr-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--mr-cols), minmax(0, 1fr));
+  row-gap: 1.1rem;
 }
-.mr-pop-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mr-pop-count {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.mr-pop-specs {
-  display: flex;
-  gap: 2px;
-  min-height: 46px;
-}
-.mr-pop-spec {
-  flex-shrink: 1;
-  flex-basis: 34px;
-  min-width: 34px;
+.mr-chart-group {
+  --class-color: var(--accent);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  transition: opacity 0.15s;
+}
+/* A class filter is on: the other classes step back. */
+.mr-chart-group.dim {
+  opacity: 0.38;
+}
+.mr-chart-group.dim:hover {
+  opacity: 0.85;
+}
+.mr-chart-plot {
+  position: relative;
+  width: 100%;
+  height: 150px;
+  margin-top: 20px; /* room for the value label over a pillar that reaches the top line */
+}
+.mr-chart-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+.mr-chart-line:first-child {
+  border-top-color: rgba(255, 255, 255, 0.28); /* the baseline */
+}
+.mr-chart-tick {
+  display: none;
+  position: absolute;
+  right: 100%;
+  margin-right: 0.45rem;
+  transform: translateY(-50%);
+  font-size: 0.64rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mr-chart-group:nth-child(12n + 1) .mr-chart-tick {
+  display: block;
+}
+.mr-chart-bars,
+.mr-chart-icons {
+  display: flex;
   justify-content: center;
-  gap: 1px;
-  padding: 0.25rem 0.15rem;
+  gap: 2px;
+  padding: 0 7px;
+}
+.mr-chart-bars {
+  position: absolute;
+  inset: 0;
+  align-items: stretch;
+}
+/* The button is the whole column, top line to baseline, so a short pillar is still an
+   easy target; the pillar itself grows up from the baseline inside it. */
+.mr-chart-col {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 6px;
+  max-width: 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0;
   border: none;
-  background: color-mix(in srgb, var(--class-color) 9%, var(--panel-2));
-  color: var(--text);
+  background: none;
   cursor: pointer;
-  overflow: hidden;
-  transition: background 0.12s;
 }
-.mr-pop-spec:hover {
-  background: color-mix(in srgb, var(--class-color) 26%, var(--panel-2));
+.mr-chart-bar {
+  width: 100%;
+  min-height: 2px;
+  /* Never squeezed by the value label above it: the height IS the data. The label
+     overflows upward into the plot's top margin instead. */
+  flex-shrink: 0;
+  border-radius: 4px 4px 0 0;
+  background: var(--class-color);
+  transition: filter 0.12s, opacity 0.12s, box-shadow 0.12s;
 }
-.mr-pop-spec.on {
-  background: color-mix(in srgb, var(--class-color) 48%, var(--panel-2));
-  box-shadow: inset 0 -3px 0 var(--class-color);
+.mr-chart-col:hover .mr-chart-bar,
+.mr-chart-col:focus-visible .mr-chart-bar {
+  filter: brightness(1.25);
 }
-.mr-pop-spec img {
-  width: 18px;
-  height: 18px;
+.mr-chart-col:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+/* A spec is picked: its pillar glows, its siblings fade. */
+.mr-chart-col.dim .mr-chart-bar {
+  opacity: 0.35;
+}
+.mr-chart-col.on .mr-chart-bar {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--highlight), 0 0 14px var(--class-color);
+}
+.mr-chart-val {
+  margin-bottom: 3px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.mr-chart-tip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  transform: translate(-50%, -100%);
+  z-index: 5;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  text-align: left;
+  pointer-events: none;
+}
+.mr-chart-tip span {
+  color: var(--muted);
+}
+.mr-chart-col:hover .mr-chart-tip,
+.mr-chart-col:focus-visible .mr-chart-tip {
+  display: flex;
+}
+.mr-chart-icons {
+  width: 100%;
+  margin-top: 5px;
+}
+.mr-chart-icon {
+  flex: 1 1 0;
+  min-width: 6px;
+  max-width: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+.mr-chart-icon img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
   border-radius: 4px;
   object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
-.mr-pop-spec-name {
+.mr-chart-icon.on img {
+  border-color: var(--highlight);
+  box-shadow: 0 0 6px var(--highlight);
+}
+.mr-chart-class {
   max-width: 100%;
-  font-size: 0.64rem;
+  margin-top: 4px;
+  padding: 0.15rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.mr-chart-class:hover {
+  background: var(--panel-2);
+}
+.mr-chart-class.on,
+.mr-chart-group.on .mr-chart-class {
+  border-color: var(--class-color);
+}
+.mr-chart-class-name {
+  max-width: 100%;
+  font-size: 0.74rem;
   font-weight: 700;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mr-pop-spec-count {
-  font-size: 0.62rem;
+.mr-chart-class-share {
+  font-size: 0.66rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 1500px) {
-  .mr-pop {
-    --mr-rows: 3;
+/* Fewer groups per row on narrower windows; the axis numbers follow the row starts. */
+@media (max-width: 1250px) {
+  .mr-chart {
+    --mr-cols: 6;
+  }
+  .mr-chart-group:nth-child(12n + 1) .mr-chart-tick {
+    display: none;
+  }
+  .mr-chart-group:nth-child(6n + 1) .mr-chart-tick {
+    display: block;
   }
 }
-@media (max-width: 1000px) {
-  .mr-pop {
-    --mr-rows: 4;
+@media (max-width: 700px) {
+  .mr-chart {
+    --mr-cols: 4;
+  }
+  .mr-chart-group:nth-child(6n + 1) .mr-chart-tick {
+    display: none;
+  }
+  .mr-chart-group:nth-child(4n + 1) .mr-chart-tick {
+    display: block;
   }
 }
-@media (max-width: 640px) {
-  .mr-pop {
-    --mr-rows: 6;
+@media (max-width: 460px) {
+  .mr-chart {
+    --mr-cols: 3;
+  }
+  .mr-chart-group:nth-child(4n + 1) .mr-chart-tick {
+    display: none;
+  }
+  .mr-chart-group:nth-child(3n + 1) .mr-chart-tick {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mr-chart-group,
+  .mr-chart-bar,
+  .mr-chart-class {
+    transition: none;
   }
 }
 .mr-loading {
