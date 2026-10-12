@@ -15,22 +15,26 @@
 //   TAURI_COOKIE                       — "username=…; pasw=…" (same as scrape-armory.mjs)
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY — service role key (server-side only!)
 // Optional:
-//   MPLUS_REALMS — comma-separated armory realms (default: DEFAULT_REALM or "[EN] Evermoon")
-//   MPLUS_FULL=1 — re-send every run, not just recent days (backfill / repair)
+//   MPLUS_REALMS — comma-separated leaderboards to mirror (default: every board in
+//                  MPLUS_BOARDS — Evermoon+Tauri share one, Warriors of Darkness has its own)
+//   MPLUS_FULL=1 — re-send every run, not just recent days (backfill / repair). Existing
+//                  runs are UPDATED too (party realms/specs re-read), not just skipped.
 //
 // Run: node scripts/scrape-mythic-plus.mjs
 
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
-import { MPLUS_DUNGEONS, DEFAULT_MPLUS_REALM } from '../src/lib/mplusDungeons.js'
+import { MPLUS_DUNGEONS, MPLUS_BOARDS } from '../src/lib/mplusDungeons.js'
 import { specsOf } from '../src/lib/classes.js'
 
 // Tauri's leaderboard has no spec, but tauriachievements.github.io publishes every run
 // with each member's spec (refreshed about once a day). Specs are matched from there.
 const TA_DATA = 'https://tauriachievements.github.io/mythic-plus-data'
 
-const { TAURI_COOKIE, SUPABASE_URL, SUPABASE_SERVICE_KEY, DEFAULT_REALM, MPLUS_FULL } = process.env
-const REALMS = (process.env.MPLUS_REALMS || DEFAULT_REALM || DEFAULT_MPLUS_REALM)
+const { TAURI_COOKIE, SUPABASE_URL, SUPABASE_SERVICE_KEY, MPLUS_FULL } = process.env
+// Boards, not realms: DEFAULT_REALM (set for the armory scraper) is deliberately ignored
+// here, or the Warriors of Darkness board would silently never be mirrored.
+const REALMS = (process.env.MPLUS_REALMS || MPLUS_BOARDS.join(','))
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
@@ -114,8 +118,10 @@ function runId(r) {
 }
 
 // Party cell: Tauri marks the tank with fa-shield and the healer with fa-plus right
-// before their name span; the span's color-cN is the class id.
-const MEMBER_RE = /(fa-shield|fa-plus)|color-c(\d+)"[^>]*>\s*<a[^>]*[?&;]n=([^"&]+)"/g
+// before their name span; the span's color-cN is the class id. The link is
+// character-sheet.xml?r=<realm>&n=<name>: group 3 = the tag up to n= (holds r=), 4 = name.
+const MEMBER_RE = /(fa-shield|fa-plus)|color-c(\d+)"[^>]*>\s*<a([^>]*)[?&;]n=([^"&]+)"/g
+const MEMBER_REALM_RE = /href="[^"]*[?&;]r=([^"&]+)/
 const AFFIX_RE = /<img class="cm-affix-icon"[^>]*src="([^"]+)"[\s\S]*?data-affix-name="([^"]+)"/g
 
 function parseBoard(html, realm, dungeon) {
@@ -135,7 +141,14 @@ function parseBoard(html, realm, dungeon) {
         role = m[1] === 'fa-shield' ? 'tank' : 'healer'
         continue
       }
-      party.push({ name: decodeName(m[3]), class: CLASS_BY_ID[+m[2]] || null, role })
+      // A board can mix realms (Evermoon + Tauri share one), so each member keeps their own.
+      const memberRealm = (m[3].match(MEMBER_REALM_RE) || [])[1]
+      party.push({
+        name: decodeName(m[4]),
+        realm: memberRealm ? decodeName(memberRealm) : realm,
+        class: CLASS_BY_ID[+m[2]] || null,
+        role,
+      })
       role = 'dps'
     }
     if (!party.length) continue
@@ -247,6 +260,18 @@ async function pendingSpecRuns(realm) {
   return out
 }
 
+// Call a Postgres function through PostgREST (service role); returns its JSON result.
+async function rpc(fn, args = {}) {
+  const res = await fetch(`${REST}/rpc/${fn}`, {
+    method: 'POST',
+    headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  })
+  if (!res.ok) throw new Error(`${fn}: HTTP ${res.status} — ${await res.text()}`)
+  const text = await res.text()
+  return text ? JSON.parse(text) : null
+}
+
 // ── SPECS ───────────────────────────────────────────────────────────────────
 // tauriachievements' data: index.json lists players ([name, realm, …]) and specs
 // ([{ class, name, role }]); <dungeon>.json has runs as
@@ -352,6 +377,7 @@ async function main() {
     let seen = 0
     let sent = 0
     let added = 0
+    let stale = 0
     await pool(MPLUS_DUNGEONS, CONCURRENCY, async (dungeon) => {
       try {
         const runs = parseBoard(await fetchBoard(realm, dungeon.id), realm, dungeon)
@@ -360,6 +386,20 @@ async function main() {
           ...new Map(runs.filter((r) => !cutoff || r.day >= cutoff).map((r) => [r.id, withSpecs(r, lookup)])).values(),
         ]
         const n = fresh.length ? await insertRuns(fresh) : 0
+        // A full run also rewrites the runs that already existed, so data added to the
+        // parser later (each member's realm) reaches old rows. Specs are re-matched from
+        // the source in the same pass; `first_seen` is never sent, so it's kept.
+        if (MPLUS_FULL === '1' && fresh.length) {
+          await serialWrite(() => updateRuns(fresh))
+          // …and drops stored runs the board no longer lists (renamed/deleted characters
+          // give a run a new id; see prune_mplus_runs in schema.sql). `fresh` is the whole
+          // board here: a full run has no day cutoff.
+          const keep = fresh.map((r) => r.id)
+          // Awaited into a local first: dungeons run concurrently, and `stale += await …`
+          // would read the total before the wait and drop the other dungeons' counts.
+          const pruned = await serialWrite(() => rpc('prune_mplus_runs', { p_realm: realm, p_map: dungeon.id, p_keep: keep }))
+          stale += pruned
+        }
         seen += runs.length
         sent += fresh.length
         added += n
@@ -369,7 +409,7 @@ async function main() {
         console.error(`  ${dungeon.name}: ${e.message}`)
       }
     })
-    console.log(`  total: ${seen} on boards, ${sent} checked, ${added} new`)
+    console.log(`  total: ${seen} on boards, ${sent} checked, ${added} new${MPLUS_FULL === '1' ? `, ${stale} stale removed` : ''}`)
 
     // Specs for runs stored before they could be matched (the source updates daily).
     try {
@@ -387,24 +427,23 @@ async function main() {
       failed = true
       console.error(`  specs: ${e.message}`)
     }
-    // Rebuild the score table the profile's rankings read (also assumes a spec for brand-new
-    // runs whose real one isn't published yet). A failure leaves the previous scores in place.
-    try {
-      const res = await fetch(`${REST}/rpc/refresh_mplus_scores`, {
-        method: 'POST',
-        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: '{}',
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`)
-      console.log('  scores: refreshed')
-    } catch (e) {
-      failed = true
-      console.error(`  scores: ${e.message}`)
-    }
     // Every board parsing to nothing means Tauri changed the page, not that nobody played.
     if (seen === 0) {
       failed = true
       console.error('  no runs parsed from any board — has the leaderboard HTML changed?')
+    }
+  }
+  // Once every board is in: after a full run the player search index is rebuilt (pruned
+  // and re-keyed runs change who exists), then the score table the profile rankings read
+  // (it also assumes a spec for brand-new runs whose real one isn't published yet).
+  // A failure leaves the previous index/scores in place.
+  for (const fn of MPLUS_FULL === '1' ? ['rebuild_mplus_players', 'refresh_mplus_scores'] : ['refresh_mplus_scores']) {
+    try {
+      await rpc(fn)
+      console.log(`${fn}: done`)
+    } catch (e) {
+      failed = true
+      console.error(`${fn}: ${e.message}`)
     }
   }
   // Fail loudly (GitHub emails the owner) instead of silently leaving the mirror stale.

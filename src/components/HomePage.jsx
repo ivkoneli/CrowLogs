@@ -85,7 +85,7 @@ export default function HomePage({ onSelectPlayer, onImport }) {
     <div className="home">
       <div className="page-head home-head">
         <div>
-          <div className="kicker">Tauri · {DEFAULT_MPLUS_REALM.replace(/^\[\w+\]\s*/, '')} · Mythic+</div>
+          <div className="kicker">Tauri Legion · Evermoon, Tauri &amp; WoD · Mythic+</div>
           <h2>Best Mythic+ runs</h2>
           {scope === 'week' && week ? (
             <div className="home-week">

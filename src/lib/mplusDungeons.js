@@ -24,5 +24,19 @@ export const MPLUS_DUNGEONS = [
 // Realm slug used in fight `player` keys ("Name-evermoon") ↔ armory realm string.
 export const MPLUS_REALMS = {
   evermoon: '[EN] Evermoon',
+  tauri: '[HU] Tauri WoW Server',
+  wod: '[HU] Warriors of Darkness',
 }
 export const DEFAULT_MPLUS_REALM = '[EN] Evermoon'
+
+// The armory publishes one Challenge Mode leaderboard per realm GROUP, not per realm:
+// Evermoon and Tauri share a single board (asking for either returns the same rows, and
+// about a fifth of its runs mix players from both), Warriors of Darkness has its own.
+// `mplus_runs.realm` is the BOARD a run came from; each party member carries their own
+// realm (party[].realm), which is what scores, rankings and profile links go by.
+export const MPLUS_BOARDS = ['[EN] Evermoon', '[HU] Warriors of Darkness']
+export const MPLUS_BOARD_OF = {
+  '[EN] Evermoon': '[EN] Evermoon',
+  '[HU] Tauri WoW Server': '[EN] Evermoon',
+  '[HU] Warriors of Darkness': '[HU] Warriors of Darkness',
+}

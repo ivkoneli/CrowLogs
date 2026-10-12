@@ -58,6 +58,8 @@ const clientIp = (req: Request) =>
 
 const REALM_MAP: Record<string, string> = {
   evermoon: '[EN] Evermoon',
+  tauri: '[HU] Tauri WoW Server',
+  wod: '[HU] Warriors of Darkness',
 }
 function splitPlayer(player: string) {
   const i = player.indexOf('-')

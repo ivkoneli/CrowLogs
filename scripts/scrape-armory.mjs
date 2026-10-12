@@ -97,7 +97,7 @@ async function dbUpsertCharacters(rows) {
 const REALM_MAP = {
   evermoon: '[EN] Evermoon',
   tauri: '[HU] Tauri WoW Server',
-  // extend to Wod realm if needed 
+  wod: '[HU] Warriors of Darkness',
 }
 function splitPlayer(player) {
   const i = player.indexOf('-')

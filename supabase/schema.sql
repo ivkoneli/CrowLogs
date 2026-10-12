@@ -271,15 +271,65 @@ create policy "public read mplus scores" on mplus_scores for select using (true)
 --     to be on the spec they last played in that role, flagged spec_guess so the scraper
 --     replaces it with the real one once it's published. Keeps spec scores from lagging.
 --  2. Rebuild mplus_scores.
+
+-- A player's score + rank in every scope they have one. spec '' row: rank/total among ALL
+-- players, class_rank/class_total among their class. Spec rows: rank/total among players
+-- of that class AND spec (class_rank null). Rank = 1 + players with a strictly higher score.
+-- The rebuild takes ~10-20 s, past the API's default 8 s statement limit, and a function's
+-- own `set statement_timeout` can't extend a call already in flight. Raise it for the
+-- service role only (server-side scraper; the public anon role keeps its short limit).
+alter role service_role set statement_timeout = '120s';
+notify pgrst, 'reload config';
+
+-- ── MEMBER REALMS ─────────────────────────────────────────────────────────────
+-- mplus_runs.realm is the BOARD a run came from. Evermoon and Tauri share one board, so a
+-- player is identified by their OWN realm (party[].realm, written by the scraper) + name;
+-- rows scraped before that field existed fall back to the board's realm.
+
+-- Player index for the sidebar search: one row per (member realm, name).
+create or replace function mplus_players_track() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into mplus_players as mp (realm, name_lower, name, class, runs, last_day)
+  select coalesce(nullif(p->>'realm', ''), new.realm), lower(p->>'name'), p->>'name', p->>'class', 1, new.day
+  from jsonb_array_elements(new.party) p
+  where coalesce(p->>'name', '') <> ''
+  on conflict (realm, name_lower) do update
+    set runs = mp.runs + 1,
+        last_day = greatest(mp.last_day, excluded.last_day),
+        name = excluded.name,
+        class = coalesce(excluded.class, mp.class);
+  return new;
+end $$;
+
+-- Rebuild the player index from the stored runs (run after a full re-scrape changes how
+-- players are keyed; safe to re-run).
+create or replace function rebuild_mplus_players() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from mplus_players where true;
+  insert into mplus_players (realm, name_lower, name, class, runs, last_day)
+  select coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'),
+         (array_agg(p->>'name' order by r.day desc))[1],
+         (array_agg(p->>'class' order by r.day desc))[1],
+         count(*), max(r.day)
+  from mplus_runs r, jsonb_array_elements(r.party) p
+  where coalesce(p->>'name', '') <> ''
+  group by 1, 2;
+end $$;
+revoke execute on function rebuild_mplus_players() from public, anon, authenticated;
+
 create or replace function refresh_mplus_scores() returns void
-language plpgsql security definer set search_path = public set statement_timeout = '120s' as $
+language plpgsql security definer set search_path = public set statement_timeout = '120s' as $$
 begin
   with known as (
-    select distinct on (r.realm, lower(p->>'name'), p->>'class', p->>'role')
-      r.realm, lower(p->>'name') as n, p->>'class' as c, p->>'role' as ro, p->>'spec' as spec
+    select distinct on (coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'), p->>'class', p->>'role')
+      coalesce(nullif(p->>'realm', ''), r.realm) as realm, lower(p->>'name') as n,
+      p->>'class' as c, p->>'role' as ro, p->>'spec' as spec
     from mplus_runs r, jsonb_array_elements(r.party) p
     where r.specs_matched and coalesce(p->>'spec', '') <> ''
-    order by r.realm, lower(p->>'name'), p->>'class', p->>'role', r.day desc, r.first_seen desc
+    order by coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'), p->>'class', p->>'role',
+             r.day desc, r.first_seen desc
   )
   update mplus_runs r set party = (
     select jsonb_agg(
@@ -289,7 +339,8 @@ begin
       order by t.ord)
     from jsonb_array_elements(r.party) with ordinality t(p, ord)
     left join known k
-      on k.realm = r.realm and k.n = lower(t.p->>'name') and k.c = t.p->>'class' and k.ro = t.p->>'role'
+      on k.realm = coalesce(nullif(t.p->>'realm', ''), r.realm) and k.n = lower(t.p->>'name')
+     and k.c = t.p->>'class' and k.ro = t.p->>'role'
   )
   where not r.specs_matched
     and exists (select 1 from jsonb_array_elements(r.party) p where coalesce(p->>'spec', '') = '');
@@ -297,8 +348,8 @@ begin
   delete from mplus_scores where true;
   insert into mplus_scores (realm, name_lower, name, class, spec, score)
   with m as (
-    select r.realm, lower(p->>'name') as n, p->>'name' as name, p->>'class' as class,
-           coalesce(p->>'spec', '') as spec, r.map_id, r.day,
+    select coalesce(nullif(p->>'realm', ''), r.realm) as realm, lower(p->>'name') as n, p->>'name' as name,
+           p->>'class' as class, coalesce(p->>'spec', '') as spec, r.map_id, r.day,
            mplus_run_score(r.map_id, r.level, r.time_ms) as s
     from mplus_runs r, jsonb_array_elements(r.party) p
     where coalesce(p->>'name', '') <> ''
@@ -317,29 +368,59 @@ begin
 end $$;
 revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
 
--- A player's score + rank in every scope they have one. spec '' row: rank/total among ALL
--- players, class_rank/class_total among their class. Spec rows: rank/total among players
--- of that class AND spec (class_rank null). Rank = 1 + players with a strictly higher score.
+-- A player's score + rank in every scope they have one, among players of ALL realms (the
+-- same scopes as Tauri Achievements). spec '' row: rank/total among everyone, class_rank/
+-- class_total among their class. Spec rows: rank/total among players of that class AND
+-- spec (class_rank null). Rank = 1 + players with a strictly higher score.
+-- p_realm is the player's own realm (armory string), not the board.
 create or replace function mplus_player_ranks(p_realm text, p_name text)
 returns table (spec text, class text, score numeric, rank bigint, total bigint, class_rank bigint, class_total bigint)
 language sql stable set search_path = public as $$
   select me.spec, me.class, me.score,
     case when me.spec = ''
-      then (select count(*) + 1 from mplus_scores o where o.realm = me.realm and o.spec = '' and o.score > me.score)
-      else (select count(*) + 1 from mplus_scores o where o.realm = me.realm and o.spec = me.spec and o.class is not distinct from me.class and o.score > me.score) end,
+      then (select count(*) + 1 from mplus_scores o where o.spec = '' and o.score > me.score)
+      else (select count(*) + 1 from mplus_scores o where o.spec = me.spec and o.class is not distinct from me.class and o.score > me.score) end,
     case when me.spec = ''
-      then (select count(*) from mplus_scores o where o.realm = me.realm and o.spec = '')
-      else (select count(*) from mplus_scores o where o.realm = me.realm and o.spec = me.spec and o.class is not distinct from me.class) end,
+      then (select count(*) from mplus_scores o where o.spec = '')
+      else (select count(*) from mplus_scores o where o.spec = me.spec and o.class is not distinct from me.class) end,
     case when me.spec = ''
-      then (select count(*) + 1 from mplus_scores o where o.realm = me.realm and o.spec = '' and o.class is not distinct from me.class and o.score > me.score) end,
+      then (select count(*) + 1 from mplus_scores o where o.spec = '' and o.class is not distinct from me.class and o.score > me.score) end,
     case when me.spec = ''
-      then (select count(*) from mplus_scores o where o.realm = me.realm and o.spec = '' and o.class is not distinct from me.class) end
+      then (select count(*) from mplus_scores o where o.spec = '' and o.class is not distinct from me.class) end
   from mplus_scores me
   where me.realm = p_realm and me.name_lower = lower(p_name)
 $$;
 grant execute on function mplus_player_ranks(text, text) to anon, authenticated;
--- The rebuild takes ~10-20 s, past the API's default 8 s statement limit, and a function's
--- own `set statement_timeout` can't extend a call already in flight. Raise it for the
--- service role only (server-side scraper; the public anon role keeps its short limit).
-alter role service_role set statement_timeout = '120s';
-notify pgrst, 'reload config';
+create index if not exists mplus_scores_spec_idx on mplus_scores (spec, class, score desc);
+
+-- ── PRUNE (full scrapes) ──────────────────────────────────────────────────────
+-- The armory rewrites history: a renamed character shows their NEW name on every old
+-- run, and a deleted one turns into a placeholder or disappears. A run's id hashes its
+-- party names, so the board's current version of such a run gets a new id and the stored
+-- copy under the old names would live on as a duplicate. After a full scrape of one
+-- board+dungeon the scraper passes every id that board now holds; anything else stored
+-- for it is stale and removed. A replacement inherits its stale twin's first_seen (same
+-- board, dungeon, key, exact time and day) so run ordering survives. Refuses to delete
+-- more than a quarter of a dungeon's rows — that would mean a broken fetch, not renames.
+create or replace function prune_mplus_runs(p_realm text, p_map int, p_keep text[]) returns int
+language plpgsql security definer set search_path = public set statement_timeout = '120s' as $$
+declare
+  total int;
+  stale int;
+begin
+  select count(*), count(*) filter (where not (id = any(p_keep))) into total, stale
+  from mplus_runs where realm = p_realm and map_id = p_map;
+  if stale = 0 then return 0; end if;
+  if stale > total * 0.25 then
+    raise exception 'refusing to prune % of % runs for % / map %', stale, total, p_realm, p_map;
+  end if;
+  update mplus_runs n set first_seen = o.first_seen
+  from mplus_runs o
+  where n.realm = p_realm and n.map_id = p_map and n.id = any(p_keep)
+    and o.realm = n.realm and o.map_id = n.map_id and not (o.id = any(p_keep))
+    and o.level = n.level and o.time_ms is not distinct from n.time_ms and o.day = n.day
+    and o.first_seen < n.first_seen;
+  delete from mplus_runs where realm = p_realm and map_id = p_map and not (id = any(p_keep));
+  return stale;
+end $$;
+revoke execute on function prune_mplus_runs(text, int, text[]) from public, anon, authenticated;

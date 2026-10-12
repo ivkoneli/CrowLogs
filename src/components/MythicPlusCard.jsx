@@ -16,6 +16,7 @@ import {
   formatRunDay,
   splitPlayerKey,
   memberPlayerKey,
+  isMember,
 } from '../lib/mythicplus.js'
 import { classColor, specsOf, specIconUrl } from '../lib/classes.js'
 import SpecTabs from './SpecTabs.jsx'
@@ -73,8 +74,11 @@ function Medal({ medal }) {
   return <img className="mp-medal" src={medalIconUrl(m.key)} alt={m.label} title={`${m.label} (${m.note})`} />
 }
 
+// `realm` is the profile's own realm on a profile, the run's board elsewhere; a member's
+// link always goes by THEIR realm (a board can mix realms).
 function Member({ p, selfName, realm, onSelectPlayer }) {
-  const isSelf = p.name.toLowerCase() === selfName
+  const isSelf = !!selfName && isMember(p, selfName, realm)
+  const memberKey = memberPlayerKey(p.name, p.realm || realm)
   return (
     <span className={`mp-member ${isSelf ? 'self' : ''}`}>
       <RoleIcon role={p.role} />
@@ -87,8 +91,8 @@ function Member({ p, selfName, realm, onSelectPlayer }) {
         <a
           className="mp-member-name link"
           style={{ color: classColor(p.class) }}
-          href={selectionToHash({ view: 'player', player: memberPlayerKey(p.name, realm) })}
-          onClick={inAppClick(() => onSelectPlayer(memberPlayerKey(p.name, realm)))}
+          href={selectionToHash({ view: 'player', player: memberKey })}
+          onClick={inAppClick(() => onSelectPlayer(memberKey))}
           title={`${p.spec ? `${p.spec} ${p.class}` : p.class || ''} · open ${p.name}'s profile`}
         >
           {p.name}
@@ -392,7 +396,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
 
   const { loading, runs: allRuns } = state
   // This player's own party entry in a run (carries the spec they played).
-  const selfIn = (run) => run.party.find((p) => p.name.toLowerCase() === selfName)
+  const selfIn = (run) => run.party.find((p) => isMember(p, selfName, realm))
   // Class from the profile, else from the runs themselves (M+-only players have no profile).
   const playerClass = klass || allRuns.map(selfIn).find((p) => p?.class)?.class || null
   const specTabs = useMemo(

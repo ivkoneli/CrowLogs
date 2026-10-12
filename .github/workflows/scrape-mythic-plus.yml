@@ -9,6 +9,10 @@ name: Scrape Mythic+ leaderboards
 on:
   schedule:
     - cron: '23 * * * *'
+    # Weekly full pass (Wednesday 04:47 UTC, before the EU reset): re-reads every run on
+    # every board, so characters renamed or deleted since (the armory rewrites their old
+    # runs) are picked up and the stale copies pruned. See prune_mplus_runs in schema.sql.
+    - cron: '47 4 * * 3'
   workflow_dispatch:
     inputs:
       full:
@@ -24,7 +28,7 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -37,5 +41,4 @@ jobs:
           TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          DEFAULT_REALM: '[EN] Evermoon'
-          MPLUS_FULL: ${{ inputs.full && '1' || '' }}
+          MPLUS_FULL: ${{ (inputs.full || github.event.schedule == '47 4 * * 3') && '1' || '' }}

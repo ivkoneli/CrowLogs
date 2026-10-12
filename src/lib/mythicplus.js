@@ -5,7 +5,7 @@
 // leaderboards. Tauri only publishes per-dungeon boards, so the mirror is what makes a
 // single player's history one indexed lookup (`members` array contains the name).
 import { supabase } from './supabase.js'
-import { MPLUS_DUNGEONS, MPLUS_REALMS, DEFAULT_MPLUS_REALM } from './mplusDungeons.js'
+import { MPLUS_DUNGEONS, MPLUS_REALMS, MPLUS_BOARD_OF, DEFAULT_MPLUS_REALM } from './mplusDungeons.js'
 
 export { MPLUS_DUNGEONS, MPLUS_REALMS, DEFAULT_MPLUS_REALM }
 
@@ -38,17 +38,26 @@ export function memberPlayerKey(name, realm) {
   return slug ? `${name}-${slug}` : name
 }
 
+// Is this party entry the given player? Names repeat across realms (Evermoon and Tauri
+// share a leaderboard), so the member's own realm has to match too. Entries scraped before
+// member realms existed have none and are matched by name alone.
+export function isMember(p, name, realm) {
+  return p.name.toLowerCase() === name.toLowerCase() && (!p.realm || p.realm === realm)
+}
+
 // Every stored run the player was in, unsorted. Pages past PostgREST's 1000-row cap.
 export async function getPlayerRuns(player) {
   if (!supabase) return []
   const { name, realm } = splitPlayerKey(player)
+  // Runs live under the BOARD they were published on, which several realms can share.
+  const board = MPLUS_BOARD_OF[realm] || realm
   const PAGE = 1000
   const all = []
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('mplus_runs')
       .select('id, map_id, dungeon, level, time_ms, medal, affixes, party, day, first_seen')
-      .eq('realm', realm)
+      .eq('realm', board)
       .contains('members', [name.toLowerCase()])
       .order('id')
       .range(from, from + PAGE - 1)
@@ -56,7 +65,9 @@ export async function getPlayerRuns(player) {
     all.push(...(data || []))
     if (!data || data.length < PAGE) break
   }
-  return all
+  // The index only knows names: drop runs where that name was a same-named character
+  // from another realm.
+  return all.filter((r) => r.party.some((p) => isMember(p, name, realm)))
 }
 
 const timeOrInf = (r) => (r.time_ms == null ? Infinity : r.time_ms)
@@ -241,9 +252,10 @@ async function currentWeek(realm) {
 
 // A dungeon's top runs in a day range: the highest keys (incl. depleted) plus the best
 // timed keys, so both the "highest key" and "highest score" picks are always in the set.
-async function topRunsForDungeon(mapId, realm, from, to) {
+// Every board counts (Evermoon+Tauri's shared one and Warriors of Darkness's).
+async function topRunsForDungeon(mapId, from, to) {
   const base = () => {
-    let q = supabase.from('mplus_runs').select(RUN_COLS).eq('realm', realm).eq('map_id', mapId)
+    let q = supabase.from('mplus_runs').select(RUN_COLS).eq('map_id', mapId)
     if (from) q = q.gte('day', from)
     if (to) q = q.lte('day', to)
     return q.order('level', { ascending: false }).order('time_ms', { ascending: true, nullsFirst: false })
@@ -272,7 +284,7 @@ async function loadTopRuns(scope, realm) {
   if (!supabase) return { keys: bestRuns([], 'key'), scores: bestRuns([], 'score'), week: null }
   const week = scope === 'week' ? await currentWeek(realm) : null
   const lists = await Promise.all(
-    MPLUS_DUNGEONS.map((d) => topRunsForDungeon(d.id, realm, week?.start, week?.end)),
+    MPLUS_DUNGEONS.map((d) => topRunsForDungeon(d.id, week?.start, week?.end)),
   )
   let runs = lists.flat()
   let weekInfo = null
