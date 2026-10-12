@@ -455,65 +455,19 @@ begin
   delete from mplus_scores t
   where not exists (
     select 1 from _mplus_new x where x.realm = t.realm and x.name_lower = t.name_lower and x.spec = t.spec);
+
+  -- 3. Each score row carries its player's guild (mplus_guilds, synced by the scraper).
+  update mplus_scores t set guild = x.guild
+  from (
+    select s.realm, s.name_lower, s.spec, g.guild
+    from mplus_scores s
+    left join mplus_guilds g on g.realm = s.realm and g.name_lower = s.name_lower
+  ) x
+  where x.realm = t.realm and x.name_lower = t.name_lower and x.spec = t.spec
+    and t.guild is distinct from x.guild;
 end $$;
 revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
 
--- One page of the rankings, read straight from mplus_scores:
---   no class          → every player's overall score
---   class             → that class's players by overall score
---   class + spec      → players of that class by their score AS that spec
---   p_realm (armory string, optional) narrows any of them to one realm
--- `rank` is the position inside that list (ties broken by name so paging is stable).
--- p_search (optional, 2+ characters) then keeps only names containing it — accent-free,
--- like the sidebar search — WITHOUT changing anyone's rank: searching "ivko" in Fury
--- Warriors still shows Ivkomdfk as #14. `total` is the number of rows being paged
--- through (the whole list, or the matches when searching).
--- When p_find_* names a player, p_offset is ignored and the page that player is on comes
--- back instead (the profile's rank chips link here).
-drop function if exists mplus_leaderboard(text, text, text, int, int, text, text);
-drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
-create or replace function mplus_leaderboard(
-  p_class text default null,
-  p_spec text default null,
-  p_realm text default null,
-  p_limit int default 25,
-  p_offset int default 0,
-  p_find_realm text default null,
-  p_find_name text default null,
-  p_search text default null
-)
-returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb)
-language sql stable set search_path = extensions, public as $$
-  with lim as (select least(greatest(coalesce(p_limit, 25), 1), 50) as n),
-  q as ( -- the folded search text with LIKE wildcards escaped, or null when not searching
-    select case when length(name_fold(btrim(coalesce(p_search, '')))) >= 2
-      then replace(replace(replace(name_fold(btrim(p_search)), '\', '\\'), '%', '\%'), '_', '\_') end as esc
-  ),
-  ranked as (
-    select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best,
-           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk
-    from mplus_scores s
-    where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
-      and (p_class is null or s.class = p_class)
-      and (p_realm is null or s.realm = p_realm)
-  ),
-  f as (
-    select r.*, row_number() over (order by r.rk) as pos, count(*) over () as total
-    from ranked r, q
-    where q.esc is null or name_fold(r.name) like '%' || q.esc || '%'
-  ),
-  start as (
-    select coalesce(
-      (select ((f.pos - 1) / lim.n) * lim.n from f, lim
-       where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
-      greatest(coalesce(p_offset, 0), 0)) as o
-  )
-  select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best
-  from f, lim, start
-  where f.pos > start.o and f.pos <= start.o + lim.n
-  order by f.pos
-$$;
-grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text) to anon, authenticated;
 
 -- How many players have a score in each scope, for the rankings page's population tiles:
 -- one row per class (spec '' = everyone of that class) and per class+spec (players with at
@@ -528,3 +482,120 @@ language sql stable set search_path = public as $$
   group by s.class, s.spec
 $$;
 grant execute on function mplus_population(text) to anon, authenticated;
+
+-- ── GUILDS ────────────────────────────────────────────────────────────────────
+-- The armory's leaderboards don't carry guilds; Tauri Achievements' player index does
+-- (refreshed about once a day), and the scraper mirrors it here keyed like mplus_scores
+-- (the player's own realm + lowercased name). Names can be any script (Cyrillic, CJK …).
+create table if not exists mplus_guilds (
+  realm text not null,
+  name_lower text not null,
+  guild text not null,
+  primary key (realm, name_lower)
+);
+alter table mplus_guilds enable row level security;
+drop policy if exists "public read mplus guilds" on mplus_guilds;
+create policy "public read mplus guilds" on mplus_guilds for select using (true);
+
+alter table mplus_scores add column if not exists guild text;
+create index if not exists mplus_scores_guild_idx on mplus_scores (guild) where guild is not null;
+
+-- Replace the guild list with `p` = [{ realm, name, guild }, …] (service role, from the
+-- scraper), in place: only changed rows are written, players no longer listed lose their
+-- guild. An empty list is ignored — that's a failed download, not everyone leaving.
+-- Returns the number of players with a guild. refresh_mplus_scores copies them onto scores.
+create or replace function sync_mplus_guilds(p jsonb) returns int
+language plpgsql security definer set search_path = public set statement_timeout = '120s' as $$
+declare
+  n int;
+begin
+  create temp table _mplus_g on commit drop as
+  select distinct on (x->>'realm', lower(x->>'name'))
+         x->>'realm' as realm, lower(x->>'name') as name_lower, btrim(x->>'guild') as guild
+  from jsonb_array_elements(p) x
+  where coalesce(btrim(x->>'guild'), '') <> '' and coalesce(x->>'name', '') <> '' and coalesce(x->>'realm', '') <> '';
+  select count(*) into n from _mplus_g;
+  if n = 0 then return 0; end if;
+
+  insert into mplus_guilds as t (realm, name_lower, guild)
+  select realm, name_lower, guild from _mplus_g
+  on conflict (realm, name_lower) do update set guild = excluded.guild
+    where t.guild is distinct from excluded.guild;
+  delete from mplus_guilds t
+  where not exists (select 1 from _mplus_g x where x.realm = t.realm and x.name_lower = t.name_lower);
+  return n;
+end $$;
+revoke execute on function sync_mplus_guilds(jsonb) from public, anon, authenticated;
+
+-- Guilds with at least one ranked player, biggest first, for the rankings' guild filter.
+-- p_realm (armory string, optional) narrows it to one realm.
+create or replace function mplus_guild_list(p_realm text default null)
+returns table (guild text, players bigint)
+language sql stable set search_path = public as $$
+  select s.guild, count(*)
+  from mplus_scores s
+  where s.spec = '' and s.guild is not null and (p_realm is null or s.realm = p_realm)
+  group by s.guild
+  order by count(*) desc, s.guild
+$$;
+grant execute on function mplus_guild_list(text) to anon, authenticated;
+
+-- One page of the rankings, read straight from mplus_scores:
+--   no class          → every player's overall score
+--   class             → that class's players by overall score
+--   class + spec      → players of that class by their score AS that spec
+--   p_realm (armory string, optional) narrows any of them to one realm,
+--   p_guild (exact guild name, optional) to one guild
+-- `rank` is the position inside that list (ties broken by name so paging is stable).
+-- p_search (optional, 2+ characters) then keeps only names containing it — accent-free,
+-- like the sidebar search — WITHOUT changing anyone's rank: searching "ivko" in Fury
+-- Warriors still shows Ivkomdfk as #14. `total` is the number of rows being paged
+-- through (the whole list, or the matches when searching).
+-- When p_find_* names a player, p_offset is ignored and the page that player is on comes
+-- back instead (the profile's rank chips link here).
+drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
+drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text);
+create or replace function mplus_leaderboard(
+  p_class text default null,
+  p_spec text default null,
+  p_realm text default null,
+  p_limit int default 25,
+  p_offset int default 0,
+  p_find_realm text default null,
+  p_find_name text default null,
+  p_search text default null,
+  p_guild text default null
+)
+returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb, guild text)
+language sql stable set search_path = extensions, public as $$
+  with lim as (select least(greatest(coalesce(p_limit, 25), 1), 50) as n),
+  q as ( -- the folded search text with LIKE wildcards escaped, or null when not searching
+    select case when length(name_fold(btrim(coalesce(p_search, '')))) >= 2
+      then replace(replace(replace(name_fold(btrim(p_search)), '\', '\\'), '%', '\%'), '_', '\_') end as esc
+  ),
+  ranked as (
+    select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild,
+           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk
+    from mplus_scores s
+    where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
+      and (p_class is null or s.class = p_class)
+      and (p_realm is null or s.realm = p_realm)
+      and (nullif(p_guild, '') is null or s.guild = p_guild)
+  ),
+  f as (
+    select r.*, row_number() over (order by r.rk) as pos, count(*) over () as total
+    from ranked r, q
+    where q.esc is null or name_fold(r.name) like '%' || q.esc || '%'
+  ),
+  start as (
+    select coalesce(
+      (select ((f.pos - 1) / lim.n) * lim.n from f, lim
+       where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
+      greatest(coalesce(p_offset, 0), 0)) as o
+  )
+  select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best, f.guild
+  from f, lim, start
+  where f.pos > start.o and f.pos <= start.o + lim.n
+  order by f.pos
+$$;
+grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text, text) to anon, authenticated;

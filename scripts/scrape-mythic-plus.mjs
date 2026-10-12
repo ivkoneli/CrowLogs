@@ -272,6 +272,13 @@ async function rpc(fn, args = {}) {
   return text ? JSON.parse(text) : null
 }
 
+// Tauri Achievements' short realm names → the armory's realm strings.
+const TA_REALMS = {
+  Evermoon: '[EN] Evermoon',
+  Tauri: '[HU] Tauri WoW Server',
+  WoD: '[HU] Warriors of Darkness',
+}
+
 // ── SPECS ───────────────────────────────────────────────────────────────────
 // tauriachievements' data: index.json lists players ([name, realm, …]) and specs
 // ([{ class, name, role }]); <dungeon>.json has runs as
@@ -305,7 +312,12 @@ async function loadSpecSource() {
     }
   }
   console.log(`  spec source: ${byKey.size} runs (tauriachievements, generated ${index.generatedAt})`)
-  return (run) => {
+  // The same index lists every player's guild ([name, realm, guild, …]); the armory boards
+  // don't. Carried on the lookup so main() can mirror them (see sync_mplus_guilds).
+  const guilds = index.players
+    .filter((p) => p[2] && TA_REALMS[p[1]])
+    .map((p) => ({ realm: TA_REALMS[p[1]], name: p[0], guild: p[2] }))
+  const lookup = (run) => {
     // Same dungeon, key and exact clear time; then the candidate sharing the most party
     // names. Needs 3+ shared names: a renamed character can differ, a different group can't.
     let best = null
@@ -319,6 +331,8 @@ async function loadSpecSource() {
     }
     return bestHits >= 3 ? best : null
   }
+  lookup.guilds = guilds
+  return lookup
 }
 
 // The one spec a class can play in a role, or null when the role leaves a choice
@@ -357,6 +371,7 @@ async function pool(items, n, fn) {
 // ── MAIN ────────────────────────────────────────────────────────────────────
 async function main() {
   let failed = false
+  let guildsSynced = false
   for (const realm of REALMS) {
     const latest = MPLUS_FULL === '1' ? null : await latestDay(realm)
     // One day of slack: a run finished just before midnight may land after the last scrape.
@@ -372,6 +387,17 @@ async function main() {
       lookup = await loadSpecSource()
     } catch (e) {
       console.warn(`  spec source unavailable (${e.message}) — specs will be filled on a later run`)
+    }
+    // Guilds come with the spec source and cover every realm: mirror them once per run.
+    // Best effort — on failure the previous guilds simply stay.
+    if (lookup?.guilds && !guildsSynced) {
+      guildsSynced = true
+      try {
+        const n = await rpc('sync_mplus_guilds', { p: lookup.guilds })
+        console.log(`  guilds: ${n} players in a guild`)
+      } catch (e) {
+        console.warn(`  guilds: ${e.message}`)
+      }
     }
 
     let seen = 0

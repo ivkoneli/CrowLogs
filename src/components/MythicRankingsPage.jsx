@@ -2,9 +2,9 @@
 // (a dropdown that lists every class with its specs, or the spec-popularity chart below it).
 // Each row shows the player's best run in every dungeon as "key + medal" (hover for that
 // run's score and time). Filters, page and the highlighted player all live in the URL
-// (#/mplus?class=…&spec=…&realm=…&q=…&page=…&player=…), so a view can be shared and the
+// (#/mplus?class=…&spec=…&realm=…&guild=…&q=…&page=…&player=…), so a view can be shared and the
 // profile's rank chips can link straight to a player's row.
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   MPLUS_DUNGEONS,
   MPLUS_REALMS,
@@ -12,6 +12,7 @@ import {
   RANKINGS_PAGE_SIZE,
   getLeaderboard,
   getPopulation,
+  getGuilds,
   dungeonIconUrl,
   formatScore,
   formatRunTime,
@@ -158,6 +159,101 @@ function PopulationChart({ population, klass, spec, onPick }) {
   )
 }
 
+// A guild name in its fixed-width cell. The column is sized for about 25 letters at the
+// normal size; a longer (or wider — capitals, CJK) name is MEASURED and its font scaled
+// down just enough to fit, to a readable floor, so no name widens the column or stands
+// out. Only a name too long even at the floor is cut with an ellipsis (full name on hover).
+const GUILD_FONT_PX = 13
+const GUILD_FONT_MIN_PX = 8.5
+function GuildName({ name, active, onClick }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      el.style.fontSize = `${GUILD_FONT_PX}px`
+      // Two passes: glyph widths don't scale perfectly linearly with the font size.
+      for (let i = 0; i < 2 && el.scrollWidth > el.clientWidth + 0.5; i++) {
+        const size = parseFloat(el.style.fontSize)
+        el.style.fontSize = `${Math.max(GUILD_FONT_MIN_PX, (size * el.clientWidth) / el.scrollWidth - 0.1)}px`
+      }
+    }
+    fit()
+    // Web fonts / a late CJK fallback font can change the width after first paint.
+    document.fonts?.ready?.then(fit)
+  }, [name])
+  return (
+    <button
+      ref={ref}
+      className={`mr-guild-name ${active ? 'on' : ''}`}
+      onClick={onClick}
+      title={`<${name}> · ${active ? 'clear the guild filter' : 'show only this guild'}`}
+    >
+      {name}
+    </button>
+  )
+}
+
+// Guild filter: a text box backed by the list of guilds (biggest first). Picking or typing
+// an exact guild name applies it; the ✕ clears it. Anything else typed is just a search
+// through the suggestions and is dropped on blur.
+function GuildFilter({ value, guilds, onChange }) {
+  const [text, setText] = useState(value || '')
+  useEffect(() => setText(value || ''), [value])
+  const byLower = useMemo(() => new Map(guilds.map((g) => [g.guild.toLowerCase(), g.guild])), [guilds])
+  const apply = (raw) => {
+    const t = raw.trim()
+    if (!t) return value ? onChange(null) : undefined
+    const match = byLower.get(t.toLowerCase())
+    if (match && match !== value) onChange(match)
+    return match
+  }
+  return (
+    <label className="filter-field mr-search mr-guild-filter">
+      <span className="field-label">Guild</span>
+      <span className="mr-search-box">
+        <input
+          type="text"
+          list="mr-guild-list"
+          placeholder="All guilds"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value)
+            // Choosing a suggestion arrives as a change to the full name: apply at once.
+            if (byLower.has(e.target.value.trim().toLowerCase())) apply(e.target.value)
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && !apply(text) && setText(value || '')}
+          onBlur={() => !apply(text) && setText(value || '')}
+          aria-label="Filter by guild"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        {value && (
+          <button
+            type="button"
+            className="mr-clear"
+            onClick={(e) => {
+              e.preventDefault()
+              onChange(null)
+            }}
+            aria-label="Clear guild filter"
+            title="Clear guild filter"
+          >
+            ✕
+          </button>
+        )}
+      </span>
+      <datalist id="mr-guild-list">
+        {guilds.map((g) => (
+          <option key={g.guild} value={g.guild}>
+            {g.players} {g.players === 1 ? 'player' : 'players'}
+          </option>
+        ))}
+      </datalist>
+    </label>
+  )
+}
+
 // One dungeon's best run for a player: "+14" and the medal. `run` = [level, medal, score, ms].
 function BestCell({ dungeon, run }) {
   if (!run) return <td className="mr-cell empty">—</td>
@@ -174,9 +270,10 @@ function BestCell({ dungeon, run }) {
   )
 }
 
-export default function MythicRankingsPage({ klass, spec, realm, search, page, focus, onNavigate, onSelectPlayer }) {
+export default function MythicRankingsPage({ klass, spec, realm, guild, search, page, focus, onNavigate, onSelectPlayer }) {
   const [state, setState] = useState({ loading: true, rows: [], error: null })
   const [population, setPopulation] = useState(null)
+  const [guilds, setGuilds] = useState([])
   // What's typed in the search box. The applied search lives in the URL (`search`); typing
   // updates it after a short pause, and Back/Forward or a shared link fills the box.
   const [text, setText] = useState(search || '')
@@ -191,13 +288,13 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
   useEffect(() => {
     let cancelled = false
     setState((s) => ({ ...s, loading: true, error: null }))
-    getLeaderboard({ klass, spec, realm: armoryRealm, page: page || 1, findName, findRealm, search: query })
+    getLeaderboard({ klass, spec, realm: armoryRealm, guild, page: page || 1, findName, findRealm, search: query })
       .then((rows) => !cancelled && setState({ loading: false, rows, error: null }))
       .catch((e) => !cancelled && setState({ loading: false, rows: [], error: e.message || 'Request failed.' }))
     return () => {
       cancelled = true
     }
-  }, [klass, spec, armoryRealm, page, findName, findRealm, query])
+  }, [klass, spec, armoryRealm, guild, page, findName, findRealm, query])
 
   // Tile sizes follow the realm filter (not class/spec/search: they ARE the class picker).
   useEffect(() => {
@@ -205,6 +302,9 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
     getPopulation(armoryRealm)
       .then((p) => !cancelled && setPopulation(p))
       .catch(() => !cancelled && setPopulation(null))
+    getGuilds(armoryRealm)
+      .then((g) => !cancelled && setGuilds(g))
+      .catch(() => !cancelled && setGuilds([]))
     return () => {
       cancelled = true
     }
@@ -215,7 +315,7 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
   // fall back to page 1 rather than showing an empty list.
   const pastEnd = !loading && !error && rows.length === 0 && page > 1
   useEffect(() => {
-    if (pastEnd) onNavigate({ klass, spec, realm, search, focus, page: null }, { replace: true })
+    if (pastEnd) onNavigate({ klass, spec, realm, guild, search, focus, page: null }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastEnd])
   const total = rows[0]?.total || 0
@@ -225,8 +325,8 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
   const focusKey = focus ? focus.toLowerCase() : null
 
   // Changing a filter starts over on page 1 and drops the highlight; paging keeps both.
-  const setFilter = (patch) => onNavigate({ klass, spec, realm, search, ...patch, page: null, focus: null })
-  const setPage = (p) => onNavigate({ klass, spec, realm, search, focus, page: p })
+  const setFilter = (patch) => onNavigate({ klass, spec, realm, guild, search, ...patch, page: null, focus: null })
+  const setPage = (p) => onNavigate({ klass, spec, realm, guild, search, focus, page: p })
 
   // Apply the typed search once typing pauses. It replaces the current history entry, so
   // a search is one Back step however many letters it took.
@@ -234,14 +334,15 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
     const next = text.trim() || null
     if (next === (search || null)) return
     const t = setTimeout(
-      () => onNavigate({ klass, spec, realm, search: next, page: null, focus: null }, { replace: true }),
+      () => onNavigate({ klass, spec, realm, guild, search: next, page: null, focus: null }, { replace: true }),
       300,
     )
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text])
 
-  const scope = [realm ? REALM_LABELS[realm] : null, spec, klass].filter(Boolean).join(' ') || 'All players'
+  const scope =
+    [realm ? REALM_LABELS[realm] : null, spec, klass, guild ? `in <${guild}>` : null].filter(Boolean).join(' ') || 'All players'
   const scoreTitle = spec
     ? `${spec} score: the sum of the best run played as ${spec} in each dungeon`
     : 'M+ score: the sum of the best run in each dungeon'
@@ -290,6 +391,7 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
             </option>
           ))}
         </Field>
+        <GuildFilter value={guild} guilds={guilds} onChange={(g) => setFilter({ guild: g })} />
         <label className="filter-field mr-search">
           <span className="field-label">Player</span>
           <span className="mr-search-box">
@@ -324,6 +426,7 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
                 <tr>
                   <th className="rank">#</th>
                   <th>Player</th>
+                  <th className="mr-guild-head">Guild</th>
                   <th className="num" title={scoreTitle}>
                     Score
                   </th>
@@ -356,6 +459,17 @@ export default function MythicRankingsPage({ klass, spec, realm, search, page, f
                         {/* The realm is only worth a tag when the list mixes realms. */}
                         {!realm && SLUG_OF_REALM[r.realm] !== 'evermoon' && (
                           <span className="mr-realm">{REALM_LABELS[SLUG_OF_REALM[r.realm]] || r.realm}</span>
+                        )}
+                      </td>
+                      <td className="mr-guild">
+                        {r.guild ? (
+                          <GuildName
+                            name={r.guild}
+                            active={guild === r.guild}
+                            onClick={() => setFilter({ guild: guild === r.guild ? null : r.guild })}
+                          />
+                        ) : (
+                          <span className="mr-guild-none">—</span>
                         )}
                       </td>
                       <td className="num mp-score">{formatScore(r.score)}</td>

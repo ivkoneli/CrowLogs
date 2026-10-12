@@ -334,6 +334,7 @@ export default function App() {
               klass={selection.klass}
               spec={selection.spec}
               realm={selection.realm}
+              guild={selection.guild}
               search={selection.search}
               page={selection.page}
               focus={selection.focus}

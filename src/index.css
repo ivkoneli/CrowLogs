@@ -56,7 +56,10 @@ body {
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Latin + Cyrillic come from the first fonts; the CJK ones are named so Chinese and
+     Japanese names (guilds, characters) get a proper font on every OS. */
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Microsoft YaHei', 'Yu Gothic UI', 'PingFang SC',
+    'Hiragino Sans', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif;
 }
 
 button {
@@ -3451,13 +3454,86 @@ a.mp-rank.link:hover {
   opacity: 0.55;
   transition: opacity 0.15s;
 }
+/* Guild filter box (same look as the player search) with its clear button. */
+.mr-search-box {
+  position: relative;
+  display: inline-flex;
+}
+.mr-guild-filter .mr-search-box input {
+  width: 210px;
+  padding-right: 1.9rem;
+}
+.mr-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.mr-clear:hover {
+  background: var(--border);
+  color: var(--text);
+}
+/* Rankings table: tighter cells than the other meters, so the Guild column fits beside
+   nine dungeon columns without the table needing to scroll on a laptop. */
+.mr-table thead th,
+.mr-table td {
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+}
+/* The guild cell is a fixed width sized for ~25 letters; GuildName measures longer names
+   and shrinks their font to fit, and anything still too long at the smallest size is cut
+   with an ellipsis (full name on hover). */
+.mr-table .mr-guild,
+.mr-table .mr-guild-head {
+  width: 190px;
+  min-width: 190px;
+  max-width: 190px;
+}
+.mr-guild-name {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #b9b0d6;
+  font-size: 13px; /* GuildName sets the fitted size inline */
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.mr-guild-name:hover {
+  color: var(--highlight);
+  text-decoration: underline;
+}
+.mr-guild-name.on {
+  color: var(--highlight);
+}
+.mr-guild-none {
+  color: var(--muted);
+  opacity: 0.5;
+}
 .mr-table {
-  min-width: 980px; /* scrolls inside .table-scroll on narrow screens */
+  min-width: 1010px; /* scrolls inside .table-scroll on narrow screens */
 }
 .mr-table thead th.mr-dhead {
   text-align: center;
-  padding-left: 0.3rem;
-  padding-right: 0.3rem;
+  padding-left: 0.15rem;
+  padding-right: 0.15rem;
   white-space: nowrap;
 }
 .mr-dhead img {
@@ -3478,14 +3554,14 @@ a.mp-rank.link:hover {
 .mr-table td.mr-cell {
   text-align: center;
   white-space: nowrap;
-  padding-left: 0.3rem;
-  padding-right: 0.3rem;
+  padding-left: 0.15rem;
+  padding-right: 0.15rem;
   font-variant-numeric: tabular-nums;
   cursor: help;
 }
 .mr-key {
   display: inline-block;
-  min-width: 1.9rem;
+  min-width: 1.75rem;
   text-align: right;
   font-weight: 700;
   color: var(--accent-2);
@@ -3499,9 +3575,9 @@ a.mp-rank.link:hover {
   cursor: default;
 }
 .mr-cell .mp-medal {
-  width: 20px;
-  height: 20px;
-  margin-left: 0.2rem;
+  width: 18px;
+  height: 18px;
+  margin-left: 0.15rem;
 }
 .mr-player {
   white-space: nowrap;

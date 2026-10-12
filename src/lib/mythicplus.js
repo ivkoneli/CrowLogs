@@ -325,10 +325,11 @@ export async function getPlayerRanks(player) {
 // spec = that spec's score), `realm` (armory string) narrows it. With findName/findRealm
 // the page that player is on is returned instead of `page`. `search` (2+ characters) keeps
 // only names containing it; ranks stay the player's real rank in the scope, and `total`
-// becomes the number of matches.
+// becomes the number of matches. `guild` (exact name) narrows the scope to one guild;
+// each row carries the player's `guild` (null when they have none).
 // → [{ rank, total, realm, name, class, spec, score, best: { mapId: [level, medal, score, ms] } }]
 export const RANKINGS_PAGE_SIZE = 25
-export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null, search = null } = {}) {
+export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null, search = null, guild = null } = {}) {
   if (!supabase) return []
   const { data, error } = await supabase.rpc('mplus_leaderboard', {
     p_class: klass,
@@ -339,6 +340,7 @@ export async function getLeaderboard({ klass = null, spec = null, realm = null, 
     p_find_realm: findName ? findRealm : null,
     p_find_name: findName,
     p_search: search || null,
+    p_guild: guild || null,
   })
   if (error) throw error
   return (data || []).map((r) => ({ ...r, score: Number(r.score) }))
@@ -368,4 +370,22 @@ export function getPopulation(realm = null) {
     populationCache.set(key, p)
   }
   return populationCache.get(key)
+}
+
+// Guilds with at least one ranked player, biggest first, for the rankings' guild filter:
+// [{ guild, players }]. `realm` (armory string) narrows it to one realm. Cached per realm.
+const guildListCache = new Map()
+export function getGuilds(realm = null) {
+  const key = realm || ''
+  if (!guildListCache.has(key)) {
+    const p = (async () => {
+      if (!supabase) return []
+      const { data, error } = await supabase.rpc('mplus_guild_list', { p_realm: realm })
+      if (error) throw error
+      return data || []
+    })()
+    p.catch(() => guildListCache.delete(key))
+    guildListCache.set(key, p)
+  }
+  return guildListCache.get(key)
 }
