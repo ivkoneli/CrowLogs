@@ -284,3 +284,26 @@ async function loadTopRuns(scope, realm) {
   }
   return { keys: bestRuns(runs, 'key'), scores: bestRuns(runs, 'score'), week: weekInfo }
 }
+
+// A player's M+ rankings, from the mplus_scores table the scraper rebuilds (schema.sql):
+//   { '': { score, rank, total, classRank, classTotal, class }, Fury: { score, rank, total, class }, … }
+// The '' entry ranks the overall score among all players and within the class; a spec entry
+// ranks that spec's score among players of the same class and spec. {} when unranked.
+export async function getPlayerRanks(player) {
+  if (!supabase) return {}
+  const { name, realm } = splitPlayerKey(player)
+  const { data, error } = await supabase.rpc('mplus_player_ranks', { p_realm: realm, p_name: name })
+  if (error) throw error
+  const out = {}
+  for (const r of data || []) {
+    out[r.spec] = {
+      score: Number(r.score),
+      rank: r.rank,
+      total: r.total,
+      classRank: r.class_rank,
+      classTotal: r.class_total,
+      class: r.class,
+    }
+  }
+  return out
+}

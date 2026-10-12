@@ -229,3 +229,117 @@ grant execute on function search_mplus_players(text, int) to anon, authenticated
 -- so every scrape re-checks it.
 alter table mplus_runs add column if not exists specs_matched boolean not null default false;
 create index if not exists mplus_runs_specs_pending_idx on mplus_runs (id) where not specs_matched;
+
+-- ── M+ SCORES + RANKINGS ──────────────────────────────────────────────────────
+-- A run's M+ score — the same formula as src/lib/mythicplus.js runScore (and Tauri
+-- Achievements): timed 50 + 7.5×level + 12.5×(1 − time÷timer); depleted
+-- 50 + 7.5×(level − 1) − 20×(time÷timer − 1), never below 0. Timers = MPLUS_DUNGEONS.
+create or replace function mplus_run_score(p_map int, p_level int, p_time_ms int) returns numeric
+language sql immutable parallel safe as $$
+  select case
+    when t.timer is null or p_time_ms is null then null
+    else round(greatest(0, case
+      when p_time_ms / 1000.0 / t.timer <= 1 then 50 + 7.5 * p_level + 12.5 * (1 - p_time_ms / 1000.0 / t.timer)
+      else 50 + 7.5 * (p_level - 1) - 20 * (p_time_ms / 1000.0 / t.timer - 1)
+    end)::numeric, 1)
+  end
+  from (select (case p_map
+    when 197 then 2100 when 198 then 1800 when 199 then 2340 when 200 then 2700 when 206 then 1980
+    when 207 then 1980 when 208 then 1440 when 209 then 2700 when 210 then 1800 end)::numeric as timer) t
+$$;
+
+-- One row per player per scope: spec '' = their overall score (best run per dungeon, any
+-- spec), spec 'Fury' etc. = best run per dungeon played AS that spec. Rebuilt by
+-- refresh_mplus_scores() after every scrape; the profile reads ranks from it.
+create table if not exists mplus_scores (
+  realm text not null,
+  name_lower text not null,
+  name text not null,
+  class text,
+  spec text not null default '',
+  score numeric not null,
+  primary key (realm, name_lower, spec)
+);
+create index if not exists mplus_scores_rank_idx on mplus_scores (realm, spec, class, score desc);
+alter table mplus_scores enable row level security;
+drop policy if exists "public read mplus scores" on mplus_scores;
+create policy "public read mplus scores" on mplus_scores for select using (true);
+
+-- Called by the scraper after each run (service role). Two steps:
+--  1. A new run's specs come from Tauri Achievements about a day later. Until then, a
+--     member whose role doesn't decide the spec (a dps Warrior: Arms or Fury?) is ASSUMED
+--     to be on the spec they last played in that role, flagged spec_guess so the scraper
+--     replaces it with the real one once it's published. Keeps spec scores from lagging.
+--  2. Rebuild mplus_scores.
+create or replace function refresh_mplus_scores() returns void
+language plpgsql security definer set search_path = public set statement_timeout = '120s' as $
+begin
+  with known as (
+    select distinct on (r.realm, lower(p->>'name'), p->>'class', p->>'role')
+      r.realm, lower(p->>'name') as n, p->>'class' as c, p->>'role' as ro, p->>'spec' as spec
+    from mplus_runs r, jsonb_array_elements(r.party) p
+    where r.specs_matched and coalesce(p->>'spec', '') <> ''
+    order by r.realm, lower(p->>'name'), p->>'class', p->>'role', r.day desc, r.first_seen desc
+  )
+  update mplus_runs r set party = (
+    select jsonb_agg(
+      case when coalesce(t.p->>'spec', '') = '' and k.spec is not null
+        then t.p || jsonb_build_object('spec', k.spec, 'spec_guess', true)
+        else t.p end
+      order by t.ord)
+    from jsonb_array_elements(r.party) with ordinality t(p, ord)
+    left join known k
+      on k.realm = r.realm and k.n = lower(t.p->>'name') and k.c = t.p->>'class' and k.ro = t.p->>'role'
+  )
+  where not r.specs_matched
+    and exists (select 1 from jsonb_array_elements(r.party) p where coalesce(p->>'spec', '') = '');
+
+  delete from mplus_scores where true;
+  insert into mplus_scores (realm, name_lower, name, class, spec, score)
+  with m as (
+    select r.realm, lower(p->>'name') as n, p->>'name' as name, p->>'class' as class,
+           coalesce(p->>'spec', '') as spec, r.map_id, r.day,
+           mplus_run_score(r.map_id, r.level, r.time_ms) as s
+    from mplus_runs r, jsonb_array_elements(r.party) p
+    where coalesce(p->>'name', '') <> ''
+  ),
+  ident as ( -- a player's current name spelling + class = their most recent run's
+    select distinct on (realm, n) realm, n, name, class from m order by realm, n, day desc
+  ),
+  per as (
+    select realm, n, ''::text as spec, map_id, max(s) as best from m group by realm, n, map_id
+    union all
+    select realm, n, spec, map_id, max(s) from m where spec <> '' group by realm, n, spec, map_id
+  )
+  select per.realm, per.n, i.name, i.class, per.spec, round(sum(coalesce(per.best, 0)), 1)
+  from per join ident i on i.realm = per.realm and i.n = per.n
+  group by per.realm, per.n, i.name, i.class, per.spec;
+end $$;
+revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
+
+-- A player's score + rank in every scope they have one. spec '' row: rank/total among ALL
+-- players, class_rank/class_total among their class. Spec rows: rank/total among players
+-- of that class AND spec (class_rank null). Rank = 1 + players with a strictly higher score.
+create or replace function mplus_player_ranks(p_realm text, p_name text)
+returns table (spec text, class text, score numeric, rank bigint, total bigint, class_rank bigint, class_total bigint)
+language sql stable set search_path = public as $$
+  select me.spec, me.class, me.score,
+    case when me.spec = ''
+      then (select count(*) + 1 from mplus_scores o where o.realm = me.realm and o.spec = '' and o.score > me.score)
+      else (select count(*) + 1 from mplus_scores o where o.realm = me.realm and o.spec = me.spec and o.class is not distinct from me.class and o.score > me.score) end,
+    case when me.spec = ''
+      then (select count(*) from mplus_scores o where o.realm = me.realm and o.spec = '')
+      else (select count(*) from mplus_scores o where o.realm = me.realm and o.spec = me.spec and o.class is not distinct from me.class) end,
+    case when me.spec = ''
+      then (select count(*) + 1 from mplus_scores o where o.realm = me.realm and o.spec = '' and o.class is not distinct from me.class and o.score > me.score) end,
+    case when me.spec = ''
+      then (select count(*) from mplus_scores o where o.realm = me.realm and o.spec = '' and o.class is not distinct from me.class) end
+  from mplus_scores me
+  where me.realm = p_realm and me.name_lower = lower(p_name)
+$$;
+grant execute on function mplus_player_ranks(text, text) to anon, authenticated;
+-- The rebuild takes ~10-20 s, past the API's default 8 s statement limit, and a function's
+-- own `set statement_timeout` can't extend a call already in flight. Raise it for the
+-- service role only (server-side scraper; the public anon role keeps its short limit).
+alter role service_role set statement_timeout = '120s';
+notify pgrst, 'reload config';

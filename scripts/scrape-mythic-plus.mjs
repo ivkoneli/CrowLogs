@@ -307,10 +307,15 @@ function specFromRole(klass, role) {
 // otherwise a spec the role decides; otherwise whatever was already stored.
 function withSpecs(run, lookup) {
   const matched = lookup ? lookup(run) : null
-  const party = run.party.map((p) => ({
-    ...p,
-    spec: matched?.get(p.name.toLowerCase()) || specFromRole(p.class, p.role) || p.spec || null,
-  }))
+  const party = run.party.map((p) => {
+    // spec_guess marks a spec the database ASSUMED from the player's last known one (see
+    // refresh_mplus_scores in schema.sql); a real match replaces it and drops the flag.
+    const real = matched?.get(p.name.toLowerCase()) || specFromRole(p.class, p.role)
+    if (!real) return { ...p, spec: p.spec || null }
+    const rest = { ...p }
+    delete rest.spec_guess
+    return { ...rest, spec: real }
+  })
   return { ...run, party, specs_matched: !!matched }
 }
 
@@ -381,6 +386,20 @@ async function main() {
     } catch (e) {
       failed = true
       console.error(`  specs: ${e.message}`)
+    }
+    // Rebuild the score table the profile's rankings read (also assumes a spec for brand-new
+    // runs whose real one isn't published yet). A failure leaves the previous scores in place.
+    try {
+      const res = await fetch(`${REST}/rpc/refresh_mplus_scores`, {
+        method: 'POST',
+        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`)
+      console.log('  scores: refreshed')
+    } catch (e) {
+      failed = true
+      console.error(`  scores: ${e.message}`)
     }
     // Every board parsing to nothing means Tauri changed the page, not that nobody played.
     if (seen === 0) {

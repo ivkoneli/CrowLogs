@@ -6,6 +6,7 @@ import {
   dungeonIconUrl,
   dungeonBannerUrl,
   getPlayerRuns,
+  getPlayerRanks,
   bestRuns,
   runScore,
   playerScore,
@@ -324,17 +325,55 @@ function Pager({ page, pages, onChange }) {
   )
 }
 
+// "#12" chip with what the rank is among, e.g. label "Fury" → "#12 Fury" (of 348 in the tooltip).
+function RankChip({ label, rank, total, title }) {
+  if (!rank) return null
+  return (
+    <span className="mp-rank" title={`${title}: #${rank.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`}>
+      <span className="mp-rank-num">#{rank.toLocaleString('en-US')}</span>
+      <span className="mp-rank-label">{label}</span>
+    </span>
+  )
+}
+
+// History's dungeon filter: one small icon per dungeon; click to show only that dungeon's
+// runs, click it again (or another) to change. Dungeons with no runs are greyed out.
+function DungeonFilter({ value, counts, onChange }) {
+  return (
+    <div className="mp-dfilter" role="group" aria-label="Filter history by dungeon">
+      {MPLUS_DUNGEONS.map((d) => {
+        const n = counts.get(d.id) || 0
+        return (
+          <button
+            key={d.id}
+            className={`mp-dfilter-btn ${value === d.id ? 'on' : ''}`}
+            disabled={!n && value !== d.id}
+            aria-pressed={value === d.id}
+            title={`${d.name}: ${n} ${n === 1 ? 'run' : 'runs'}`}
+            onClick={() => onChange(value === d.id ? null : d.id)}
+          >
+            <img src={dungeonIconUrl(d.id)} alt={d.name} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // The profile's Mythic+ section: best run per dungeon (highest score, then fastest time)
-// with the player's total M+ score, or the full run history, newest first, 10 per page. Paging and the Best/History
-// switch only re-render this card; the runs are fetched once per player. The parent keys
-// it by player, so opening another profile starts fresh on Best runs, page 1.
+// with the player's total M+ score and rankings, or the full run history, newest first,
+// 10 per page, optionally narrowed to one dungeon. Paging and the Best/History switch only
+// re-render this card; the runs are fetched once per player. The parent keys it by player,
+// so opening another profile starts fresh on Best runs, page 1.
 export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
   const { name, realm } = splitPlayerKey(player)
   const selfName = name.toLowerCase()
   const [state, setState] = useState({ loading: true, runs: [], error: null })
+  const [ranks, setRanks] = useState({})
   const [view, setView] = useState('best')
   const [bestSort, setBestSort] = useState('score') // 'score' | 'key'
   const [spec, setSpec] = useState(null) // null = All specs
+  const [dungeon, setDungeon] = useState(null) // history only: a map id, null = all dungeons
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -342,6 +381,10 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
     getPlayerRuns(player)
       .then((runs) => !cancelled && setState({ loading: false, runs, error: null }))
       .catch((e) => !cancelled && setState({ loading: false, runs: [], error: e.message || 'Request failed.' }))
+    // Rankings are a nice-to-have next to the score: if they fail, the card just omits them.
+    getPlayerRanks(player)
+      .then((r) => !cancelled && setRanks(r))
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -364,43 +407,59 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
     [allRuns, spec, selfName],
   )
   const unknownSpec = spec ? allRuns.filter((r) => !selfIn(r)?.spec).length : 0
+  // Runs counted under this spec on an ASSUMED spec (the player's last known one), because
+  // Tauri Achievements hasn't published the real one yet. See refresh_mplus_scores.
+  const assumedSpec = spec ? runs.filter((r) => selfIn(r)?.spec_guess).length : 0
   // The total is always built from the best SCORE per dungeon, whichever sort is shown.
   const bestByScore = useMemo(() => bestRuns(runs, 'score'), [runs])
   const best = useMemo(() => (bestSort === 'key' ? bestRuns(runs, 'key') : bestByScore), [runs, bestSort, bestByScore])
-  const history = useMemo(() => sortRunsByRecent(runs), [runs])
+  // History: the spec's runs, optionally one dungeon's. Counts feed the filter's tooltips.
+  const dungeonCounts = useMemo(() => {
+    const m = new Map()
+    for (const r of runs) m.set(r.map_id, (m.get(r.map_id) || 0) + 1)
+    return m
+  }, [runs])
+  const history = useMemo(
+    () => sortRunsByRecent(dungeon ? runs.filter((r) => r.map_id === dungeon) : runs),
+    [runs, dungeon],
+  )
   const pages = Math.max(1, Math.ceil(history.length / PAGE_SIZE))
   const pageRuns = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // The history table always shows as many rows as an unfiltered page would (blank filler
+  // rows make up the difference), so a short last page, a spec with few runs or a dungeon
+  // filter never changes the card's height and the page doesn't jump under the cursor.
+  const historyRows = Math.min(PAGE_SIZE, allRuns.length)
+  const fillers = Math.max(0, historyRows - (history.length ? pageRuns.length : 1))
   const done = best.filter((b) => b.run).length
   const total = playerScore(bestByScore)
   const topLevel = Math.max(1, ...best.map((b) => b.run?.level || 0))
   const cellProps = { selfName, realm, onSelectPlayer }
+  const dungeonName = dungeon ? MPLUS_DUNGEONS.find((d) => d.id === dungeon)?.name : null
+  const rank = ranks[spec || '']
 
   let body
   if (loading) {
     body = <div className="empty-state mp-empty">Loading Mythic+ runs…</div>
   } else if (state.error) {
     body = <div className="error">Couldn’t load Mythic+ runs: {state.error}</div>
-  } else if (!runs.length) {
+  } else if (!allRuns.length) {
     body = (
       <div className="empty-state mp-empty">
-        <p>{spec ? `No ${spec} runs for ${name} yet.` : `No Mythic+ runs on the Tauri armory for ${name} yet.`}</p>
+        <p>No Mythic+ runs on the Tauri armory for {name} yet.</p>
       </div>
     )
   } else if (view === 'best') {
+    // A spec with no runs keeps the same table, every dungeon greyed out as "no run".
     body = (
       <div className="table-scroll">
         <table className="meter mp-meter">
           <Cols />
           <Head />
           <tbody>
-            {best.map(({ dungeon, run }) => (
-              <tr key={dungeon.id}>
-                <DungeonCell dungeon={dungeon} run={run} topLevel={topLevel} />
-                {run ? (
-                  <RunCells run={run} {...cellProps} />
-                ) : (
-                  <EmptyRunCells />
-                )}
+            {best.map(({ dungeon: d, run }) => (
+              <tr key={d.id}>
+                <DungeonCell dungeon={d} run={run} topLevel={topLevel} />
+                {run ? <RunCells run={run} {...cellProps} /> : <EmptyRunCells />}
               </tr>
             ))}
           </tbody>
@@ -416,7 +475,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
             <Head />
             <tbody>
               {pageRuns.map((run) => (
-                <tr key={run.id}>
+                <tr key={run.id} className="mp-hrow">
                   <td className="name-cell">
                     <div className="mp-dname">
                       <DungeonIcon mapId={run.map_id} />
@@ -426,10 +485,36 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
                   <RunCells run={run} {...cellProps} />
                 </tr>
               ))}
+              {!history.length && (
+                <tr className="mp-filler">
+                  <td className="muted" colSpan={7}>
+                    No {spec ? `${spec} ` : ''}runs{dungeonName ? ` in ${dungeonName}` : ''} yet.
+                  </td>
+                </tr>
+              )}
+              {Array.from({ length: fillers }, (_, i) => (
+                <tr key={`filler${i}`} className="mp-filler" aria-hidden="true">
+                  <td colSpan={7}>&nbsp;</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-        <Pager page={page} pages={pages} onChange={setPage} />
+        {/* The pager's space is kept whenever the unfiltered history has one, so filtering
+            down to a single page doesn't shrink the card. */}
+        {allRuns.length > PAGE_SIZE &&
+          (pages > 1 ? (
+            <Pager page={page} pages={pages} onChange={setPage} />
+          ) : (
+            <div className="mp-pager mp-pager-ghost" aria-hidden="true">
+              <button className="mp-page" disabled tabIndex={-1}>
+                ‹ Prev
+              </button>
+              <button className="mp-page on" disabled tabIndex={-1}>
+                1
+              </button>
+            </div>
+          ))}
       </>
     )
   }
@@ -439,13 +524,35 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
       <div className="card-head mp-head">
         <h3 className="mp-title">
           Mythic+
-          {!loading && !state.error && runs.length > 0 && (
+          {!loading && !state.error && allRuns.length > 0 && (
             <span
               className="mp-total"
               title="M+ score: the sum of the best run score in each dungeon (same scoring as Tauri Achievements)"
             >
               <span className="mp-total-label">Score</span>
-              {formatScore(total)}
+              {runs.length ? formatScore(total) : '—'}
+            </span>
+          )}
+          {!loading && !state.error && runs.length > 0 && rank && (
+            <span className="mp-ranks">
+              {spec ? (
+                <RankChip
+                  label={`${spec}${playerClass ? ` ${playerClass}` : ''}`}
+                  rank={rank.rank}
+                  total={rank.total}
+                  title={`${spec}${playerClass ? ` ${playerClass}s` : ''} by ${spec} score`}
+                />
+              ) : (
+                <>
+                  <RankChip label="Overall" rank={rank.rank} total={rank.total} title="All players by M+ score" />
+                  <RankChip
+                    label={rank.class || playerClass || 'Class'}
+                    rank={rank.classRank}
+                    total={rank.classTotal || 0}
+                    title={`${rank.class || playerClass || 'Class'} players by M+ score`}
+                  />
+                </>
+              )}
             </span>
           )}
         </h3>
@@ -476,16 +583,36 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
           </div>
         </div>
       </div>
-      {!loading && !state.error && allRuns.length > 0 && specTabs.length > 0 && (
+      {!loading && !state.error && allRuns.length > 0 && (specTabs.length > 0 || view === 'history') && (
         <div className="mp-spec-row">
-          <SpecTabs
-            specs={specTabs}
-            value={spec}
-            onChange={(s) => {
-              setSpec(s)
-              setPage(1)
-            }}
-          />
+          {specTabs.length > 0 && (
+            <SpecTabs
+              specs={specTabs}
+              value={spec}
+              onChange={(s) => {
+                setSpec(s)
+                setPage(1)
+              }}
+            />
+          )}
+          {view === 'history' && (
+            <DungeonFilter
+              value={dungeon}
+              counts={dungeonCounts}
+              onChange={(d) => {
+                setDungeon(d)
+                setPage(1)
+              }}
+            />
+          )}
+          {assumedSpec > 0 && (
+            <span
+              className="muted mp-spec-note"
+              title="Tauri Achievements publishes each run's spec about a day later. Until then a new run counts for the spec last played in that role, and is corrected if that turns out wrong."
+            >
+              {assumedSpec} recent {assumedSpec === 1 ? 'run is' : 'runs are'} assumed {spec}
+            </span>
+          )}
           {unknownSpec > 0 && (
             <span className="muted mp-spec-note" title="Specs come from Tauri Achievements, which updates about once a day">
               {unknownSpec} recent {unknownSpec === 1 ? 'run has' : 'runs have'} no spec yet
