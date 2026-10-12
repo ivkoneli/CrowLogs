@@ -5,6 +5,7 @@
 //
 //   #/                        home (best M+ runs)
 //   #/import                  import a combat log
+//   #/mplus?class=&spec=&realm=&page=&player=   M+ rankings (every part optional)
 //   #/boss/<raid>/<boss>      boss rankings
 //   #/player/<name>           player profile
 //   #/log/<logId>             uploaded log breakdown (first encounter)
@@ -24,6 +25,18 @@ export function selectionToHash(sel) {
       )
     case 'import':
       return '#/import'
+    case 'mplus': {
+      // Filters, page and the highlighted player are all part of the address, so a
+      // rankings view can be shared as-is. `realm` is a slug (evermoon / tauri / wod).
+      const q = new URLSearchParams()
+      if (sel.klass) q.set('class', sel.klass)
+      if (sel.klass && sel.spec) q.set('spec', sel.spec)
+      if (sel.realm) q.set('realm', sel.realm)
+      if (sel.page > 1) q.set('page', String(sel.page))
+      if (sel.focus) q.set('player', sel.focus)
+      const qs = q.toString()
+      return qs ? `#/mplus?${qs}` : '#/mplus'
+    }
     default:
       return '#/'
   }
@@ -41,6 +54,21 @@ export function inAppClick(navigate) {
 }
 
 export function selectionFromHash(hash) {
+  const mplus = /^#\/?mplus(?:\?(.*))?$/.exec(hash || '')
+  if (mplus) {
+    const q = new URLSearchParams(mplus[1] || '')
+    const page = parseInt(q.get('page'), 10)
+    const klass = q.get('class') || null
+    return {
+      view: 'mplus',
+      klass,
+      spec: (klass && q.get('spec')) || null,
+      realm: q.get('realm') || null,
+      // Only an explicit page > 1 is kept: no page + a player means "find their page".
+      page: page > 1 ? page : q.get('player') ? null : 1,
+      focus: q.get('player') || null,
+    }
+  }
   // Split BEFORE decoding so encoded slashes inside a name don't create segments.
   const parts = (hash || '')
     .replace(/^#\/?/, '')

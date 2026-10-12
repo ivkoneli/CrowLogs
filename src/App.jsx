@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import ImportPanel from './components/ImportPanel.jsx'
 import HomePage from './components/HomePage.jsx'
+import MythicRankingsPage from './components/MythicRankingsPage.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
 import LogPage from './components/LogPage.jsx'
@@ -222,6 +223,8 @@ export default function App() {
   const onSelectLog = (logId, focus = null) => navigate({ view: 'log', logId, focus })
   const onImport = () => navigate({ view: 'import' })
   const onHome = () => navigate({ view: 'home' })
+  // M+ rankings; `sel` = { klass, spec, realm, page, focus } (all optional).
+  const onRankings = useCallback((sel = {}) => navigate({ view: 'mplus', ...sel }), [navigate])
 
   // Switching encounter tabs inside a log rewrites the URL in place (no history spam),
   // so copying the address always shares the boss you're looking at.
@@ -244,16 +247,28 @@ export default function App() {
         onSelectPlayer={onSelectPlayer}
         onImport={onImport}
         onHome={onHome}
+        onRankings={() => onRankings()}
       />
 
       <main
-        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'player' || selection.view === 'import' || selection.view === 'home' ? 'content-wide' : ''}`}
+        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'player' || selection.view === 'import' || selection.view === 'home' || selection.view === 'mplus' ? 'content-wide' : ''}`}
       >
-        {loading && selection.view !== 'home' && <div className="empty-state">Loading rankings…</div>}
+        {loading && selection.view !== 'home' && selection.view !== 'mplus' && <div className="empty-state">Loading rankings…</div>}
         {loadError && <div className="error">Couldn’t load rankings: {loadError}</div>}
 
         <ErrorBoundary resetKey={JSON.stringify(selection)}>
           {selection.view === 'home' && <HomePage onSelectPlayer={onSelectPlayer} onImport={onImport} />}
+          {selection.view === 'mplus' && (
+            <MythicRankingsPage
+              klass={selection.klass}
+              spec={selection.spec}
+              realm={selection.realm}
+              page={selection.page}
+              focus={selection.focus}
+              onNavigate={onRankings}
+              onSelectPlayer={onSelectPlayer}
+            />
+          )}
           {!loading && selection.view === 'import' && (
             <ImportPanel onImported={onImported} shared={isShared} />
           )}
@@ -275,6 +290,7 @@ export default function App() {
               onSelectLog={onSelectLog}
               onSelectPlayer={onSelectPlayer}
               onUpdateProfile={onUpdateProfile}
+              onSelectRankings={onRankings}
             />
           )}
           {!loading && selection.view === 'log' && (

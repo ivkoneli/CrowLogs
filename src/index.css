@@ -3022,3 +3022,142 @@ img.icon-slot.trinket.legendary {
   color: var(--muted);
   padding: 0.2rem 0;
 }
+
+/* ---------- Sidebar nav link + M+ rankings page ---------- */
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.nav-link:hover {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+.nav-link.on {
+  border-color: var(--highlight);
+  color: var(--highlight);
+  box-shadow: inset 2px 0 0 var(--highlight);
+}
+/* A rank chip that links to the rankings. */
+a.mp-rank.link {
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+a.mp-rank.link:hover {
+  border-color: var(--highlight);
+  background: rgba(92, 210, 255, 0.1);
+}
+.mr-filters {
+  justify-content: flex-start;
+  align-items: flex-end;
+  padding-left: 0;
+}
+.mr-spec {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.mr-spec .spec-tabs {
+  margin: 0;
+}
+.mr-loading {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.mr-table {
+  min-width: 980px; /* scrolls inside .table-scroll on narrow screens */
+}
+.mr-table thead th.mr-dhead {
+  text-align: center;
+  padding-left: 0.3rem;
+  padding-right: 0.3rem;
+  white-space: nowrap;
+}
+.mr-dhead img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin: 0 auto 0.2rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  object-fit: cover;
+}
+.mr-dhead span {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 0.74rem;
+  color: var(--text);
+}
+.mr-table td.mr-cell {
+  text-align: center;
+  white-space: nowrap;
+  padding-left: 0.3rem;
+  padding-right: 0.3rem;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+.mr-key {
+  display: inline-block;
+  min-width: 1.9rem;
+  text-align: right;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+.mr-cell.depleted .mr-key {
+  color: var(--muted);
+}
+.mr-cell.empty {
+  color: var(--muted);
+  opacity: 0.5;
+  cursor: default;
+}
+.mr-cell .mp-medal {
+  width: 20px;
+  height: 20px;
+  margin-left: 0.2rem;
+}
+.mr-player {
+  white-space: nowrap;
+}
+.mr-player .name.link {
+  font-weight: 700;
+  text-decoration: none;
+}
+.mr-player .name.link:hover {
+  text-decoration: underline;
+}
+.mr-spec-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  margin-right: 0.45rem;
+  vertical-align: middle;
+  object-fit: cover;
+}
+.mr-realm {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+/* The player a rank chip linked to. */
+.mr-table tr.mr-focus td {
+  background: rgba(92, 210, 255, 0.1);
+}
+.mr-table tr.mr-focus td:first-child {
+  box-shadow: inset 3px 0 0 var(--highlight);
+}

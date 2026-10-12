@@ -319,54 +319,6 @@ begin
 end $$;
 revoke execute on function rebuild_mplus_players() from public, anon, authenticated;
 
-create or replace function refresh_mplus_scores() returns void
-language plpgsql security definer set search_path = public set statement_timeout = '120s' as $$
-begin
-  with known as (
-    select distinct on (coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'), p->>'class', p->>'role')
-      coalesce(nullif(p->>'realm', ''), r.realm) as realm, lower(p->>'name') as n,
-      p->>'class' as c, p->>'role' as ro, p->>'spec' as spec
-    from mplus_runs r, jsonb_array_elements(r.party) p
-    where r.specs_matched and coalesce(p->>'spec', '') <> ''
-    order by coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'), p->>'class', p->>'role',
-             r.day desc, r.first_seen desc
-  )
-  update mplus_runs r set party = (
-    select jsonb_agg(
-      case when coalesce(t.p->>'spec', '') = '' and k.spec is not null
-        then t.p || jsonb_build_object('spec', k.spec, 'spec_guess', true)
-        else t.p end
-      order by t.ord)
-    from jsonb_array_elements(r.party) with ordinality t(p, ord)
-    left join known k
-      on k.realm = coalesce(nullif(t.p->>'realm', ''), r.realm) and k.n = lower(t.p->>'name')
-     and k.c = t.p->>'class' and k.ro = t.p->>'role'
-  )
-  where not r.specs_matched
-    and exists (select 1 from jsonb_array_elements(r.party) p where coalesce(p->>'spec', '') = '');
-
-  delete from mplus_scores where true;
-  insert into mplus_scores (realm, name_lower, name, class, spec, score)
-  with m as (
-    select coalesce(nullif(p->>'realm', ''), r.realm) as realm, lower(p->>'name') as n, p->>'name' as name,
-           p->>'class' as class, coalesce(p->>'spec', '') as spec, r.map_id, r.day,
-           mplus_run_score(r.map_id, r.level, r.time_ms) as s
-    from mplus_runs r, jsonb_array_elements(r.party) p
-    where coalesce(p->>'name', '') <> ''
-  ),
-  ident as ( -- a player's current name spelling + class = their most recent run's
-    select distinct on (realm, n) realm, n, name, class from m order by realm, n, day desc
-  ),
-  per as (
-    select realm, n, ''::text as spec, map_id, max(s) as best from m group by realm, n, map_id
-    union all
-    select realm, n, spec, map_id, max(s) from m where spec <> '' group by realm, n, spec, map_id
-  )
-  select per.realm, per.n, i.name, i.class, per.spec, round(sum(coalesce(per.best, 0)), 1)
-  from per join ident i on i.realm = per.realm and i.n = per.n
-  group by per.realm, per.n, i.name, i.class, per.spec;
-end $$;
-revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
 
 -- A player's score + rank in every scope they have one, among players of ALL realms (the
 -- same scopes as Tauri Achievements). spec '' row: rank/total among everyone, class_rank/
@@ -424,3 +376,127 @@ begin
   return stale;
 end $$;
 revoke execute on function prune_mplus_runs(text, int, text[]) from public, anon, authenticated;
+
+-- ── M+ SCORES v2: best run per dungeon stored, in-place refresh, leaderboard ──
+-- `best` = the run behind each dungeon's contribution to the score:
+--   { "<map_id>": [level, medal, score, time_ms], … }
+-- Stored (not looked up per request): the top players have hundreds of runs each, and
+-- finding their best per dungeon on the fly ran past the API's statement timeout.
+alter table mplus_scores add column if not exists best jsonb;
+
+-- Called by the scraper after each run (service role). Two steps:
+--  1. A new run's specs come from Tauri Achievements about a day later. Until then, a
+--     member whose role doesn't decide the spec (a dps Warrior: Arms or Fury?) is ASSUMED
+--     to be on the spec they last played in that role, flagged spec_guess so the scraper
+--     replaces it with the real one once it's published. Keeps spec scores from lagging.
+--  2. Bring mplus_scores up to date IN PLACE: only rows whose score/best/name/class changed
+--     are rewritten and only vanished players deleted, so an hourly refresh touches a few
+--     hundred rows instead of rewriting all ~27k (which bloated the table).
+-- Players are keyed by their own realm (party[].realm), falling back to the board's.
+create or replace function refresh_mplus_scores() returns void
+language plpgsql security definer set search_path = public set statement_timeout = '120s' as $$
+begin
+  with known as (
+    select distinct on (coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'), p->>'class', p->>'role')
+      coalesce(nullif(p->>'realm', ''), r.realm) as realm, lower(p->>'name') as n,
+      p->>'class' as c, p->>'role' as ro, p->>'spec' as spec
+    from mplus_runs r, jsonb_array_elements(r.party) p
+    where r.specs_matched and coalesce(p->>'spec', '') <> ''
+    order by coalesce(nullif(p->>'realm', ''), r.realm), lower(p->>'name'), p->>'class', p->>'role',
+             r.day desc, r.first_seen desc
+  )
+  update mplus_runs r set party = (
+    select jsonb_agg(
+      case when coalesce(t.p->>'spec', '') = '' and k.spec is not null
+        then t.p || jsonb_build_object('spec', k.spec, 'spec_guess', true)
+        else t.p end
+      order by t.ord)
+    from jsonb_array_elements(r.party) with ordinality t(p, ord)
+    left join known k
+      on k.realm = coalesce(nullif(t.p->>'realm', ''), r.realm) and k.n = lower(t.p->>'name')
+     and k.c = t.p->>'class' and k.ro = t.p->>'role'
+  )
+  where not r.specs_matched
+    and exists (select 1 from jsonb_array_elements(r.party) p where coalesce(p->>'spec', '') = '');
+
+  create temp table _mplus_new on commit drop as
+  with m as (
+    select coalesce(nullif(p->>'realm', ''), r.realm) as realm, lower(p->>'name') as n, p->>'name' as name,
+           p->>'class' as class, coalesce(p->>'spec', '') as spec, r.map_id, r.day, r.level, r.medal, r.time_ms,
+           mplus_run_score(r.map_id, r.level, r.time_ms) as s
+    from mplus_runs r, jsonb_array_elements(r.party) p
+    where coalesce(p->>'name', '') <> ''
+  ),
+  ident as ( -- a player's current name spelling + class = their most recent run's
+    select distinct on (realm, n) realm, n, name, class from m order by realm, n, day desc
+  ),
+  scoped as ( -- every run counts for the overall scope (''), and for its own spec's
+    select realm, n, ''::text as spec, map_id, level, medal, time_ms, s from m
+    union all
+    select realm, n, spec, map_id, level, medal, time_ms, s from m where spec <> ''
+  ),
+  per as ( -- the best run per dungeon in each scope: highest score, then the faster clear
+    select distinct on (realm, n, spec, map_id) realm, n, spec, map_id, level, medal, time_ms, s
+    from scoped
+    order by realm, n, spec, map_id, s desc nulls last, time_ms asc nulls last
+  )
+  select per.realm, per.n as name_lower, i.name, i.class, per.spec,
+         round(sum(coalesce(per.s, 0)), 1) as score,
+         jsonb_object_agg(per.map_id, jsonb_build_array(per.level, per.medal, per.s, per.time_ms)) as best
+  from per join ident i on i.realm = per.realm and i.n = per.n
+  group by per.realm, per.n, i.name, i.class, per.spec;
+
+  insert into mplus_scores as t (realm, name_lower, name, class, spec, score, best)
+  select realm, name_lower, name, class, spec, score, best from _mplus_new
+  on conflict (realm, name_lower, spec) do update
+    set name = excluded.name, class = excluded.class, score = excluded.score, best = excluded.best
+    where (t.name, t.class, t.score, t.best) is distinct from (excluded.name, excluded.class, excluded.score, excluded.best);
+
+  delete from mplus_scores t
+  where not exists (
+    select 1 from _mplus_new x where x.realm = t.realm and x.name_lower = t.name_lower and x.spec = t.spec);
+end $$;
+revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
+
+-- One page of the rankings, read straight from mplus_scores:
+--   no class          → every player's overall score
+--   class             → that class's players by overall score
+--   class + spec      → players of that class by their score AS that spec
+--   p_realm (armory string, optional) narrows any of them to one realm
+-- `rank` is the position inside the filtered list (ties broken by name so paging is
+-- stable), `total` its size. When p_find_* names a player, p_offset is ignored and the
+-- page that player is on comes back instead (the profile's rank chips link here).
+drop function if exists mplus_leaderboard(text, text, text, int, int, text, text);
+create or replace function mplus_leaderboard(
+  p_class text default null,
+  p_spec text default null,
+  p_realm text default null,
+  p_limit int default 25,
+  p_offset int default 0,
+  p_find_realm text default null,
+  p_find_name text default null
+)
+returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb)
+language sql stable set search_path = public as $$
+  with lim as (select least(greatest(coalesce(p_limit, 25), 1), 50) as n),
+  f as (
+    select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best,
+           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
+           count(*) over () as total
+    from mplus_scores s
+    where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
+      and (p_class is null or s.class = p_class)
+      and (p_realm is null or s.realm = p_realm)
+  ),
+  start as (
+    select coalesce(
+      (select ((f.rk - 1) / lim.n) * lim.n from f, lim
+       where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
+      greatest(coalesce(p_offset, 0), 0)) as o
+  )
+  select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best
+  from f, lim, start
+  where f.rk > start.o and f.rk <= start.o + lim.n
+  order by f.rk
+$$;
+grant execute on function mplus_leaderboard(text, text, text, int, int, text, text) to anon, authenticated;

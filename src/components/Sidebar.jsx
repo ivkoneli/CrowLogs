@@ -44,7 +44,7 @@ function RaidGroup({ raid, fights, selection, isOpen, onToggle, onSelectBoss }) 
   )
 }
 
-export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport, onHome }) {
+export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings }) {
   const [query, setQuery] = useState('')
   // Current progression starts expanded; everything under "Other" starts collapsed.
   const [openRaids, setOpenRaids] = useState(() => new Set(MAIN_RAIDS.map((r) => r.name)))
@@ -113,6 +113,17 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
       <button className="import-btn" onClick={() => onImport()}>
         ＋ Import combat log
       </button>
+
+      <a
+        className={`nav-link ${selection?.view === 'mplus' ? 'on' : ''}`}
+        href={selectionToHash({ view: 'mplus' })}
+        onClick={inAppClick(() => onRankings())}
+      >
+        <span className="nav-link-icon" aria-hidden="true">
+          🏆
+        </span>
+        M+ Rankings
+      </a>
 
       <div className="search">
         <input

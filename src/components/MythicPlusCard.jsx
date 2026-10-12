@@ -59,7 +59,7 @@ function RoleIcon({ role }) {
   return null
 }
 
-function Medal({ medal }) {
+export function Medal({ medal }) {
   const m = MEDALS[medal] || MEDALS[0]
   if (!m.key) {
     // Same footprint as a medal so times and affixes stay aligned down the column.
@@ -304,7 +304,7 @@ function pageList(page, pages) {
   return out
 }
 
-function Pager({ page, pages, onChange }) {
+export function Pager({ page, pages, onChange }) {
   if (pages <= 1) return null
   return (
     <div className="mp-pager">
@@ -330,13 +330,33 @@ function Pager({ page, pages, onChange }) {
 }
 
 // "#12" chip with what the rank is among, e.g. label "Fury" → "#12 Fury" (of 348 in the tooltip).
-function RankChip({ label, rank, total, title }) {
+// With `to` (a rankings selection) the chip is a link that opens the M+ rankings on that
+// list, on the page this player is on.
+function RankChip({ label, rank, total, title, to, onOpen }) {
   if (!rank) return null
-  return (
-    <span className="mp-rank" title={`${title}: #${rank.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`}>
+  const tip = `${title}: #${rank.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`
+  const inner = (
+    <>
       <span className="mp-rank-num">#{rank.toLocaleString('en-US')}</span>
       <span className="mp-rank-label">{label}</span>
-    </span>
+    </>
+  )
+  if (!to || !onOpen) {
+    return (
+      <span className="mp-rank" title={tip}>
+        {inner}
+      </span>
+    )
+  }
+  return (
+    <a
+      className="mp-rank link"
+      title={`${tip} · open the rankings`}
+      href={selectionToHash({ view: 'mplus', ...to })}
+      onClick={inAppClick(() => onOpen(to))}
+    >
+      {inner}
+    </a>
   )
 }
 
@@ -369,7 +389,7 @@ function DungeonFilter({ value, counts, onChange }) {
 // 10 per page, optionally narrowed to one dungeon. Paging and the Best/History switch only
 // re-render this card; the runs are fetched once per player. The parent keys it by player,
 // so opening another profile starts fresh on Best runs, page 1.
-export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
+export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelectRankings }) {
   const { name, realm } = splitPlayerKey(player)
   const selfName = name.toLowerCase()
   const [state, setState] = useState({ loading: true, runs: [], error: null })
@@ -440,6 +460,8 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
   const cellProps = { selfName, realm, onSelectPlayer }
   const dungeonName = dungeon ? MPLUS_DUNGEONS.find((d) => d.id === dungeon)?.name : null
   const rank = ranks[spec || '']
+  // The class the rankings file this player under (their most recent run's).
+  const rankClass = rank?.class || playerClass || null
 
   let body
   if (loading) {
@@ -545,15 +567,26 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer }) {
                   rank={rank.rank}
                   total={rank.total}
                   title={`${spec}${playerClass ? ` ${playerClass}s` : ''} by ${spec} score`}
+                  to={rankClass ? { klass: rankClass, spec, focus: player } : null}
+                  onOpen={onSelectRankings}
                 />
               ) : (
                 <>
-                  <RankChip label="Overall" rank={rank.rank} total={rank.total} title="All players by M+ score" />
+                  <RankChip
+                    label="Overall"
+                    rank={rank.rank}
+                    total={rank.total}
+                    title="All players by M+ score"
+                    to={{ focus: player }}
+                    onOpen={onSelectRankings}
+                  />
                   <RankChip
                     label={rank.class || playerClass || 'Class'}
                     rank={rank.classRank}
                     total={rank.classTotal || 0}
                     title={`${rank.class || playerClass || 'Class'} players by M+ score`}
+                    to={rankClass ? { klass: rankClass, focus: player } : null}
+                    onOpen={onSelectRankings}
                   />
                 </>
               )}

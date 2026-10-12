@@ -94,7 +94,7 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
   )
 }
 
-export default function PlayerPage({ fights, characters, player, onSelectBoss, onSelectLog, onSelectPlayer, onUpdateProfile }) {
+export default function PlayerPage({ fights, characters, player, onSelectBoss, onSelectLog, onSelectPlayer, onUpdateProfile, onSelectRankings }) {
   const [tab, setTab] = useState('rankings')
   const [diff, setDiff] = useState('Mythic')
   const [histMetric, setHistMetric] = useState('dps')
@@ -273,7 +273,13 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
               ))}
               {/* M+ comes from the Tauri armory mirror, not logs, so the difficulty /
                   spec / metric controls above don't apply to it. */}
-              <MythicPlusCard key={player} player={player} klass={profile.class} onSelectPlayer={onSelectPlayer} />
+              <MythicPlusCard
+                key={player}
+                player={player}
+                klass={profile.class}
+                onSelectPlayer={onSelectPlayer}
+                onSelectRankings={onSelectRankings}
+              />
             </>
           )}
 
