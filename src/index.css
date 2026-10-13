@@ -3484,6 +3484,22 @@ a.mp-rank.link:hover {
   background: var(--border);
   color: var(--text);
 }
+/* Places moved since the last rankings update, beside the rank number. */
+.mr-move {
+  margin-left: 0.35rem;
+  font-size: 0.72em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mr-move.up {
+  color: #7cdea0;
+}
+.mr-move.down {
+  color: #ff6b6b;
+}
+.mr-table td.rank {
+  white-space: nowrap;
+}
 /* Rankings table: tighter cells than the other meters, so the Guild column fits beside
    nine dungeon columns without the table needing to scroll on a laptop. */
 .mr-table thead th,

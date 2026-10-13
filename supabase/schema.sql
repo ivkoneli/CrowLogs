@@ -383,6 +383,13 @@ revoke execute on function prune_mplus_runs(text, int, text[]) from public, anon
 -- Stored (not looked up per request): the top players have hundreds of runs each, and
 -- finding their best per dungeon on the fly ran past the API's statement timeout.
 alter table mplus_scores add column if not exists best jsonb;
+-- The score a row had BEFORE the last scrape that changed anyone's score (null = the
+-- player wasn't ranked in this scope then). The rankings rank everyone by it to get the
+-- position they held before that update, which is what the up/down arrows show.
+alter table mplus_scores add column if not exists prev_score numeric;
+-- One-time seed when adding the column to a live table, so the first update after it
+-- shows real movement instead of treating every player as new:
+--   update mplus_scores set prev_score = score where prev_score is null;
 
 -- Called by the scraper after each run (service role). Two steps:
 --  1. A new run's specs come from Tauri Achievements about a day later. Until then, a
@@ -392,6 +399,9 @@ alter table mplus_scores add column if not exists best jsonb;
 --  2. Bring mplus_scores up to date IN PLACE: only rows whose score/best/name/class changed
 --     are rewritten and only vanished players deleted, so an hourly refresh touches a few
 --     hundred rows instead of rewriting all ~27k (which bloated the table).
+--     When the scrape changed any score, the scores from before it are first kept in
+--     prev_score (see the column). A scrape that changes nothing leaves prev_score alone,
+--     so the arrows keep showing the last update that actually moved someone.
 -- Players are keyed by their own realm (party[].realm), falling back to the board's.
 create or replace function refresh_mplus_scores() returns void
 language plpgsql security definer set search_path = public set statement_timeout = '120s' as $$
@@ -445,6 +455,14 @@ begin
          jsonb_object_agg(per.map_id, jsonb_build_array(per.level, per.medal, per.s, per.time_ms)) as best
   from per join ident i on i.realm = per.realm and i.n = per.n
   group by per.realm, per.n, i.name, i.class, per.spec;
+
+  if exists (
+    select 1 from _mplus_new x
+    full join mplus_scores t on t.realm = x.realm and t.name_lower = x.name_lower and t.spec = x.spec
+    where x.score is distinct from t.score
+  ) then
+    update mplus_scores set prev_score = score where prev_score is distinct from score;
+  end if;
 
   insert into mplus_scores as t (realm, name_lower, name, class, spec, score, best)
   select realm, name_lower, name, class, spec, score, best from _mplus_new
@@ -553,6 +571,8 @@ grant execute on function mplus_guild_list(text) to anon, authenticated;
 -- through (the whole list, or the matches when searching).
 -- When p_find_* names a player, p_offset is ignored and the page that player is on comes
 -- back instead (the profile's rank chips link here).
+-- `prev_rank` is the position the player held in this same list before the last update
+-- that changed any score (ranked by prev_score); null when they weren't in it yet.
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text);
 create or replace function mplus_leaderboard(
@@ -566,7 +586,7 @@ create or replace function mplus_leaderboard(
   p_search text default null,
   p_guild text default null
 )
-returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb, guild text)
+returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb, guild text, prev_rank bigint)
 language sql stable set search_path = extensions, public as $$
   with lim as (select least(greatest(coalesce(p_limit, 25), 1), 50) as n),
   q as ( -- the folded search text with LIKE wildcards escaped, or null when not searching
@@ -575,7 +595,9 @@ language sql stable set search_path = extensions, public as $$
   ),
   ranked as (
     select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild,
-           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk
+           row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
+           case when s.prev_score is not null then
+             row_number() over (order by s.prev_score desc nulls last, s.name_lower, s.realm) end as prev_rk
     from mplus_scores s
     where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
       and (p_class is null or s.class = p_class)
@@ -593,7 +615,7 @@ language sql stable set search_path = extensions, public as $$
        where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
       greatest(coalesce(p_offset, 0), 0)) as o
   )
-  select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best, f.guild
+  select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best, f.guild, f.prev_rk
   from f, lim, start
   where f.pos > start.o and f.pos <= start.o + lim.n
   order by f.pos

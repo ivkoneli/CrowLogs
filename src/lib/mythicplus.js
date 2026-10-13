@@ -327,7 +327,9 @@ export async function getPlayerRanks(player) {
 // only names containing it; ranks stay the player's real rank in the scope, and `total`
 // becomes the number of matches. `guild` (exact name) narrows the scope to one guild;
 // each row carries the player's `guild` (null when they have none).
-// → [{ rank, total, realm, name, class, spec, score, best: { mapId: [level, medal, score, ms] } }]
+// `prev_rank` is the rank they held in the same list before the last update that changed a
+// score (null when they weren't in it), for the up/down arrows.
+// → [{ rank, prev_rank, total, realm, name, class, spec, score, best: { mapId: [level, medal, score, ms] } }]
 export const RANKINGS_PAGE_SIZE = 25
 export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null, search = null, guild = null } = {}) {
   if (!supabase) return []

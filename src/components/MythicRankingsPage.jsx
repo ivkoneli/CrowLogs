@@ -270,6 +270,24 @@ function BestCell({ dungeon, run }) {
   )
 }
 
+// Green up / red down arrow with the number of places a player moved in this list since
+// the last rankings update that changed any score. Nothing when they held their place or
+// weren't ranked here before it.
+function RankMove({ rank, prev }) {
+  const moved = prev == null ? 0 : prev - rank
+  if (!moved) return null
+  const places = Math.abs(moved).toLocaleString('en-US')
+  return (
+    <span
+      className={`mr-move ${moved > 0 ? 'up' : 'down'}`}
+      title={`${moved > 0 ? 'Up' : 'Down'} ${places} since the last update (was #${prev.toLocaleString('en-US')})`}
+    >
+      {moved > 0 ? '▲' : '▼'}
+      {places}
+    </span>
+  )
+}
+
 export default function MythicRankingsPage({ klass, spec, realm, guild, search, page, focus, onNavigate, onSelectPlayer }) {
   const [state, setState] = useState({ loading: true, rows: [], error: null })
   const [population, setPopulation] = useState(null)
@@ -444,7 +462,10 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
                   const rowSpec = r.spec || null
                   return (
                     <tr key={`${r.realm}|${r.name}`} className={key.toLowerCase() === focusKey ? 'mr-focus' : undefined}>
-                      <td className="rank">{r.rank.toLocaleString('en-US')}</td>
+                      <td className="rank">
+                        {r.rank.toLocaleString('en-US')}
+                        <RankMove rank={r.rank} prev={r.prev_rank} />
+                      </td>
                       <td className="mr-player">
                         {rowSpec && <img className="mr-spec-icon" src={specIconUrl(r.class, rowSpec)} alt="" title={`${rowSpec} ${r.class || ''}`} />}
                         <a
