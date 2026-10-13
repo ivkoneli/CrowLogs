@@ -3627,7 +3627,8 @@ a.mp-rank.link:hover {
 }
 
 /* Pull number on a log's encounter tabs: phones only (see the block below). */
-.tab-num {
+.tab-num,
+.lbl-short {
   display: none;
 }
 
@@ -3686,8 +3687,12 @@ a.mp-rank.link:hover {
   .name {
     padding-left: 0.35rem;
   }
-  .realm-sfx {
+  .realm-sfx,
+  .lbl-full {
     display: none;
+  }
+  .lbl-short {
+    display: inline;
   }
 
   /* Filter rows: spec tabs show icons, with the name only on the selected one. */
@@ -3790,7 +3795,7 @@ a.mp-rank.link:hover {
      them; talents, trinkets, legendaries, duration and when by swiping. */
   .boss-meter {
     table-layout: fixed;
-    width: 760px;
+    width: 774px;
     min-width: 100%;
     overflow: visible; /* lets the pinned cells stick to the scroller */
   }
@@ -3834,10 +3839,12 @@ a.mp-rank.link:hover {
     width: 162px;
   }
   .boss-meter th:nth-child(7),
-  .boss-meter td:nth-child(7),
+  .boss-meter td:nth-child(7) {
+    width: 66px;
+  }
   .boss-meter th:nth-child(8),
   .boss-meter td:nth-child(8) {
-    width: 66px;
+    width: 80px;
   }
   .boss-meter th:nth-child(9),
   .boss-meter td:nth-child(9) {

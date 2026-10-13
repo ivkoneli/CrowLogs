@@ -9,6 +9,16 @@ import { SpecRaceSlots, TrinketSlots, LegendarySlots } from './IconSlots.jsx'
 import { SpellPanel } from './SpellBreakdown.jsx'
 import { useSpellHover } from '../lib/useSpellHover.js'
 
+// A column header with a shorter wording for phones, where the columns are narrow.
+function Label({ full, short }) {
+  return (
+    <>
+      <span className="lbl-full">{full}</span>
+      <span className="lbl-short">{short}</span>
+    </>
+  )
+}
+
 export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
   return (
     <thead>
@@ -19,9 +29,15 @@ export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
         <th className="num" title="Combat potions used">Pots</th>
         <th className="num">ilvl</th>
         <th className="talents-col">Talents</th>
-        <th className="talents-col">Trinkets</th>
-        <th className="talents-col">Legendaries</th>
-        <th className="num">Duration</th>
+        <th className="talents-col">
+          <Label full="Trinkets" short="Trinket" />
+        </th>
+        <th className="talents-col">
+          <Label full="Legendaries" short="Legendary" />
+        </th>
+        <th className="num">
+          <Label full="Duration" short="Time" />
+        </th>
         <th className="num">When</th>
       </tr>
     </thead>
