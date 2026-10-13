@@ -572,7 +572,9 @@ grant execute on function mplus_guild_list(text) to anon, authenticated;
 -- When p_find_* names a player, p_offset is ignored and the page that player is on comes
 -- back instead (the profile's rank chips link here).
 -- `prev_rank` is the position the player held in this same list before the last update
--- that changed any score (ranked by prev_score); null when they weren't in it yet.
+-- that changed any score (ranked by prev_score). It is only given for players whose OWN
+-- score changed in that update: null for anyone who merely got passed, or who wasn't in
+-- the list yet.
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text);
 create or replace function mplus_leaderboard(
@@ -596,7 +598,7 @@ language sql stable set search_path = extensions, public as $$
   ranked as (
     select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild,
            row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
-           case when s.prev_score is not null then
+           case when s.prev_score <> s.score then
              row_number() over (order by s.prev_score desc nulls last, s.name_lower, s.realm) end as prev_rk
     from mplus_scores s
     where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end

@@ -3484,11 +3484,27 @@ a.mp-rank.link:hover {
   background: var(--border);
   color: var(--text);
 }
-/* Places moved since the last rankings update, beside the rank number. */
+/* Rank cell: the number sits in a fixed right-aligned column and the places-moved arrow
+   in a fixed slot to its right, so numbers line up whether or not a row has an arrow. */
+.mr-table thead th.rank,
+.mr-table td.rank {
+  width: auto;
+  white-space: nowrap;
+  text-align: left;
+}
+.mr-rank-num {
+  display: inline-block;
+  min-width: 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .mr-move {
+  display: inline-block;
+  min-width: 3.4em;
   margin-left: 0.35rem;
   font-size: 0.72em;
   font-weight: 600;
+  text-align: left;
   white-space: nowrap;
 }
 .mr-move.up {
@@ -3496,9 +3512,6 @@ a.mp-rank.link:hover {
 }
 .mr-move.down {
   color: #ff6b6b;
-}
-.mr-table td.rank {
-  white-space: nowrap;
 }
 /* Rankings table: tighter cells than the other meters, so the Guild column fits beside
    nine dungeon columns without the table needing to scroll on a laptop. */

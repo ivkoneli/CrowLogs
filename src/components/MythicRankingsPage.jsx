@@ -270,12 +270,12 @@ function BestCell({ dungeon, run }) {
   )
 }
 
-// Green up / red down arrow with the number of places a player moved in this list since
-// the last rankings update that changed any score. Nothing when they held their place or
-// weren't ranked here before it.
+// Green up / red down arrow with the number of places a player moved in this list in the
+// last rankings update, shown only when their own score changed in it (prev is null for
+// players who were merely passed). The slot is always rendered so rank numbers line up.
 function RankMove({ rank, prev }) {
   const moved = prev == null ? 0 : prev - rank
-  if (!moved) return null
+  if (!moved) return <span className="mr-move" />
   const places = Math.abs(moved).toLocaleString('en-US')
   return (
     <span
@@ -442,7 +442,10 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
             <table className="meter mr-table">
               <thead>
                 <tr>
-                  <th className="rank">#</th>
+                  <th className="rank">
+                    <span className="mr-rank-num">#</span>
+                    <span className="mr-move" />
+                  </th>
                   <th>Player</th>
                   <th className="mr-guild-head">Guild</th>
                   <th className="num" title={scoreTitle}>
@@ -463,7 +466,7 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
                   return (
                     <tr key={`${r.realm}|${r.name}`} className={key.toLowerCase() === focusKey ? 'mr-focus' : undefined}>
                       <td className="rank">
-                        {r.rank.toLocaleString('en-US')}
+                        <span className="mr-rank-num">{r.rank.toLocaleString('en-US')}</span>
                         <RankMove rank={r.rank} prev={r.prev_rank} />
                       </td>
                       <td className="mr-player">
