@@ -98,7 +98,8 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
 
 export default function PlayerPage({ fights, characters, player, onSelectBoss, onSelectLog, onSelectPlayer, onUpdateProfile, onSelectRankings }) {
   const [tab, setTab] = useState('rankings')
-  const [diff, setDiff] = useState('Mythic')
+  // null = not picked by hand: the page opens on the hardest difficulty they have a kill on.
+  const [pickedDiff, setDiff] = useState(null)
   const [histMetric, setHistMetric] = useState('dps')
   const [histSpec, setHistSpec] = useState(null) // null = All specs
   const [rankMetric, setRankMetric] = useState('dps')
@@ -111,6 +112,16 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
   )
   const profile = playerProfile(fights, player, character)
   const logs = useMemo(() => playerLogs(fights, player), [fights, player])
+  // Mythic first, then Heroic, Normal, LFR: the first one with a kill in a listed raid, so
+  // a player with no Mythic logs lands on their Heroic rankings instead of an empty table.
+  const autoDiff = useMemo(() => {
+    const raids = new Set(MAIN_RAIDS.map((r) => r.name))
+    const killed = new Set(logs.filter((l) => l.kill !== false && raids.has(l.raid)).map((l) => l.difficulty))
+    return DIFF_TABS.find((d) => killed.has(d)) || DIFF_TABS[0]
+  }, [logs])
+  const diff = pickedDiff ?? autoDiff
+  // A hand-picked difficulty belongs to the profile it was picked on.
+  useEffect(() => setDiff(null), [player])
 
   // All of the class's specs (not just ones with logs) for the spec sub-tabs.
   const classSpecs = useMemo(
