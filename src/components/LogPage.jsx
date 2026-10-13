@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { logSummary } from '../lib/rankings.js'
 import { formatDuration } from '../parser.js'
 import { deleteLog } from '../lib/store.js'
@@ -41,6 +41,11 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
       setRollback({ error: e.message || 'Delete failed.' })
     }
   }, [logId, onDeleted])
+  // On a phone the pulls are one swipeable strip; keep the open one in view.
+  const tabsRef = useRef(null)
+  useEffect(() => {
+    tabsRef.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [active, logId])
   const enc = log.encounters[active] || log.encounters[0]
   const rate = useCallback((r) => (metric === 'hps' ? r.hps : r.dps), [metric])
   // Difficulties present in this log (usually just one — e.g. "Mythic").
@@ -98,7 +103,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
       </div>
 
       {log.encounters.length > 1 && (
-        <div className="tabbar log-tabs">
+        <div className="tabbar log-tabs" ref={tabsRef}>
           {log.encounters.map((e, i) => (
             <button
               key={e.key}
@@ -108,6 +113,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
                 onEncounterChange?.(e.started)
               }}
             >
+              <span className="tab-num">{i + 1}</span>
               {e.boss}
               {!e.kill && <span className="wipe-dot" title="Wipe">✕</span>}
             </button>

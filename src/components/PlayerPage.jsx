@@ -41,6 +41,7 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
           {ranked.length} of {raid.bosses.length} bosses
         </span>
       </div>
+      <div className="table-scroll peek-scroll">
       <table className="meter rank-meter">
         <thead>
           <tr>
@@ -90,6 +91,7 @@ function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, v
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -322,14 +324,15 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                             </span>
                           </button>
                           {isOpen && (
+                            <div className="table-scroll peek-scroll">
                             <table className="meter hist-meter">
                               <thead>
                                 <tr>
-                                  <th className="when-col">When</th>
                                   <th>Encounter</th>
                                   {!histSpec && <th className="spec-col">Spec</th>}
                                   <th className="num">{valueLabel}</th>
-                                  <th className="num">Duration</th>
+                                  <th className="num dur-col">Duration</th>
+                                  <th className="num when-col">When</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -339,7 +342,6 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                                     className="log-row"
                                     onClick={() => onSelectLog(log.logId, { started: log.started })}
                                   >
-                                    <td className="muted">{log.day}</td>
                                     <td className="name-cell">
                                       <button className="name link boss-link">{log.boss}</button>
                                       <span className="spec-tag">{log.difficulty}</span>
@@ -348,17 +350,19 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                                     {!histSpec && (
                                       <td className="muted spec-cell">
                                         {log.specIcon && <img className="spec-tab-icon" src={log.specIcon} alt="" />}
-                                        {log.spec || '—'}
+                                        <span className="spec-name">{log.spec || '—'}</span>
                                       </td>
                                     )}
                                     <td className="num strong">
                                       {formatDps(histMetric === 'hps' ? log.hps : log.dps)}
                                     </td>
                                     <td className="num muted">{formatDuration(log.duration)}</td>
+                                    <td className="num muted">{log.day}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
+                            </div>
                           )}
                         </div>
                       )

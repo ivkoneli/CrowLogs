@@ -23,7 +23,7 @@ export default function SpecTabs({ specs, value, onChange }) {
               }}
             />
           )}
-          {s.spec}
+          <span className="seg-label">{s.spec}</span>
         </button>
       ))}
     </div>

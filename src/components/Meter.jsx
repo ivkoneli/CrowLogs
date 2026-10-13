@@ -28,6 +28,19 @@ export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
   )
 }
 
+// "Name-realm" with the realm in its own span, so a phone can drop it and keep the name
+// on one line.
+function PlayerName({ name }) {
+  const cut = (name || '').indexOf('-')
+  if (cut <= 0) return name
+  return (
+    <>
+      {name.slice(0, cut)}
+      <span className="realm-sfx">{name.slice(cut)}</span>
+    </>
+  )
+}
+
 // `klass` colors the name + bar; `subLabel` is the small grey tag after the name
 // (e.g. "Fury Warrior" in rankings, "Heroic" in history). `value`/`maxValue` are
 // the rate (DPS or HPS) and the group max used to size the bar. `onRowClick`
@@ -101,7 +114,7 @@ export function MeterRow({
           >
             {faction && <FactionIcon faction={faction} size={14} />}
             <SpecRaceSlots klass={klass} spec={spec} specIcon={specIcon} race={race} gender={gender} />
-            {name}
+            <PlayerName name={name} />
           </button>
           {subLabel && <span className="spec-tag">{subLabel}</span>}
           {pet && <span className="pet-tag">pet</span>}

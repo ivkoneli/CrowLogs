@@ -2381,18 +2381,6 @@ img.icon-slot.trinket {
   .filter-field {
     flex: 1 1 44%;
   }
-  /* trim low-priority columns so the table fits without sideways scrolling */
-  .boss-meter {
-    min-width: 0;
-  }
-  .boss-meter th:nth-child(7),
-  .boss-meter td:nth-child(7),
-  .boss-meter th:nth-child(8),
-  .boss-meter td:nth-child(8),
-  .boss-meter th:nth-child(9),
-  .boss-meter td:nth-child(9) {
-    display: none;
-  }
   .talent-slot {
     width: 18px;
     height: 18px;
@@ -2403,13 +2391,6 @@ img.icon-slot.trinket {
 }
 
 @media (max-width: 460px) {
-  /* on phones also fold away talents + trinkets; keep rank · name · dps · ilvl */
-  .boss-meter th:nth-child(5),
-  .boss-meter td:nth-child(5),
-  .boss-meter th:nth-child(6),
-  .boss-meter td:nth-child(6) {
-    display: none;
-  }
   .filter-field {
     flex: 1 1 100%;
   }
@@ -3643,4 +3624,347 @@ a.mp-rank.link:hover {
 }
 .mr-table tr.mr-focus td:first-child {
   box-shadow: inset 3px 0 0 var(--highlight);
+}
+
+/* Pull number on a log's encounter tabs: phones only (see the block below). */
+.tab-num {
+  display: none;
+}
+
+/* ---------- phones ---------- */
+/* Everything that matters (name, rank, DPS) fits the screen; the rest of a table's
+   columns sit to the right and are reached by swiping the table, never by the page. */
+@media (max-width: 760px) {
+  body {
+    overflow-x: clip; /* nothing may widen the page: the top bar stays the screen's width */
+  }
+  .content,
+  .content.content-wide {
+    padding: 0.75rem 0.6rem 2.5rem;
+  }
+  .page-head {
+    margin-bottom: 0.75rem;
+  }
+  .page-head h2 {
+    font-size: 1.4rem;
+    overflow-wrap: anywhere;
+  }
+  .page-head.center {
+    margin-bottom: 0.75rem;
+  }
+  .page-head.center h2,
+  .log-title {
+    font-size: 1.3rem !important;
+  }
+  .kills {
+    font-size: 0.82rem;
+  }
+  .player-meta {
+    gap: 0.4rem;
+    font-size: 0.85rem;
+  }
+  .player-card {
+    padding: 0.7rem 0.6rem 0.8rem;
+    border-radius: 12px;
+  }
+  .card-head {
+    margin-bottom: 0.5rem;
+  }
+
+  /* Tighter rows everywhere. */
+  .meter thead th {
+    padding: 0.4rem 0.45rem;
+    font-size: 0.66rem;
+  }
+  .meter td {
+    padding: 0.32rem 0.45rem;
+    font-size: 0.86rem;
+  }
+  .bar-wrap {
+    min-height: 1.5rem;
+  }
+  .name {
+    padding-left: 0.35rem;
+  }
+  .realm-sfx {
+    display: none;
+  }
+
+  /* Filter rows: spec tabs show icons, with the name only on the selected one. */
+  .rank-controls,
+  .hist-controls {
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+  }
+  .spec-tabs,
+  .diff-subtabs {
+    max-width: 100%;
+    gap: 0.2rem;
+    padding: 0.2rem;
+  }
+  .spec-tabs .seg:not(.on) .seg-label {
+    display: none;
+  }
+  .seg {
+    padding: 0.25rem 0.6rem;
+  }
+
+  /* Tables whose last column(s) wait off-screen to the right. */
+  .peek-scroll {
+    scrollbar-width: none;
+  }
+  .peek-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Profile, per-raid rankings: Boss, DPS, Rank; Duration by swiping. */
+  .rank-meter {
+    width: calc(100% + 74px);
+  }
+  .rank-meter th.num {
+    width: 74px;
+  }
+  .rank-meter th.num:nth-child(2) {
+    width: 62px;
+  }
+  .rank-meter .name-cell .name,
+  .hist-meter .name-cell {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rank-meter .bar-wrap {
+    min-width: 0;
+  }
+  .rank-pill .of {
+    font-size: 0.7em;
+  }
+
+  /* Profile, history: Encounter, spec icon, DPS; Duration + When by swiping. */
+  .hist-group-head {
+    gap: 0.45rem;
+    padding: 0.45rem 0.6rem;
+  }
+  .hist-group-title {
+    font-size: 0.88rem;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hist-group-diff,
+  .hist-group-date {
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+  .hist-group-date {
+    margin-left: auto;
+  }
+  .hist-group-count {
+    display: none;
+  }
+  .hist-meter {
+    width: calc(100% + 150px);
+  }
+  .hist-meter th.num {
+    width: 66px;
+  }
+  .hist-meter th.dur-col {
+    width: 62px;
+  }
+  .hist-meter th.when-col {
+    width: 88px;
+  }
+  .hist-meter th.spec-col {
+    width: 34px;
+    font-size: 0; /* icon-only column: no room for the header word */
+  }
+  .hist-meter .spec-name {
+    display: none;
+  }
+  .hist-meter .result-badge.sm {
+    margin-left: 0.35rem;
+  }
+
+  /* Log + boss rankings meter: rank and name stay put with DPS, pots and ilvl beside
+     them; talents, trinkets, legendaries, duration and when by swiping. */
+  .boss-meter {
+    table-layout: fixed;
+    width: 760px;
+    min-width: 100%;
+    overflow: visible; /* lets the pinned cells stick to the scroller */
+  }
+  .boss-meter th:nth-child(1),
+  .boss-meter td:nth-child(1) {
+    width: 28px;
+    padding-left: 0.3rem;
+    padding-right: 0;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--panel);
+  }
+  .boss-meter th:nth-child(2),
+  .boss-meter td:nth-child(2),
+  .boss-meter .name-cell {
+    width: 148px;
+    position: sticky;
+    left: 28px;
+    z-index: 2;
+    background: var(--panel);
+    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.7);
+  }
+  .boss-meter th:nth-child(3),
+  .boss-meter td:nth-child(3) {
+    width: 70px;
+  }
+  .boss-meter .rate-val {
+    min-width: 0;
+  }
+  .boss-meter th:nth-child(4),
+  .boss-meter td:nth-child(4) {
+    width: 42px;
+  }
+  .boss-meter th:nth-child(5),
+  .boss-meter td:nth-child(5) {
+    width: 46px;
+  }
+  .boss-meter th:nth-child(6),
+  .boss-meter td:nth-child(6) {
+    width: 162px;
+  }
+  .boss-meter th:nth-child(7),
+  .boss-meter td:nth-child(7),
+  .boss-meter th:nth-child(8),
+  .boss-meter td:nth-child(8) {
+    width: 66px;
+  }
+  .boss-meter th:nth-child(9),
+  .boss-meter td:nth-child(9) {
+    width: 62px;
+  }
+  .boss-meter th:nth-child(10),
+  .boss-meter td:nth-child(10) {
+    width: 86px;
+  }
+  .boss-meter .bar-wrap {
+    min-width: 0;
+  }
+  .boss-meter .name {
+    display: block;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* One icon is enough beside the name here: keep the spec, drop faction and race. */
+  .boss-meter .name .faction-icon,
+  .boss-meter .name .icon-slot + .icon-slot {
+    display: none;
+  }
+  .boss-meter .icon-slots {
+    margin: 0 0.3rem 0 0;
+  }
+  .boss-meter .pet-tag,
+  .boss-meter .src-tag {
+    display: none;
+  }
+
+  /* Log: the pulls are one numbered strip in fight order, swiped sideways. */
+  .log-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.35rem;
+    border-bottom: none;
+    margin: 0 -0.6rem 0.6rem;
+    padding: 0 0.6rem 0.25rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .log-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .log-tabs .tab {
+    flex: none;
+    margin: 0;
+    padding: 0.28rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel);
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .log-tabs .tab.active {
+    border-color: var(--accent-2);
+    background: var(--panel-2);
+  }
+  .tab-num {
+    display: inline;
+    margin-right: 0.35rem;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .log-encounter {
+    margin-top: 0.75rem;
+  }
+  .encounter-head {
+    gap: 6px 10px;
+    margin-bottom: 8px;
+  }
+  .encounter-head h3 {
+    font-size: 16px;
+  }
+
+  /* Profile, Mythic+ card. */
+  .mp-title {
+    flex-wrap: wrap;
+    gap: 0.4rem 0.5rem;
+  }
+  .mp-ranks {
+    flex-basis: 100%;
+    flex-wrap: nowrap;
+  }
+  .mp-rank {
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .mp-head-right {
+    width: 100%;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .mp-sort-label {
+    display: none;
+  }
+  .mp-meter {
+    min-width: 850px;
+  }
+  .mp-col-dungeon {
+    width: 196px;
+  }
+  .hist-meter td.spec-cell {
+    display: table-cell; /* a flex cell drops out of the row and breaks its divider */
+    padding-left: 0;
+    padding-right: 0;
+    text-align: center;
+  }
+  .mp-banner {
+    height: 38px;
+  }
+  /* The boss name stays put while the numbers slide under it. */
+  .rank-meter th:first-child,
+  .rank-meter td.name-cell,
+  .hist-meter th:first-child,
+  .hist-meter td.name-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--panel);
+  }
+  .rank-meter,
+  .hist-meter {
+    overflow: visible; /* as on the log meter: lets the pinned cells stick */
+  }
 }
