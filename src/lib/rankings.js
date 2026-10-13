@@ -45,14 +45,19 @@ export function playerSummary(fights, player, raid, bosses, difficulty, metric =
     if (idx >= 0) return { boss, record: ranking[idx], rank: idx + 1, total: ranking.length }
     // Not on the (metric > 0) leaderboard. If they still KILLED it in this spec, show
     // that kill with its (possibly 0) value, unranked — never "no kill" for a real kill
-    // (e.g. an Arms warrior did 0 healing on a boss they downed).
+    // (e.g. an Arms warrior did 0 healing on a boss they downed). A discredited kill is
+    // also unranked, and is only shown while it is the player's only kill of the boss:
+    // any clean kill replaces it, however much lower.
     let killRec = null
     for (const f of fights) {
       if (f.player !== player || f.raid !== raid || f.boss !== boss) continue
       if (difficulty && f.difficulty !== difficulty) continue
       if (spec && f.spec !== spec) continue
       if (f.kill === false) continue
-      if (!killRec || (f[rate] || 0) > (killRec[rate] || 0)) killRec = f
+      const better =
+        !killRec ||
+        (!!killRec.discredited !== !!f.discredited ? !f.discredited : (f[rate] || 0) > (killRec[rate] || 0))
+      if (better) killRec = f
     }
     return { boss, record: killRec, rank: null, total: ranking.length }
   })
@@ -233,6 +238,8 @@ export function logSummary(fights, logId) {
       pet: f.pet,
       // Frozen per-fight: did they run the addon on this pull? Drives the "no addon" badge.
       fromAddon: f.from_addon === true,
+      // Left off the boss rankings (bug-inflated); the log page's admin toggle reads it.
+      discredited: f.discredited === true,
       // 'addon' | 'inspect' | 'armory' — where this pull's build came from (admin-only badge).
       snapshotSrc: f.snapshotSrc || null,
       damage: f.damage,

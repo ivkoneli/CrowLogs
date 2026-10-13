@@ -94,6 +94,8 @@ export function MeterRow({
   fightId = null,
   metric = 'dps',
   total = 0,
+  // Extra control rendered after the name's tags (the log page's admin-only toggle).
+  action = null,
 }) {
   const hover = useSpellHover(!!fightId)
   return (
@@ -150,6 +152,7 @@ export function MeterRow({
               armory
             </span>
           )}
+          {action}
         </div>
       </td>
       <td className="num strong">

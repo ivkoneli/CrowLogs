@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { logSummary } from '../lib/rankings.js'
 import { formatDuration } from '../parser.js'
-import { deleteLog } from '../lib/store.js'
+import { deleteLog, discreditLog } from '../lib/store.js'
 import { isAdmin, adminToken } from '../lib/admin.js'
 import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 import LogSkeleton from './LogSkeleton.jsx'
@@ -13,7 +13,7 @@ const lustLabel = (l) => `${l.player.split('-')[0]} ${formatDuration(l.t * 1000)
 // time (unique within a log) — set by ranking/history row clicks and by shared
 // #/log/<id>/<started> URLs, where it arrives as a string. `onEncounterChange`
 // reports tab switches so the address bar can keep pointing at the visible pull.
-export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncounterChange, onBack, onDeleted }) {
+export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncounterChange, onBack, onDeleted, onChanged }) {
   const log = useMemo(() => logSummary(fights, logId), [fights, logId])
   const focusIndex = useMemo(() => {
     if (focus?.started == null) return 0
@@ -46,6 +46,28 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
   useEffect(() => {
     tabsRef.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'center' })
   }, [active, logId])
+  // Owner-only: take one player's results in this log off the boss rankings (a game bug
+  // inflated them), or put them back. Covers every encounter of theirs in the log.
+  const [marking, setMarking] = useState(null) // player being updated
+  const handleDiscredit = useCallback(
+    async (player, discredit) => {
+      const name = player.split('-')[0]
+      const ask = discredit
+        ? `Leave ${name}'s results in this log off the boss rankings? They stay in the log and on the profile.`
+        : `Put ${name}'s results in this log back on the boss rankings?`
+      if (!window.confirm(ask)) return
+      setMarking(player)
+      try {
+        await discreditLog(logId, player, discredit, adminToken())
+        await onChanged?.()
+      } catch (e) {
+        setRollback({ error: e.message || 'Update failed.' })
+      } finally {
+        setMarking(null)
+      }
+    },
+    [logId, onChanged],
+  )
   const enc = log.encounters[active] || log.encounters[0]
   const rate = useCallback((r) => (metric === 'hps' ? r.hps : r.dps), [metric])
   // Difficulties present in this log (usually just one — e.g. "Mythic").
@@ -169,6 +191,25 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
                     pet={r.pet}
                     // Admin-only data-provenance tag (inspect/armory; addon stays unmarked).
                     source={isAdmin() ? r.snapshotSrc : null}
+                    action={
+                      isAdmin() && !r.pet ? (
+                        <button
+                          className={`src-tag rank-toggle${r.discredited ? ' off' : ''}`}
+                          disabled={marking === r.player}
+                          title={
+                            r.discredited
+                              ? 'Off the boss rankings (whole log). Click to put back.'
+                              : 'Take this player’s results in this log off the boss rankings (admin)'
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDiscredit(r.player, !r.discredited)
+                          }}
+                        >
+                          {marking === r.player ? '…' : r.discredited ? 'unranked' : 'discredit'}
+                        </button>
+                      ) : null
+                    }
                     potions={r.potions}
                     ilvl={r.ilvl}
                     ilvlIsLive={r.ilvlIsLive}

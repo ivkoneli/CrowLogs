@@ -380,6 +380,7 @@ export default function App() {
               // Real back when we navigated here in-app (history/rankings click);
               // home when the log was opened cold from a shared link.
               onBack={() => (canGoBack() ? window.history.back() : onHome())}
+              onChanged={reload}
               onDeleted={async () => {
                 await reload()
                 onHome()

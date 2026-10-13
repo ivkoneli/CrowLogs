@@ -165,6 +165,22 @@ export async function deleteLog(logid, token) {
   return data
 }
 
+// Mark (or unmark) one player's results in a log as discredited: kept in the log and on
+// their profile, left off the boss rankings. Gated server-side by ADMIN_TOKEN via the
+// `discredit-log` edge function. Requires Supabase. Returns { updated }.
+export async function discreditLog(logid, player, discredited, token) {
+  if (!supabase) throw new Error('Marking results requires Supabase.')
+  const { data, error } = await supabase.functions.invoke('discredit-log', {
+    body: { logid, player, discredited, token },
+  })
+  if (error) {
+    const detail = await error.context?.text?.().catch(() => null)
+    throw new Error(detail || error.message)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
 export async function clearFights() {
   if (supabase) {
     const { error } = await supabase.from('fights').delete().neq('id', '')

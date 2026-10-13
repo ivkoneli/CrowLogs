@@ -1445,6 +1445,24 @@ code {
   color: var(--muted);
   opacity: 0.65;
 }
+/* Admin-only per-player toggle on a log row: off / back on the boss rankings. */
+.src-tag.rank-toggle {
+  position: relative;
+  background: none;
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: pointer;
+}
+.src-tag.rank-toggle:hover:not(:disabled) {
+  opacity: 1;
+  color: #e2566b;
+  border-color: rgba(226, 86, 107, 0.5);
+}
+.src-tag.rank-toggle.off {
+  opacity: 1;
+  color: #e2566b;
+  border-color: rgba(226, 86, 107, 0.5);
+}
 .rollback-link:hover:not(:disabled) {
   color: #e74c3c;
   opacity: 1;
