@@ -16,6 +16,7 @@ export function bossRanking(fights, raid, boss, difficulty, metric = 'dps', spec
     if (difficulty && f.difficulty !== difficulty) continue
     if (spec && f.spec !== spec) continue // a specific spec's leaderboard
     if (f.kill === false) continue // kills only
+    if (f.discredited) continue // bug-inflated result: kept on the profile, not ranked
     if (!(f[total] > 0)) continue // only players who dealt damage / did healing
     const cur = best.get(f.player)
     if (!cur || f[rate] > cur[rate]) best.set(f.player, f)
@@ -164,6 +165,7 @@ export function playerLogs(fights, player) {
       difficulty: f.difficulty,
       boss: f.boss,
       kill: f.kill,
+      discredited: f.discredited === true,
       spec: f.spec || null,
       specIcon: f.specIcon || null,
       class: f.class || null,

@@ -18,10 +18,14 @@ create table fights (
   -- breakdown the meter shows on hover ({ dmg: [[id,name,amount,school,pet]], heal: [...] }).
   legendaries jsonb, spells jsonb,
   duration bigint, hits int, day text, started bigint, logid text,
+  -- TRUE on a result a game bug inflated (set by hand, see below): the row stays in the
+  -- log and on the player's profile and history, but is left off the boss rankings.
+  discredited boolean,
   created_at timestamptz default now()
 );
 -- Migration for an existing fights table (run once if you created it before
 -- these columns existed). Safe to re-run.
+--   alter table fights add column if not exists discredited boolean;
 --   alter table fights add column if not exists healing bigint;
 --   alter table fights add column if not exists hps double precision;
 --   alter table fights add column if not exists kill boolean;
@@ -66,6 +70,9 @@ create policy "public read logs" on logs for select using (true);
 -- Delete one imported log by id (same as the in-app "delete log" button):
 --   delete from fights where logid = 'log_xxxxxxxx';
 --   delete from logs   where logid = 'log_xxxxxxxx';
+-- Leave one player's results from a log off the boss rankings (a game bug inflated them);
+-- they still show in the log and on the player's profile. Set back to null to undo:
+--   update fights set discredited = true where logid = 'log_xxxxxxxx' and player = 'Name-realm';
 -- Find recent imports to identify a logid:
 --   select logid, label, row_count, created_at from logs order by created_at desc limit 50;
 -- BACKUPS: enable scheduled backups / PITR in the Supabase dashboard

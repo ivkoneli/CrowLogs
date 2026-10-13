@@ -1388,6 +1388,14 @@ code {
   font-size: 0.55rem;
   padding: 0.05rem 0.3rem;
 }
+/* A result kept on the profile but left off the boss rankings (bug-inflated). */
+.result-badge.unranked {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: help;
+}
 /* Wipe encounters in the log tab bar */
 .tab.wipe {
   color: #b06; /* dimmed reddish until hovered/active */

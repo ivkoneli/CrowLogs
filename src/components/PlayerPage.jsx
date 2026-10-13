@@ -357,6 +357,14 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                                       <button className="name link boss-link">{log.boss}</button>
                                       <span className="spec-tag">{log.difficulty}</span>
                                       {log.kill === false && <span className="result-badge wipe sm">Wipe</span>}
+                                      {log.discredited && (
+                                        <span
+                                          className="result-badge unranked sm"
+                                          title="Left off the boss rankings: a game bug inflated this result."
+                                        >
+                                          Unranked
+                                        </span>
+                                      )}
                                     </td>
                                     {!histSpec && (
                                       <td className="muted spec-cell">

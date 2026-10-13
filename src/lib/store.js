@@ -40,6 +40,10 @@ const FIELDS = [
   'day',
   'started',
   'logid',
+  // Set by hand in the database on a result that a game bug inflated: it stays in the
+  // log and on the player's profile but is left off the boss rankings. Never sent by an
+  // import (submit-log drops it), so re-importing the log keeps the mark.
+  'discredited',
   // Per-spell damage/healing totals for the meter's hover breakdown (see parser.js).
   // Persisted with the row, but NOT loaded in bulk: getSpells fetches it on hover.
   'spells',
