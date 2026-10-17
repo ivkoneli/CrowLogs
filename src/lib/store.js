@@ -44,6 +44,7 @@ const FIELDS = [
   // log and on the player's profile but is left off the boss rankings. Never sent by an
   // import (submit-log drops it), so re-importing the log keeps the mark.
   'discredited',
+  'discredit_reason',
   // Per-spell damage/healing totals for the meter's hover breakdown (see parser.js).
   // Persisted with the row, but NOT loaded in bulk: getSpells fetches it on hover.
   'spells',
@@ -168,10 +169,10 @@ export async function deleteLog(logid, token) {
 // Mark (or unmark) one player's results in a log as discredited: kept in the log and on
 // their profile, left off the boss rankings. Gated server-side by ADMIN_TOKEN via the
 // `discredit-log` edge function. Requires Supabase. Returns { updated }.
-export async function discreditLog(logid, player, discredited, token) {
+export async function discreditLog(logid, player, discredited, token, reason = null) {
   if (!supabase) throw new Error('Marking results requires Supabase.')
   const { data, error } = await supabase.functions.invoke('discredit-log', {
-    body: { logid, player, discredited, token },
+    body: { logid, player, discredited, token, reason },
   })
   if (error) {
     const detail = await error.context?.text?.().catch(() => null)

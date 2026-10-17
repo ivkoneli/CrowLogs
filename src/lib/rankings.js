@@ -171,6 +171,7 @@ export function playerLogs(fights, player) {
       boss: f.boss,
       kill: f.kill,
       discredited: f.discredited === true,
+      discreditReason: f.discredit_reason || null,
       spec: f.spec || null,
       specIcon: f.specIcon || null,
       class: f.class || null,

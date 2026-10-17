@@ -315,6 +315,9 @@ export async function getPlayerRanks(player) {
       classRank: r.class_rank,
       classTotal: r.class_total,
       class: r.class,
+      // Ranks before the last update that changed their score (null when it didn't).
+      prevRank: r.prev_rank ?? null,
+      prevClassRank: r.prev_class_rank ?? null,
     }
   }
   return out

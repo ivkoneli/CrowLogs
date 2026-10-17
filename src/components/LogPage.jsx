@@ -55,10 +55,15 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
       const ask = discredit
         ? `Leave ${name}'s results in this log off the boss rankings? They stay in the log and on the profile.`
         : `Put ${name}'s results in this log back on the boss rankings?`
-      if (!window.confirm(ask)) return
+      let reason = null
+      if (discredit) {
+        // The note shown when hovering the Unranked tag on their profile. Cancel = don't mark.
+        reason = window.prompt(`${ask}\n\nWhat was wrong? (shown when hovering "Unranked")`, '')
+        if (reason === null) return
+      } else if (!window.confirm(ask)) return
       setMarking(player)
       try {
-        await discreditLog(logId, player, discredit, adminToken())
+        await discreditLog(logId, player, discredit, adminToken(), reason)
         await onChanged?.()
       } catch (e) {
         setRollback({ error: e.message || 'Update failed.' })

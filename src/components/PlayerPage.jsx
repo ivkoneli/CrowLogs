@@ -360,7 +360,7 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                                       {log.discredited && (
                                         <span
                                           className="result-badge unranked sm"
-                                          title="Left off the boss rankings: a game bug inflated this result."
+                                          title={`${log.discreditReason || 'A game bug inflated this result'} · left off the boss rankings`}
                                         >
                                           Unranked
                                         </span>

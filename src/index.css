@@ -3577,6 +3577,12 @@ a.mp-rank.link:hover {
   text-align: left;
   white-space: nowrap;
 }
+/* In a profile's rank chip the arrow sits right after the label. */
+.mp-rank .mr-move {
+  min-width: 0;
+  margin-left: 0.15rem;
+  font-size: 0.68rem;
+}
 .mr-move.up {
   color: #7cdea0;
 }

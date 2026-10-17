@@ -21,11 +21,14 @@ create table fights (
   -- TRUE on a result a game bug inflated (set by hand, see below): the row stays in the
   -- log and on the player's profile and history, but is left off the boss rankings.
   discredited boolean,
+  -- Why it was discredited (typed by the admin), shown when hovering its Unranked tag.
+  discredit_reason text,
   created_at timestamptz default now()
 );
 -- Migration for an existing fights table (run once if you created it before
 -- these columns existed). Safe to re-run.
 --   alter table fights add column if not exists discredited boolean;
+--   alter table fights add column if not exists discredit_reason text;
 --   alter table fights add column if not exists healing bigint;
 --   alter table fights add column if not exists hps double precision;
 --   alter table fights add column if not exists kill boolean;
@@ -72,7 +75,7 @@ create policy "public read logs" on logs for select using (true);
 --   delete from logs   where logid = 'log_xxxxxxxx';
 -- Leave one player's results from a log off the boss rankings (a game bug inflated them);
 -- they still show in the log and on the player's profile. Set back to null to undo:
---   update fights set discredited = true where logid = 'log_xxxxxxxx' and player = 'Name-realm';
+--   update fights set discredited = true, discredit_reason = 'Why' where logid = 'log_xxxxxxxx' and player = 'Name-realm';
 -- Find recent imports to identify a logid:
 --   select logid, label, row_count, created_at from logs order by created_at desc limit 50;
 -- BACKUPS: enable scheduled backups / PITR in the Supabase dashboard
@@ -332,8 +335,13 @@ revoke execute on function rebuild_mplus_players() from public, anon, authentica
 -- class_total among their class. Spec rows: rank/total among players of that class AND
 -- spec (class_rank null). Rank = 1 + players with a strictly higher score.
 -- p_realm is the player's own realm (armory string), not the board.
+-- prev_rank / prev_class_rank: the same ranks by prev_score, i.e. before the last update
+-- that changed any score — given only when THIS player's score changed in it (as on the
+-- rankings page), so the profile can show the same up/down arrow.
+drop function if exists mplus_player_ranks(text, text);
 create or replace function mplus_player_ranks(p_realm text, p_name text)
-returns table (spec text, class text, score numeric, rank bigint, total bigint, class_rank bigint, class_total bigint)
+returns table (spec text, class text, score numeric, rank bigint, total bigint, class_rank bigint, class_total bigint,
+               prev_rank bigint, prev_class_rank bigint)
 language sql stable set search_path = public as $$
   select me.spec, me.class, me.score,
     case when me.spec = ''
@@ -345,7 +353,15 @@ language sql stable set search_path = public as $$
     case when me.spec = ''
       then (select count(*) + 1 from mplus_scores o where o.spec = '' and o.class is not distinct from me.class and o.score > me.score) end,
     case when me.spec = ''
-      then (select count(*) from mplus_scores o where o.spec = '' and o.class is not distinct from me.class) end
+      then (select count(*) from mplus_scores o where o.spec = '' and o.class is not distinct from me.class) end,
+    case when me.prev_score <> me.score then
+      case when me.spec = ''
+        then (select count(*) + 1 from mplus_scores o where o.spec = '' and o.prev_score > me.prev_score)
+        else (select count(*) + 1 from mplus_scores o where o.spec = me.spec and o.class is not distinct from me.class
+                and o.prev_score > me.prev_score) end end,
+    case when me.prev_score <> me.score and me.spec = ''
+      then (select count(*) + 1 from mplus_scores o where o.spec = '' and o.class is not distinct from me.class
+              and o.prev_score > me.prev_score) end
   from mplus_scores me
   where me.realm = p_realm and me.name_lower = lower(p_name)
 $$;

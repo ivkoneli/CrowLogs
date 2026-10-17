@@ -357,16 +357,35 @@ export function Pager({ page, pages, onChange }) {
   )
 }
 
+// Green up / red down arrow with the number of places a player moved in a ranking in the
+// last rankings update, shown only when their own score changed in it (prev is null for
+// players who were merely passed). The slot is always rendered so rank numbers line up.
+export function RankMove({ rank, prev, keepSlot = true }) {
+  const moved = prev == null || rank == null ? 0 : prev - rank
+  if (!moved) return keepSlot ? <span className="mr-move" /> : null
+  const places = Math.abs(moved).toLocaleString('en-US')
+  return (
+    <span
+      className={`mr-move ${moved > 0 ? 'up' : 'down'}`}
+      title={`${moved > 0 ? 'Up' : 'Down'} ${places} since the last update (was #${prev.toLocaleString('en-US')})`}
+    >
+      {moved > 0 ? '▲' : '▼'}
+      {places}
+    </span>
+  )
+}
+
 // "#12" chip with what the rank is among, e.g. label "Fury" → "#12 Fury" (of 348 in the tooltip).
 // With `to` (a rankings selection) the chip is a link that opens the M+ rankings on that
 // list, on the page this player is on.
-function RankChip({ label, rank, total, title, to, onOpen }) {
+function RankChip({ label, rank, prev, total, title, to, onOpen }) {
   if (!rank) return null
   const tip = `${title}: #${rank.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`
   const inner = (
     <>
       <span className="mp-rank-num">#{rank.toLocaleString('en-US')}</span>
       <span className="mp-rank-label">{label}</span>
+      <RankMove rank={rank} prev={prev} keepSlot={false} />
     </>
   )
   if (!to || !onOpen) {
@@ -609,6 +628,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
                 <RankChip
                   label={`${spec}${playerClass ? ` ${playerClass}` : ''}`}
                   rank={rank.rank}
+                  prev={rank.prevRank}
                   total={rank.total}
                   title={`${spec}${playerClass ? ` ${playerClass}s` : ''} by ${spec} score`}
                   to={rankClass ? { klass: rankClass, spec, focus: player } : null}
@@ -619,6 +639,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
                   <RankChip
                     label="Overall"
                     rank={rank.rank}
+                    prev={rank.prevRank}
                     total={rank.total}
                     title="All players by M+ score"
                     to={{ focus: player }}
@@ -627,6 +648,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
                   <RankChip
                     label={rank.class || playerClass || 'Class'}
                     rank={rank.classRank}
+                    prev={rank.prevClassRank}
                     total={rank.classTotal || 0}
                     title={`${rank.class || playerClass || 'Class'} players by M+ score`}
                     to={rankClass ? { klass: rankClass, focus: player } : null}

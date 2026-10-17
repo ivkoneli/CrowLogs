@@ -2,7 +2,8 @@
 //
 // Sets `fights.discredited` on every row of `player` in `logid`: a result a game bug
 // inflated stays in the log and on the player's profile, but is left off the boss
-// rankings (see bossRanking in src/lib/rankings.js). `discredited: false` clears the mark.
+// rankings (see bossRanking in src/lib/rankings.js). `reason` (optional) is stored with it
+// and shown when hovering the Unranked tag. `discredited: false` clears the mark.
 // Gated by the same shared ADMIN_TOKEN secret as delete-log, and run with the
 // service-role key (the public RLS on `fights` is read-only).
 //
@@ -45,6 +46,8 @@ Deno.serve(async (req) => {
   if (!logid || !player) return json({ error: 'Provide a "logid" and a "player".' }, 400)
   // null (not false) when cleared, so an unmarked row looks the same as one never marked.
   const discredited = body.discredited === false ? null : true
+  // The admin's note on why (shown on hover), cleared with the mark.
+  const reason = discredited && typeof body.reason === 'string' ? body.reason.trim().slice(0, 200) || null : null
 
   try {
     const res = await fetch(
@@ -52,7 +55,7 @@ Deno.serve(async (req) => {
       {
         method: 'PATCH',
         headers: { ...dbHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ discredited }),
+        body: JSON.stringify({ discredited, discredit_reason: reason }),
       },
     )
     if (!res.ok) throw new Error(`update fights: HTTP ${res.status} — ${await res.text()}`)

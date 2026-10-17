@@ -22,7 +22,7 @@ import {
 } from '../lib/mythicplus.js'
 import { LEGION_CLASSES, classColor, specsOf, specIconUrl } from '../lib/classes.js'
 import { selectionToHash, inAppClick } from '../lib/router.js'
-import { Medal, Pager } from './MythicPlusCard.jsx'
+import { Medal, Pager, RankMove } from './MythicPlusCard.jsx'
 
 // Realm slug → short label for the filter and the tag after a name.
 const REALM_LABELS = { evermoon: 'Evermoon', tauri: 'Tauri', wod: 'WoD' }
@@ -266,24 +266,6 @@ function BestCell({ dungeon, run }) {
       <span className="mr-key">+{level}</span>
       <Medal medal={medal} />
     </td>
-  )
-}
-
-// Green up / red down arrow with the number of places a player moved in this list in the
-// last rankings update, shown only when their own score changed in it (prev is null for
-// players who were merely passed). The slot is always rendered so rank numbers line up.
-function RankMove({ rank, prev }) {
-  const moved = prev == null ? 0 : prev - rank
-  if (!moved) return <span className="mr-move" />
-  const places = Math.abs(moved).toLocaleString('en-US')
-  return (
-    <span
-      className={`mr-move ${moved > 0 ? 'up' : 'down'}`}
-      title={`${moved > 0 ? 'Up' : 'Down'} ${places} since the last update (was #${prev.toLocaleString('en-US')})`}
-    >
-      {moved > 0 ? '▲' : '▼'}
-      {places}
-    </span>
   )
 }
 
