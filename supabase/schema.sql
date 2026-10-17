@@ -385,6 +385,16 @@ end $$;
 revoke execute on function prune_mplus_runs(text, int, text[]) from public, anon, authenticated;
 
 -- ── M+ SCORES v2: best run per dungeon stored, in-place refresh, leaderboard ──
+-- When the M+ rankings were last rebuilt (one row), for the rankings page's "Last updated".
+-- Written by refresh_mplus_scores at the end of every scrape; public read-only.
+create table if not exists mplus_status (
+  id int primary key default 1 check (id = 1),
+  refreshed_at timestamptz not null
+);
+alter table mplus_status enable row level security;
+drop policy if exists "public read mplus status" on mplus_status;
+create policy "public read mplus status" on mplus_status for select using (true);
+
 -- `best` = the run behind each dungeon's contribution to the score:
 --   { "<map_id>": [level, medal, score, time_ms], … }
 -- Stored (not looked up per request): the top players have hundreds of runs each, and
@@ -501,6 +511,10 @@ begin
   ) x
   where x.realm = t.realm and x.name_lower = t.name_lower and x.spec = t.spec
     and t.guild is distinct from x.guild;
+
+  -- 4. Stamp the rebuild time for the rankings page.
+  insert into mplus_status (id, refreshed_at) values (1, now())
+  on conflict (id) do update set refreshed_at = excluded.refreshed_at;
 end $$;
 revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
 

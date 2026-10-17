@@ -12,6 +12,7 @@ import {
   RANKINGS_PAGE_SIZE,
   getLeaderboard,
   getPopulation,
+  getLastUpdated,
   getGuilds,
   dungeonIconUrl,
   formatScore,
@@ -286,6 +287,14 @@ function RankMove({ rank, prev }) {
   )
 }
 
+// "Oct 17, 14:23 · 2 h ago" in the viewer's own time zone.
+function formatUpdated(d) {
+  const when = d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+  const min = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000))
+  const ago = min < 1 ? 'just now' : min < 60 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`
+  return `${when} · ${ago}`
+}
+
 // Key levels the rankings can be narrowed to: players who TIMED a key this high or higher.
 const KEY_LEVELS = [10, 15, 20]
 
@@ -293,6 +302,12 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
   const [state, setState] = useState({ loading: true, rows: [], error: null })
   const [population, setPopulation] = useState(null)
   const [guilds, setGuilds] = useState([])
+  const [updated, setUpdated] = useState(null)
+  useEffect(() => {
+    getLastUpdated()
+      .then(setUpdated)
+      .catch(() => setUpdated(null))
+  }, [])
   // What's typed in the search box. The applied search lives in the URL (`search`); typing
   // updates it after a short pause, and Back/Forward or a shared link fills the box.
   const [text, setText] = useState(search || '')
@@ -379,6 +394,11 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
 
   return (
     <div className="mr-page">
+      {updated && (
+        <div className="mr-updated" title={updated.toLocaleString()}>
+          <span className="mr-updated-label">Last updated:</span> {formatUpdated(updated)}
+        </div>
+      )}
       <div className="page-head">
         <div className="kicker">Tauri Legion · Mythic+</div>
         <h2>Mythic+ rankings</h2>

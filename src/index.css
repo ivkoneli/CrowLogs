@@ -3193,6 +3193,22 @@ a.mp-rank.link:hover {
   border-color: var(--highlight);
   background: rgba(92, 210, 255, 0.1);
 }
+/* "Last updated: …" banner, centred over the rankings. */
+.mr-updated {
+  width: fit-content;
+  margin: 0 auto 0.75rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 0.82rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.mr-updated-label {
+  color: var(--muted);
+  font-weight: 600;
+}
 .mr-filters {
   justify-content: flex-start;
   align-items: flex-end;

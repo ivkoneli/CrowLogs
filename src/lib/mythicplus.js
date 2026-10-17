@@ -351,6 +351,14 @@ export async function getLeaderboard({ klass = null, spec = null, realm = null, 
   return (data || []).map((r) => ({ ...r, score: Number(r.score) }))
 }
 
+// When the rankings were last rebuilt (the end of the last scrape), as a Date, or null.
+export async function getLastUpdated() {
+  if (!supabase) return null
+  const { data, error } = await supabase.from('mplus_status').select('refreshed_at').eq('id', 1).maybeSingle()
+  if (error) throw error
+  return data?.refreshed_at ? new Date(data.refreshed_at) : null
+}
+
 // Players per class and per class+spec, for the rankings page's spec chart (see
 // mplus_population in schema.sql): each player counts once, under their main spec.
 // `realm` (armory string) narrows it to one realm, `minKey` to players who timed a key
