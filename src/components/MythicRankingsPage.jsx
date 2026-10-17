@@ -4,7 +4,7 @@
 // run's score and time). Filters, page and the highlighted player all live in the URL
 // (#/mplus?class=…&spec=…&realm=…&guild=…&q=…&page=…&player=…), so a view can be shared and the
 // profile's rank chips can link straight to a player's row.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   MPLUS_DUNGEONS,
   MPLUS_REALMS,
@@ -196,20 +196,21 @@ function GuildName({ name, active, onClick }) {
   )
 }
 
-// Guild filter: a text box backed by the list of guilds (biggest first). Picking or typing
-// an exact guild name applies it; the ✕ clears it. Anything else typed is just a search
-// through the suggestions and is dropped on blur.
+// Guild box. Typing filters the list once you pause: an exact guild name (or a suggestion
+// picked from the list) shows that guild, anything else every guild whose name contains
+// it ("crows" → both "A Murder of Crows" and "Crows at Midnight"). The ✕ clears it.
 function GuildFilter({ value, guilds, onChange }) {
   const [text, setText] = useState(value || '')
   useEffect(() => setText(value || ''), [value])
-  const byLower = useMemo(() => new Map(guilds.map((g) => [g.guild.toLowerCase(), g.guild])), [guilds])
-  const apply = (raw) => {
-    const t = raw.trim()
-    if (!t) return value ? onChange(null) : undefined
-    const match = byLower.get(t.toLowerCase())
-    if (match && match !== value) onChange(match)
-    return match
-  }
+  useEffect(() => {
+    const t = text.trim()
+    const next = t.length >= 2 ? t : null
+    if (next === (value || null)) return
+    if (t.length === 1) return // one letter would match nearly every guild
+    const id = setTimeout(() => onChange(next), 300)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text])
   return (
     <label className="filter-field mr-search mr-guild-filter">
       <span className="field-label">Guild</span>
@@ -219,23 +220,18 @@ function GuildFilter({ value, guilds, onChange }) {
           list="mr-guild-list"
           placeholder="All guilds"
           value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            // Choosing a suggestion arrives as a change to the full name: apply at once.
-            if (byLower.has(e.target.value.trim().toLowerCase())) apply(e.target.value)
-          }}
-          onKeyDown={(e) => e.key === 'Enter' && !apply(text) && setText(value || '')}
-          onBlur={() => !apply(text) && setText(value || '')}
+          onChange={(e) => setText(e.target.value)}
           aria-label="Filter by guild"
           autoComplete="off"
           spellCheck={false}
         />
-        {value && (
+        {text && (
           <button
             type="button"
             className="mr-clear"
             onClick={(e) => {
               e.preventDefault()
+              setText('')
               onChange(null)
             }}
             aria-label="Clear guild filter"
@@ -372,7 +368,9 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
   }, [text])
 
   const scope =
-    [realm ? REALM_LABELS[realm] : null, spec, klass, guild ? `in <${guild}>` : null].filter(Boolean).join(' ') || 'All players'
+    [realm ? REALM_LABELS[realm] : null, spec, klass, guild ? (guilds.some((g) => g.guild.toLowerCase() === guild.toLowerCase()) ? `in <${guild}>` : `in guilds matching “${guild}”`) : null]
+      .filter(Boolean)
+      .join(' ') || 'All players'
   // Shown after the scope in the subtitle while the key filter is on.
   const keyNote = minKey ? ` · timed +${minKey} or higher` : ''
   const scoreTitle = spec
@@ -424,15 +422,29 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
             </option>
           ))}
         </Field>
-        <Field label="Keys" value={minKey ? String(minKey) : ''} onChange={(v) => setFilter({ minKey: +v || null })}>
-          <option value="">Any key</option>
-          {KEY_LEVELS.map((k) => (
-            <option key={k} value={k}>
-              +{k} and up
-            </option>
-          ))}
-        </Field>
-        <GuildFilter value={guild} guilds={guilds} onChange={(g) => setFilter({ guild: g })} />
+        <div className="filter-field">
+          <span className="field-label">Keys</span>
+          <div className="view-toggle mr-keys" role="group" aria-label="Timed key level">
+            <button className={`seg ${!minKey ? 'on' : ''}`} onClick={() => setFilter({ minKey: null })}>
+              All keys
+            </button>
+            {KEY_LEVELS.map((k) => (
+              <button
+                key={k}
+                className={`seg ${minKey === k ? 'on' : ''}`}
+                onClick={() => setFilter({ minKey: minKey === k ? null : k })}
+                title={`Only players who timed a +${k} or higher`}
+              >
+                {k}+
+              </button>
+            ))}
+          </div>
+        </div>
+        <GuildFilter
+          value={guild}
+          guilds={guilds}
+          onChange={(g) => onNavigate({ klass, spec, realm, guild: g, minKey, search, page: null, focus: null }, { replace: true })}
+        />
         <label className="filter-field mr-search">
           <span className="field-label">Player</span>
           <span className="mr-search-box">

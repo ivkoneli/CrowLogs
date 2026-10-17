@@ -325,7 +325,8 @@ export async function getPlayerRanks(player) {
 // spec = that spec's score), `realm` (armory string) narrows it. With findName/findRealm
 // the page that player is on is returned instead of `page`. `search` (2+ characters) keeps
 // only names containing it; ranks stay the player's real rank in the scope, and `total`
-// becomes the number of matches. `guild` (exact name) narrows the scope to one guild;
+// becomes the number of matches. `guild` narrows the scope: an exact guild name to that guild,
+// any other text (2+ characters) to every guild whose name contains it;
 // each row carries the player's `guild` (null when they have none). `minKey` keeps only
 // players who timed a key of that level or higher; like the search, ranks are unchanged.
 // `prev_rank` is the rank they held in the same list before the last update that changed a

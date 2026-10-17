@@ -598,7 +598,9 @@ grant execute on function mplus_guild_list(text) to anon, authenticated;
 --   class             → that class's players by overall score
 --   class + spec      → players of that class by their score AS that spec
 --   p_realm (armory string, optional) narrows any of them to one realm,
---   p_guild (exact guild name, optional) to one guild
+--   p_guild (optional) to a guild: an exact guild name (any case) picks that guild,
+--     anything else (2+ characters) every guild whose name contains it, accent-free —
+--     "crows" keeps both "A Murder of Crows" and "Crows at Midnight"
 -- `rank` is the position inside that list (ties broken by name so paging is stable).
 -- p_search (optional, 2+ characters) then keeps only names containing it — accent-free,
 -- like the sidebar search — WITHOUT changing anyone's rank: searching "ivko" in Fury
@@ -634,16 +636,28 @@ language sql stable set search_path = extensions, public as $$
     select case when length(name_fold(btrim(coalesce(p_search, '')))) >= 2
       then replace(replace(replace(name_fold(btrim(p_search)), '\', '\\'), '%', '\%'), '_', '\_') end as esc
   ),
+  gq as ( -- the guild filter: exact name if one exists, else the folded, escaped fragment
+    select g, exists (select 1 from mplus_guilds mg where lower(mg.guild) = lower(g)) as exact,
+           replace(replace(replace(name_fold(g), '\', '\\'), '%', '\%'), '_', '\_') as esc
+    from (select nullif(btrim(coalesce(p_guild, '')), '') as g) x
+  ),
+  gm as ( -- guilds whose name contains the fragment (folded once per guild, not per player)
+    select d.guild from (select distinct guild from mplus_guilds) d, gq
+    where not gq.exact and length(gq.g) >= 2 and name_fold(d.guild) like '%' || gq.esc || '%'
+  ),
   ranked as (
     select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild, s.max_key,
            row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
            case when s.prev_score <> s.score then
              row_number() over (order by s.prev_score desc nulls last, s.name_lower, s.realm) end as prev_rk
-    from mplus_scores s
+    from mplus_scores s, gq
     where s.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
       and (p_class is null or s.class = p_class)
       and (p_realm is null or s.realm = p_realm)
-      and (nullif(p_guild, '') is null or s.guild = p_guild)
+      and (gq.g is null
+           or (not gq.exact and length(gq.g) < 2) -- a single letter is no filter
+           or (gq.exact and lower(s.guild) = lower(gq.g))
+           or (not gq.exact and s.guild in (select guild from gm)))
   ),
   f as (
     select r.*, row_number() over (order by r.rk) as pos, count(*) over () as total
