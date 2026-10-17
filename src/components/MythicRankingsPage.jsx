@@ -52,23 +52,24 @@ function niceStep(max) {
 const pct = (v) => `${v.toFixed(1)}%`
 
 // Spec popularity: one group of pillars per class, one pillar per spec, its height the
-// share of all ranked players who have a score on that spec (someone who plays two specs
-// counts in both). Classes are ordered by size; the number over a group is its tallest
+// share of all ranked players whose main spec it is (each player counts once, so a class's
+// pillars add up to the class and the classes to 100%). With a key filter, only players
+// who timed a key that high are counted. Classes are ordered by size; the number over a group is its tallest
 // pillar, the one under the name the class's own share. Clicking a pillar (or its icon)
 // filters the rankings to that spec, the class name to the whole class; clicking the
 // active one again clears it. Colors are the game's class colors.
-function PopulationChart({ population, klass, spec, onPick }) {
+function PopulationChart({ population, klass, spec, minKey, onPick }) {
   const classes = LEGION_CLASSES.map((c) => ({ name: c.name, ...(population.get(c.name) || { players: 0, specs: new Map() }) }))
-    .filter((c) => c.players > 0)
     .sort((a, b) => b.players - a.players)
-  if (!classes.length) return null
   const total = classes.reduce((sum, c) => sum + c.players, 0)
+  if (!total) return null
   const groups = classes.map((c) => ({
     ...c,
+    // Every class and spec keeps its place, at 0 when nobody qualifies (e.g. no Fury
+    // Warrior timed a +20), so the chart shows the gap instead of dropping the pillar.
     share: (c.players / total) * 100,
     bars: specsOf(c.name)
       .map((s) => ({ name: s.name, players: c.specs.get(s.name) || 0, share: ((c.specs.get(s.name) || 0) / total) * 100 }))
-      .filter((s) => s.players > 0)
       .sort((a, b) => b.players - a.players),
   }))
   const max = Math.max(...groups.flatMap((g) => g.bars.map((b) => b.share)), 0.1)
@@ -82,7 +83,8 @@ function PopulationChart({ population, klass, spec, onPick }) {
       <figcaption className="mr-chart-cap">
         <span className="mr-chart-title">Spec popularity</span>
         <span className="muted">
-          share of {total.toLocaleString('en-US')} ranked players · click a pillar to open that spec’s rankings
+          share of {total.toLocaleString('en-US')} ranked players{minKey ? ` who timed +${minKey} or higher` : ''} · main spec ·
+          click a pillar to open that spec’s rankings
         </span>
       </figcaption>
       <div className="mr-chart-grid">
@@ -288,7 +290,10 @@ function RankMove({ rank, prev }) {
   )
 }
 
-export default function MythicRankingsPage({ klass, spec, realm, guild, search, page, focus, onNavigate, onSelectPlayer }) {
+// Key levels the rankings can be narrowed to: players who TIMED a key this high or higher.
+const KEY_LEVELS = [10, 15, 20]
+
+export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, search, page, focus, onNavigate, onSelectPlayer }) {
   const [state, setState] = useState({ loading: true, rows: [], error: null })
   const [population, setPopulation] = useState(null)
   const [guilds, setGuilds] = useState([])
@@ -306,20 +311,27 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
   useEffect(() => {
     let cancelled = false
     setState((s) => ({ ...s, loading: true, error: null }))
-    getLeaderboard({ klass, spec, realm: armoryRealm, guild, page: page || 1, findName, findRealm, search: query })
+    getLeaderboard({ klass, spec, realm: armoryRealm, guild, minKey, page: page || 1, findName, findRealm, search: query })
       .then((rows) => !cancelled && setState({ loading: false, rows, error: null }))
       .catch((e) => !cancelled && setState({ loading: false, rows: [], error: e.message || 'Request failed.' }))
     return () => {
       cancelled = true
     }
-  }, [klass, spec, armoryRealm, guild, page, findName, findRealm, query])
+  }, [klass, spec, armoryRealm, guild, minKey, page, findName, findRealm, query])
 
-  // Tile sizes follow the realm filter (not class/spec/search: they ARE the class picker).
+  // The spec chart follows the realm and key filters (not class/spec/search: it IS the
+  // class picker).
   useEffect(() => {
     let cancelled = false
-    getPopulation(armoryRealm)
+    getPopulation(armoryRealm, minKey)
       .then((p) => !cancelled && setPopulation(p))
       .catch(() => !cancelled && setPopulation(null))
+    return () => {
+      cancelled = true
+    }
+  }, [armoryRealm, minKey])
+  useEffect(() => {
+    let cancelled = false
     getGuilds(armoryRealm)
       .then((g) => !cancelled && setGuilds(g))
       .catch(() => !cancelled && setGuilds([]))
@@ -333,7 +345,7 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
   // fall back to page 1 rather than showing an empty list.
   const pastEnd = !loading && !error && rows.length === 0 && page > 1
   useEffect(() => {
-    if (pastEnd) onNavigate({ klass, spec, realm, guild, search, focus, page: null }, { replace: true })
+    if (pastEnd) onNavigate({ klass, spec, realm, guild, minKey, search, focus, page: null }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastEnd])
   const total = rows[0]?.total || 0
@@ -343,8 +355,8 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
   const focusKey = focus ? focus.toLowerCase() : null
 
   // Changing a filter starts over on page 1 and drops the highlight; paging keeps both.
-  const setFilter = (patch) => onNavigate({ klass, spec, realm, guild, search, ...patch, page: null, focus: null })
-  const setPage = (p) => onNavigate({ klass, spec, realm, guild, search, focus, page: p })
+  const setFilter = (patch) => onNavigate({ klass, spec, realm, guild, minKey, search, ...patch, page: null, focus: null })
+  const setPage = (p) => onNavigate({ klass, spec, realm, guild, minKey, search, focus, page: p })
 
   // Apply the typed search once typing pauses. It replaces the current history entry, so
   // a search is one Back step however many letters it took.
@@ -352,7 +364,7 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
     const next = text.trim() || null
     if (next === (search || null)) return
     const t = setTimeout(
-      () => onNavigate({ klass, spec, realm, guild, search: next, page: null, focus: null }, { replace: true }),
+      () => onNavigate({ klass, spec, realm, guild, minKey, search: next, page: null, focus: null }, { replace: true }),
       300,
     )
     return () => clearTimeout(t)
@@ -361,6 +373,8 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
 
   const scope =
     [realm ? REALM_LABELS[realm] : null, spec, klass, guild ? `in <${guild}>` : null].filter(Boolean).join(' ') || 'All players'
+  // Shown after the scope in the subtitle while the key filter is on.
+  const keyNote = minKey ? ` · timed +${minKey} or higher` : ''
   const scoreTitle = spec
     ? `${spec} score: the sum of the best run played as ${spec} in each dungeon`
     : 'M+ score: the sum of the best run in each dungeon'
@@ -372,6 +386,7 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
         <h2>Mythic+ rankings</h2>
         <p className="kills">
           {scope}
+          {keyNote}
           {query
             ? ` · ${total.toLocaleString('en-US')} ${total === 1 ? 'match' : 'matches'} for “${query}”`
             : total > 0 && ` · ${total.toLocaleString('en-US')} ${total === 1 ? 'player' : 'players'}`}
@@ -409,6 +424,14 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
             </option>
           ))}
         </Field>
+        <Field label="Keys" value={minKey ? String(minKey) : ''} onChange={(v) => setFilter({ minKey: +v || null })}>
+          <option value="">Any key</option>
+          {KEY_LEVELS.map((k) => (
+            <option key={k} value={k}>
+              +{k} and up
+            </option>
+          ))}
+        </Field>
         <GuildFilter value={guild} guilds={guilds} onChange={(g) => setFilter({ guild: g })} />
         <label className="filter-field mr-search">
           <span className="field-label">Player</span>
@@ -424,7 +447,7 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
         </label>
       </div>
 
-      {population && <PopulationChart population={population} klass={klass} spec={spec} onPick={setFilter} />}
+      {population && <PopulationChart population={population} klass={klass} spec={spec} minKey={minKey} onPick={setFilter} />}
 
       {error ? (
         <div className="error">Couldn’t load the rankings: {error}</div>
@@ -434,7 +457,9 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, search, 
         <div className="empty-state">
           {query
             ? `No player matching “${query}” in ${scope === 'All players' ? 'the rankings' : `the ${scope} rankings`}.`
-            : `No ${scope === 'All players' ? '' : `${scope} `}players have a Mythic+ run yet.`}
+            : minKey
+              ? `No ${scope === 'All players' ? 'player' : scope} has timed a +${minKey} or higher yet.`
+              : `No ${scope === 'All players' ? '' : `${scope} `}players have a Mythic+ run yet.`}
         </div>
       ) : (
         <>

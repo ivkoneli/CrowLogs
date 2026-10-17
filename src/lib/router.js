@@ -5,7 +5,7 @@
 //
 //   #/                        home (best M+ runs)
 //   #/import                  import a combat log
-//   #/mplus?class=&spec=&realm=&guild=&q=&page=&player=   M+ rankings (every part optional)
+//   #/mplus?class=&spec=&realm=&guild=&keys=&q=&page=&player=   M+ rankings (every part optional)
 //   #/boss/<raid>/<boss>      boss rankings
 //   #/player/<name>           player profile
 //   #/log/<logId>             uploaded log breakdown (first encounter)
@@ -33,6 +33,7 @@ export function selectionToHash(sel) {
       if (sel.klass && sel.spec) q.set('spec', sel.spec)
       if (sel.realm) q.set('realm', sel.realm)
       if (sel.guild) q.set('guild', sel.guild)
+      if (sel.minKey) q.set('keys', String(sel.minKey))
       if (sel.search) q.set('q', sel.search)
       if (sel.page > 1) q.set('page', String(sel.page))
       if (sel.focus) q.set('player', sel.focus)
@@ -61,12 +62,14 @@ export function selectionFromHash(hash) {
     const q = new URLSearchParams(mplus[1] || '')
     const page = parseInt(q.get('page'), 10)
     const klass = q.get('class') || null
+    const minKey = parseInt(q.get('keys'), 10)
     return {
       view: 'mplus',
       klass,
       spec: (klass && q.get('spec')) || null,
       realm: q.get('realm') || null,
       guild: q.get('guild') || null,
+      minKey: minKey > 0 ? minKey : null,
       search: q.get('q') || null,
       // Only an explicit page > 1 is kept: no page + a player means "find their page".
       page: page > 1 ? page : q.get('player') ? null : 1,

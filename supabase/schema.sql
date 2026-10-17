@@ -394,6 +394,9 @@ alter table mplus_scores add column if not exists best jsonb;
 -- player wasn't ranked in this scope then). The rankings rank everyone by it to get the
 -- position they held before that update, which is what the up/down arrows show.
 alter table mplus_scores add column if not exists prev_score numeric;
+-- The highest key the player TIMED in this scope (null = none timed). The rankings' key
+-- filter keeps only players at or above a level; it never changes anyone's rank.
+alter table mplus_scores add column if not exists max_key smallint;
 -- One-time seed when adding the column to a live table, so the first update after it
 -- shows real movement instead of treating every player as new:
 --   update mplus_scores set prev_score = score where prev_score is null;
@@ -456,11 +459,17 @@ begin
     select distinct on (realm, n, spec, map_id) realm, n, spec, map_id, level, medal, time_ms, s
     from scoped
     order by realm, n, spec, map_id, s desc nulls last, time_ms asc nulls last
+  ),
+  keys as ( -- the highest key timed (medal > 0) in each scope, for the key filter
+    select realm, n, spec, max(level) filter (where medal > 0) as max_key
+    from scoped group by realm, n, spec
   )
   select per.realm, per.n as name_lower, i.name, i.class, per.spec,
          round(sum(coalesce(per.s, 0)), 1) as score,
-         jsonb_object_agg(per.map_id, jsonb_build_array(per.level, per.medal, per.s, per.time_ms)) as best
+         jsonb_object_agg(per.map_id, jsonb_build_array(per.level, per.medal, per.s, per.time_ms)) as best,
+         max(k.max_key)::smallint as max_key
   from per join ident i on i.realm = per.realm and i.n = per.n
+  join keys k on k.realm = per.realm and k.n = per.n and k.spec = per.spec
   group by per.realm, per.n, i.name, i.class, per.spec;
 
   if exists (
@@ -471,11 +480,13 @@ begin
     update mplus_scores set prev_score = score where prev_score is distinct from score;
   end if;
 
-  insert into mplus_scores as t (realm, name_lower, name, class, spec, score, best)
-  select realm, name_lower, name, class, spec, score, best from _mplus_new
+  insert into mplus_scores as t (realm, name_lower, name, class, spec, score, best, max_key)
+  select realm, name_lower, name, class, spec, score, best, max_key from _mplus_new
   on conflict (realm, name_lower, spec) do update
-    set name = excluded.name, class = excluded.class, score = excluded.score, best = excluded.best
-    where (t.name, t.class, t.score, t.best) is distinct from (excluded.name, excluded.class, excluded.score, excluded.best);
+    set name = excluded.name, class = excluded.class, score = excluded.score, best = excluded.best,
+        max_key = excluded.max_key
+    where (t.name, t.class, t.score, t.best, t.max_key)
+      is distinct from (excluded.name, excluded.class, excluded.score, excluded.best, excluded.max_key);
 
   delete from mplus_scores t
   where not exists (
@@ -494,19 +505,36 @@ end $$;
 revoke execute on function refresh_mplus_scores() from public, anon, authenticated;
 
 
--- How many players have a score in each scope, for the rankings page's population tiles:
--- one row per class (spec '' = everyone of that class) and per class+spec (players with at
--- least one run as that spec — someone who plays two specs counts in both). p_realm
--- (armory string, optional) narrows it to one realm.
-create or replace function mplus_population(p_realm text default null)
+-- How many players there are in each class and spec, for the rankings page's spec chart:
+-- one row per class (spec '' = everyone of that class) and per class+spec. Each player
+-- counts ONCE, under their main spec (the spec with their highest spec score), so a
+-- class's specs add up to the class and the classes to everyone. p_realm (armory string,
+-- optional) narrows it to one realm; p_min_key keeps only players who timed a key of that
+-- level or higher.
+drop function if exists mplus_population(text);
+create or replace function mplus_population(p_realm text default null, p_min_key int default null)
 returns table (class text, spec text, players bigint)
 language sql stable set search_path = public as $$
-  select s.class, s.spec, count(*)
-  from mplus_scores s
-  where s.class is not null and (p_realm is null or s.realm = p_realm)
-  group by s.class, s.spec
+  with pl as (
+    select s.realm, s.name_lower, s.class
+    from mplus_scores s
+    where s.spec = '' and s.class is not null
+      and (p_realm is null or s.realm = p_realm)
+      and (p_min_key is null or s.max_key >= p_min_key)
+  ),
+  main as (
+    select distinct on (s.realm, s.name_lower) s.realm, s.name_lower, s.spec
+    from mplus_scores s join pl on pl.realm = s.realm and pl.name_lower = s.name_lower
+    where s.spec <> ''
+    order by s.realm, s.name_lower, s.score desc, s.spec
+  )
+  select pl.class, ''::text, count(*) from pl group by pl.class
+  union all
+  select pl.class, m.spec, count(*)
+  from pl join main m on m.realm = pl.realm and m.name_lower = pl.name_lower
+  group by pl.class, m.spec
 $$;
-grant execute on function mplus_population(text) to anon, authenticated;
+grant execute on function mplus_population(text, int) to anon, authenticated;
 
 -- ── GUILDS ────────────────────────────────────────────────────────────────────
 -- The armory's leaderboards don't carry guilds; Tauri Achievements' player index does
@@ -582,8 +610,11 @@ grant execute on function mplus_guild_list(text) to anon, authenticated;
 -- that changed any score (ranked by prev_score). It is only given for players whose OWN
 -- score changed in that update: null for anyone who merely got passed, or who wasn't in
 -- the list yet.
+-- p_min_key (optional) keeps only players who timed a key of that level or higher in this
+-- scope, AFTER ranking: ranks stay their real rank in the full list, like p_search.
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text);
+drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text, int);
 create or replace function mplus_leaderboard(
   p_class text default null,
   p_spec text default null,
@@ -593,7 +624,8 @@ create or replace function mplus_leaderboard(
   p_find_realm text default null,
   p_find_name text default null,
   p_search text default null,
-  p_guild text default null
+  p_guild text default null,
+  p_min_key int default null
 )
 returns table (rank bigint, total bigint, realm text, name text, class text, spec text, score numeric, best jsonb, guild text, prev_rank bigint)
 language sql stable set search_path = extensions, public as $$
@@ -603,7 +635,7 @@ language sql stable set search_path = extensions, public as $$
       then replace(replace(replace(name_fold(btrim(p_search)), '\', '\\'), '%', '\%'), '_', '\_') end as esc
   ),
   ranked as (
-    select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild,
+    select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild, s.max_key,
            row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
            case when s.prev_score <> s.score then
              row_number() over (order by s.prev_score desc nulls last, s.name_lower, s.realm) end as prev_rk
@@ -616,7 +648,8 @@ language sql stable set search_path = extensions, public as $$
   f as (
     select r.*, row_number() over (order by r.rk) as pos, count(*) over () as total
     from ranked r, q
-    where q.esc is null or name_fold(r.name) like '%' || q.esc || '%'
+    where (q.esc is null or name_fold(r.name) like '%' || q.esc || '%')
+      and (p_min_key is null or r.max_key >= p_min_key)
   ),
   start as (
     select coalesce(
@@ -629,4 +662,4 @@ language sql stable set search_path = extensions, public as $$
   where f.pos > start.o and f.pos <= start.o + lim.n
   order by f.pos
 $$;
-grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text, text) to anon, authenticated;
+grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text, text, int) to anon, authenticated;

@@ -339,6 +339,7 @@ export default function App() {
               spec={selection.spec}
               realm={selection.realm}
               guild={selection.guild}
+              minKey={selection.minKey}
               search={selection.search}
               page={selection.page}
               focus={selection.focus}

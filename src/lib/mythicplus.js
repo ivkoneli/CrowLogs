@@ -326,12 +326,13 @@ export async function getPlayerRanks(player) {
 // the page that player is on is returned instead of `page`. `search` (2+ characters) keeps
 // only names containing it; ranks stay the player's real rank in the scope, and `total`
 // becomes the number of matches. `guild` (exact name) narrows the scope to one guild;
-// each row carries the player's `guild` (null when they have none).
+// each row carries the player's `guild` (null when they have none). `minKey` keeps only
+// players who timed a key of that level or higher; like the search, ranks are unchanged.
 // `prev_rank` is the rank they held in the same list before the last update that changed a
 // score, for the up/down arrows; null unless their own score changed in that update.
 // → [{ rank, prev_rank, total, realm, name, class, spec, score, best: { mapId: [level, medal, score, ms] } }]
 export const RANKINGS_PAGE_SIZE = 25
-export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null, search = null, guild = null } = {}) {
+export async function getLeaderboard({ klass = null, spec = null, realm = null, page = 1, findName = null, findRealm = null, search = null, guild = null, minKey = null } = {}) {
   if (!supabase) return []
   const { data, error } = await supabase.rpc('mplus_leaderboard', {
     p_class: klass,
@@ -343,21 +344,24 @@ export async function getLeaderboard({ klass = null, spec = null, realm = null, 
     p_find_name: findName,
     p_search: search || null,
     p_guild: guild || null,
+    p_min_key: minKey || null,
   })
   if (error) throw error
   return (data || []).map((r) => ({ ...r, score: Number(r.score) }))
 }
 
-// Players per class and per class+spec, for the rankings page's population tiles (see
-// mplus_population in schema.sql). `realm` (armory string) narrows it to one realm.
-// → Map("Warrior" → { players, specs: Map("Fury" → players) }). Cached per realm.
+// Players per class and per class+spec, for the rankings page's spec chart (see
+// mplus_population in schema.sql): each player counts once, under their main spec.
+// `realm` (armory string) narrows it to one realm, `minKey` to players who timed a key
+// of that level or higher.
+// → Map("Warrior" → { players, specs: Map("Fury" → players) }). Cached per realm + key.
 const populationCache = new Map()
-export function getPopulation(realm = null) {
-  const key = realm || ''
+export function getPopulation(realm = null, minKey = null) {
+  const key = `${realm || ''}|${minKey || ''}`
   if (!populationCache.has(key)) {
     const p = (async () => {
       if (!supabase) return new Map()
-      const { data, error } = await supabase.rpc('mplus_population', { p_realm: realm })
+      const { data, error } = await supabase.rpc('mplus_population', { p_realm: realm, p_min_key: minKey || null })
       if (error) throw error
       const out = new Map()
       for (const r of data || []) {
