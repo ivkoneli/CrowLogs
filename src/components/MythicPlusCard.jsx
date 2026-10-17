@@ -241,56 +241,84 @@ export function Head() {
 }
 
 const BEST_SORTS = [
-  { id: 'score', label: 'Highest score' },
-  { id: 'key', label: 'Highest key' },
+  { id: 'score', label: 'Score' },
+  { id: 'key', label: 'Key' },
 ]
 
-// The "best runs" half of the view toggle, as a dropdown: picking a sort also switches to
-// the best-runs view. Closes on outside click and Escape.
-function BestSortDropdown({ active, sort, onPick }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e) => !ref.current?.contains(e.target) && setOpen(false)
-    const onKey = (e) => e.key === 'Escape' && setOpen(false)
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
+// The card's three views, as one row of tabs so it is clear which one is open.
+const VIEWS = [
+  { id: 'best', label: 'Best runs' },
+  { id: 'history', label: 'History' },
+  { id: 'teammates', label: 'Teammates' },
+]
+const MATES_PAGE_SIZE = 15
+
+// Everyone the player ran with, from their runs: how many runs together, how many of
+// those were timed, and the best-scoring run together (ties: the faster clear). Most runs
+// first, then most timed. A teammate is one realm + name, so namesakes stay apart.
+function teammatesOf(runs, selfName, realm) {
+  const byKey = new Map()
+  for (const run of runs) {
+    for (const p of run.party) {
+      if (isMember(p, selfName, realm)) continue
+      const memberRealm = p.realm || run.realm
+      const key = `${memberRealm}|${p.name.toLowerCase()}`
+      let m = byKey.get(key)
+      if (!m) byKey.set(key, (m = { key, member: { ...p, realm: memberRealm }, runs: 0, timed: 0, best: null, bestScore: -1 }))
+      m.runs += 1
+      if (run.medal > 0) m.timed += 1
+      const score = runScore(run) ?? 0
+      const faster = m.best && score === m.bestScore && (run.time_ms ?? Infinity) < (m.best.time_ms ?? Infinity)
+      if (score > m.bestScore || faster) {
+        m.best = run
+        m.bestScore = score
+      }
+      // Keep the most recent class/spec seen for the name colour and tooltip.
+      if (!m.lastDay || run.day > m.lastDay) {
+        m.lastDay = run.day
+        m.member = { ...m.member, class: p.class || m.member.class, spec: p.spec || m.member.spec }
+      }
     }
-  }, [open])
-  const current = BEST_SORTS.find((s) => s.id === sort) || BEST_SORTS[0]
+  }
+  return [...byKey.values()].sort((x, y) => y.runs - x.runs || y.timed - x.timed || y.bestScore - x.bestScore)
+}
+
+function TeammatesTable({ mates, realm, onSelectPlayer }) {
   return (
-    <div className="mp-sort" ref={ref}>
-      <button
-        className={`seg mp-sort-btn ${active ? 'on' : ''}`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {current.label}
-        <span className={`mp-sort-caret ${open ? 'open' : ''}`}>▾</span>
-      </button>
-      {open && (
-        <ul className="mp-sort-menu" role="listbox">
-          {BEST_SORTS.map((s) => (
-            <li key={s.id} role="option" aria-selected={s.id === sort}>
-              <button
-                className={s.id === sort && active ? 'on' : ''}
-                onClick={() => {
-                  onPick(s.id)
-                  setOpen(false)
-                }}
-              >
-                {s.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <table className="meter mp-mates">
+      <thead>
+        <tr>
+          <th>Teammate</th>
+          <th className="num">Runs</th>
+          <th className="num">Timed</th>
+          <th>Best run together</th>
+        </tr>
+      </thead>
+      <tbody>
+        {mates.map((m) => {
+          const d = MPLUS_DUNGEONS.find((x) => x.id === m.best.map_id)
+          return (
+            <tr key={m.key}>
+              <td className="mp-mate-name">
+                {/* No role marker: it would only be their role in one of the runs. */}
+                <Member p={{ ...m.member, role: null }} realm={realm} onSelectPlayer={onSelectPlayer} />
+              </td>
+              <td className="num strong">{m.runs}</td>
+              <td className="num">{m.timed}</td>
+              <td>
+                <span className="mp-mate-best" title={`${d?.name || m.best.dungeon} +${m.best.level} · ${formatScore(m.bestScore)} score · ${formatRunDay(m.best.day, { long: true })}`}>
+                  <DungeonIcon mapId={m.best.map_id} />
+                  <span className="mp-mate-dname">{d?.short || d?.name || m.best.dungeon}</span>
+                  <span className="mp-key strong">+{m.best.level}</span>
+                  <span className={m.best.medal ? '' : 'muted'}>{formatRunTime(m.best.time_ms)}</span>
+                  <Medal medal={m.best.medal} />
+                </span>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
@@ -447,8 +475,11 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
     () => sortRunsByRecent(dungeon ? runs.filter((r) => r.map_id === dungeon) : runs),
     [runs, dungeon],
   )
-  const pages = Math.max(1, Math.ceil(history.length / PAGE_SIZE))
+  const mates = useMemo(() => teammatesOf(runs, selfName, realm), [runs, selfName, realm])
+  const pageSize = view === 'teammates' ? MATES_PAGE_SIZE : PAGE_SIZE
+  const pages = Math.max(1, Math.ceil((view === 'teammates' ? mates.length : history.length) / pageSize))
   const pageRuns = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const pageMates = mates.slice((page - 1) * MATES_PAGE_SIZE, page * MATES_PAGE_SIZE)
   // The history table always shows as many rows as an unfiltered page would (blank filler
   // rows make up the difference), so a short last page, a spec with few runs or a dungeon
   // filter never changes the card's height and the page doesn't jump under the cursor.
@@ -472,6 +503,19 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
     body = (
       <div className="empty-state mp-empty">
         <p>No Mythic+ runs on the Tauri armory for {name} yet.</p>
+      </div>
+    )
+  } else if (view === 'teammates') {
+    body = mates.length ? (
+      <>
+        <div className="table-scroll">
+          <TeammatesTable mates={pageMates} realm={realm} onSelectPlayer={onSelectPlayer} />
+        </div>
+        <Pager page={page} pages={pages} onChange={setPage} />
+      </>
+    ) : (
+      <div className="empty-state mp-empty">
+        <p>No {spec ? `${spec} ` : ''}runs with a party yet.</p>
       </div>
     )
   } else if (view === 'best') {
@@ -598,29 +642,32 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
             <span className="muted">
               {view === 'best'
                 ? `${done} of ${MPLUS_DUNGEONS.length} dungeons`
-                : `${history.length} ${history.length === 1 ? 'run' : 'runs'} · page ${page} of ${pages}`}
+                : view === 'teammates'
+                  ? `${mates.length} ${mates.length === 1 ? 'teammate' : 'teammates'}`
+                  : `${history.length} ${history.length === 1 ? 'run' : 'runs'} · page ${page} of ${pages}`}
             </span>
           )}
-          <div className="mp-view-toggle">
-            {/* Absolutely positioned above the toggle, so the header keeps its height. */}
-            <span className="mp-sort-label" aria-hidden="true">
-              Sort by
-            </span>
-            <BestSortDropdown
-              active={view === 'best'}
-              sort={bestSort}
-              onPick={(s) => {
-                setBestSort(s)
-                setView('best')
-              }}
-            />
-            <button className={`seg ${view === 'history' ? 'on' : ''}`} onClick={() => setView('history')}>
-              History{runs.length ? ` (${runs.length})` : ''}
-            </button>
+          <div className="mp-view-toggle" role="tablist" aria-label="Mythic+ view">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                role="tab"
+                aria-selected={view === v.id}
+                className={`seg ${view === v.id ? 'on' : ''}`}
+                onClick={() => {
+                  setView(v.id)
+                  setPage(1)
+                }}
+              >
+                {v.label}
+                {v.id === 'history' && runs.length ? ` (${runs.length})` : ''}
+              </button>
+            ))}
           </div>
         </div>
       </div>
-      {!loading && !state.error && allRuns.length > 0 && (specTabs.length > 0 || view === 'history') && (
+      {!loading && !state.error && allRuns.length > 0 && (
+
         <div className="mp-spec-row">
           {specTabs.length > 0 && (
             <SpecTabs
@@ -631,6 +678,16 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
                 setPage(1)
               }}
             />
+          )}
+          {view === 'best' && (
+            <div className="mp-sort-toggle" role="group" aria-label="Pick each dungeon's best run by">
+              <span className="mp-sort-toggle-label">Best by</span>
+              {BEST_SORTS.map((o) => (
+                <button key={o.id} className={`seg ${bestSort === o.id ? 'on' : ''}`} onClick={() => setBestSort(o.id)}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
           )}
           {view === 'history' && (
             <DungeonFilter

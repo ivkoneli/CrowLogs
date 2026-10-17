@@ -2496,6 +2496,44 @@ img.icon-slot.trinket {
   border-radius: 8px;
   padding: 0.15rem;
 }
+/* Best runs: pick each dungeon's best by Score or Key. */
+.mp-sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.15rem 0.15rem 0.15rem 0.55rem;
+}
+.mp-sort-toggle-label {
+  margin-right: 0.3rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+/* Teammates: name · runs · timed · best run together (icon, dungeon, key, time, medal). */
+.mp-mates th.num,
+.mp-mates td.num {
+  width: 64px;
+}
+.mp-mates .mp-mate-name .mp-member-name {
+  font-weight: 600;
+}
+.mp-mate-best {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mp-mate-dname {
+  min-width: 2.4rem;
+  color: var(--muted);
+  font-size: 0.85em;
+}
 /* Fixed columns so paging/toggling only swaps the content, never re-flows widths. */
 .mp-meter {
   table-layout: fixed;
@@ -3967,6 +4005,13 @@ a.mp-rank.link:hover {
   }
 
   /* Profile, Mythic+ card. */
+  .mp-mate-dname {
+    display: none; /* the icon names the dungeon; keeps the medal on screen */
+  }
+  .mp-mates th.num,
+  .mp-mates td.num {
+    width: 48px;
+  }
   .mp-title {
     flex-wrap: wrap;
     gap: 0.4rem 0.5rem;
