@@ -127,7 +127,7 @@ export default function LatestRuns({ onSelectPlayer }) {
                     ) : (
                       <td className="name-cell">{run.dungeon}</td>
                     )}
-                    <RunCells run={run} selfName="" realm={run.realm || DEFAULT_MPLUS_REALM} onSelectPlayer={onSelectPlayer} dateInTime />
+                    <RunCells run={run} selfName="" realm={run.realm || DEFAULT_MPLUS_REALM} onSelectPlayer={onSelectPlayer} />
                   </tr>
                 )
               })}

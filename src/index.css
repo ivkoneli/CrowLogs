@@ -3079,10 +3079,6 @@ img.icon-slot.trinket {
   padding: 0.35rem 0.75rem;
   font-size: 0.85rem;
 }
-/* The date under a run's time: phones only (the Date column is off-screen there). */
-.mp-time-date {
-  display: none;
-}
 .lr-more {
   display: flex;
   align-items: center;
@@ -4113,15 +4109,8 @@ a.mp-rank.link:hover {
     width: 100%;
   }
 
-  .mp-time > .mp-time-date {
-    display: block;
-    min-width: 0;
-    margin-top: 0.1rem;
-    font-size: 0.7rem;
-    line-height: 1.2;
-  }
-  /* Home feed on a phone: dungeon art, key, score and time (with medal and date) all fit;
-     affixes, party and the date column are a swipe away as on the profile. */
+  /* Home feed on a phone: dungeon art, key, score and time (with medal) fit; affixes,
+     party and the Date column are a swipe away, as on the profile. */
   .lr-card .mp-col-dungeon {
     width: 150px;
   }
