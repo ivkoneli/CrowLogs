@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   MPLUS_DUNGEONS,
   MEDALS,
@@ -14,6 +14,8 @@ import {
   sortRunsByRecent,
   formatRunTime,
   formatRunDay,
+  formatRunWhen,
+  runFinishedAt,
   splitPlayerKey,
   memberPlayerKey,
   isMember,
@@ -141,8 +143,32 @@ export function Party({ party, ...memberProps }) {
   )
 }
 
+// One shared clock for every "x min ago" cell, so they stay current without a timer per row.
+const clock = { now: Date.now(), subs: new Set(), timer: null }
+function subscribeClock(cb) {
+  clock.subs.add(cb)
+  if (!clock.timer) {
+    clock.now = Date.now()
+    clock.timer = setInterval(() => {
+      clock.now = Date.now()
+      clock.subs.forEach((f) => f())
+    }, 30_000)
+  }
+  return () => {
+    clock.subs.delete(cb)
+    if (!clock.subs.size) {
+      clearInterval(clock.timer)
+      clock.timer = null
+    }
+  }
+}
+const useNow = () => useSyncExternalStore(subscribeClock, () => clock.now)
+
 // Key / time+medal / affixes / party / date — shared by the best-runs and history tables.
 export function RunCells({ run, selfName, realm, onSelectPlayer }) {
+  const now = useNow()
+  const at = runFinishedAt(run)
+  const atTime = at ? at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
   return (
     <>
       <td className="num strong mp-key">+{run.level}</td>
@@ -162,14 +188,13 @@ export function RunCells({ run, selfName, realm, onSelectPlayer }) {
       <td
         className="num muted mp-day"
         title={
-          // The exact time once Tauri Achievements has the run (see completed_at), in the viewer's zone.
+          // The exact time once Tauri Achievements has the run (see completed_at), else when
+          // the hourly scrape first saw it, in the viewer's zone.
           formatRunDay(run.day, { long: true }) +
-          (run.completed_at
-            ? ` · ${new Date(run.completed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
-            : '')
+          (run.completed_at ? ` · ${atTime}` : at ? ` · seen ${atTime}` : '')
         }
       >
-        {formatRunDay(run.day)}
+        {formatRunWhen(run, now)}
       </td>
     </>
   )

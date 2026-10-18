@@ -728,3 +728,113 @@ language sql stable set search_path = extensions, public as $$
   order by f.pos
 $$;
 grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text, text, int) to anon, authenticated;
+
+-- ── M+ scrape scheduler ────────────────────────────────────────────────────
+-- GitHub's own `schedule:` trigger is best-effort: the "hourly" M+ scrape really ran every
+-- 3–5 hours. So the database's pg_cron triggers it instead, on the minute, through GitHub's
+-- workflow_dispatch API (pg_net). The scrape itself stays in GitHub Actions: a full board
+-- pass downloads ~250 MB of HTML, far past an Edge Function's 2 s CPU limit.
+--
+-- The GitHub token lives in Vault (never in this file):
+--   select vault.create_secret('<token>', 'github_dispatch_token');
+--   -- replace later: select vault.update_secret(id, '<new token>') from vault.secrets
+--   --                where name = 'github_dispatch_token';
+-- Needs a token that can run workflows on ivkoneli/CrowLogs (fine-grained: Actions write).
+--
+-- Watchdog: each call checks the previous dispatches' HTTP answers, and whether the last
+-- scrape (mplus_status.refreshed_at) is over 3 h old; either emails the owner through the
+-- notify-failure Edge Function (at most once per 12 h for staleness).
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+create table if not exists scrape_dispatch (
+  id bigserial primary key,
+  kind text not null,
+  request_id bigint,
+  sent_at timestamptz not null default now(),
+  checked boolean not null default false
+);
+-- No policies: only the service role / cron can see it.
+alter table scrape_dispatch enable row level security;
+
+create table if not exists scrape_alert (
+  id int primary key default 1 check (id = 1),
+  last_stale_alert timestamptz
+);
+alter table scrape_alert enable row level security;
+insert into scrape_alert (id) values (1) on conflict do nothing;
+
+create or replace function notify_owner(p_context text, p_message text)
+returns void language sql security definer set search_path = public, extensions as $$
+  select net.http_post(
+    url := 'https://nkssiybjvxwgxertamox.supabase.co/functions/v1/notify-failure',
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := jsonb_build_object('context', p_context, 'message', p_message),
+    timeout_milliseconds := 15000
+  );
+$$;
+
+-- p_kind: 'hourly' (incremental) or 'full' (weekly re-read of every board).
+create or replace function dispatch_mplus_scrape(p_kind text default 'hourly')
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare
+  tok text;
+  bad text;
+  req bigint;
+begin
+  -- 1. Answers to earlier dispatches (pg_net stores them asynchronously, ~6 h).
+  select string_agg(format('%s dispatch at %s: %s', d.kind, to_char(d.sent_at, 'YYYY-MM-DD HH24:MI "UTC"'),
+                           coalesce(r.status_code::text, r.error_msg, 'no answer')), E'\n')
+    into bad
+  from scrape_dispatch d
+  left join net._http_response r on r.id = d.request_id
+  where not d.checked and d.sent_at < now() - interval '2 minutes'
+    and (r.id is not null or d.sent_at < now() - interval '1 hour')
+    and (r.status_code is null or r.status_code not between 200 and 299);
+  update scrape_dispatch d set checked = true
+  where not d.checked and d.sent_at < now() - interval '2 minutes'
+    and (exists (select 1 from net._http_response r where r.id = d.request_id) or d.sent_at < now() - interval '1 hour');
+  delete from scrape_dispatch where sent_at < now() - interval '14 days';
+  if bad is not null then
+    perform notify_owner('mplus-scrape-dispatch',
+      'GitHub refused to start the M+ scrape (token expired/revoked, or workflow disabled?).' || E'\n' || bad);
+  end if;
+
+  -- 2. Staleness: no finished scrape for 3 h, whatever the reason.
+  if (select refreshed_at from mplus_status where id = 1) < now() - interval '3 hours'
+     and coalesce((select last_stale_alert from scrape_alert where id = 1), '-infinity') < now() - interval '12 hours' then
+    update scrape_alert set last_stale_alert = now() where id = 1;
+    perform notify_owner('mplus-scrape-stale',
+      'No M+ scrape has finished since ' || (select refreshed_at from mplus_status where id = 1)
+      || '. Check https://github.com/ivkoneli/CrowLogs/actions/workflows/scrape-mythic-plus.yml');
+  end if;
+
+  -- 3. Start the workflow.
+  select decrypted_secret into tok from vault.decrypted_secrets where name = 'github_dispatch_token';
+  if tok is null then
+    perform notify_owner('mplus-scrape-dispatch', 'Vault secret github_dispatch_token is missing.');
+    return;
+  end if;
+  select net.http_post(
+    url := 'https://api.github.com/repos/ivkoneli/CrowLogs/actions/workflows/scrape-mythic-plus.yml/dispatches',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || tok,
+      'Accept', 'application/vnd.github+json',
+      'X-GitHub-Api-Version', '2022-11-28',
+      'User-Agent', 'crowlogs-pg-cron',
+      'Content-Type', 'application/json'),
+    body := case when p_kind = 'full'
+              then '{"ref": "main", "inputs": {"full": "true"}}'::jsonb
+              else '{"ref": "main"}'::jsonb end,
+    timeout_milliseconds := 15000
+  ) into req;
+  insert into scrape_dispatch (kind, request_id) values (p_kind, req);
+end;
+$$;
+revoke all on function dispatch_mplus_scrape(text) from public, anon, authenticated;
+revoke all on function notify_owner(text, text) from public, anon, authenticated;
+
+-- Hourly at :05; the weekly full pass Wednesday 04:47 UTC (before the EU reset). The
+-- workflow's concurrency group queues one behind the other if they meet.
+select cron.schedule('mplus-scrape-hourly', '5 * * * *', $$select dispatch_mplus_scrape('hourly')$$);
+select cron.schedule('mplus-scrape-full', '47 4 * * 3', $$select dispatch_mplus_scrape('full')$$);

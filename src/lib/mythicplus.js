@@ -151,6 +151,40 @@ export function formatRunDay(day, { long = false } = {}) {
   return long ? `${MONTHS[mo - 1]} ${d}, ${y}` : `${mo}/${d}/${y}`
 }
 
+// When a run finished, as a Date, or null when only its day is known: the exact time from
+// Tauri Achievements, else when the hourly scrape first saw it (so up to about an hour
+// late). A first_seen far from the run's day is a backfill time, not the run's, so it's
+// ignored.
+export function runFinishedAt(run) {
+  if (run.completed_at) return new Date(run.completed_at)
+  if (!run.first_seen || !run.day) return null
+  const seen = Date.parse(run.first_seen)
+  const dayStart = Date.parse(`${run.day}T00:00:00Z`)
+  return seen >= dayStart - 86400000 && seen < dayStart + 2 * 86400000 ? new Date(seen) : null
+}
+
+// The viewer's local calendar day as "YYYY-MM-DD".
+const localDay = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// A run's date cell: "12 min ago" under an hour, "5 h ago" under a day, then "Yesterday",
+// then the date. Runs known only by day read "Today" / "Yesterday" / the date.
+export function formatRunWhen(run, now = Date.now()) {
+  const today = new Date(now)
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
+  const at = runFinishedAt(run)
+  if (at) {
+    const min = Math.max(0, Math.floor((now - at.getTime()) / 60000))
+    if (min < 1) return 'just now'
+    if (min < 60) return `${min} min ago`
+    if (min < 24 * 60) return `${Math.floor(min / 60)} h ago`
+    return localDay(at) === localDay(yesterday) ? 'Yesterday' : formatRunDay(localDay(at))
+  }
+  if (run.day === localDay(today)) return 'Today'
+  if (run.day === localDay(yesterday)) return 'Yesterday'
+  return formatRunDay(run.day)
+}
+
 // Players seen in any M+ run matching `query` (accent-free, fuzzy), for the
 // sidebar search — this is how someone with no imported raid logs can still be found.
 // Returns [{ player: "Name-realmslug", name, class, runs }], most active first.
@@ -174,7 +208,7 @@ export async function searchMplusPlayers(query, limit = 8) {
 // out of the week (it never matters: anything +4 or higher outranks it).
 
 const SERVER_TZ = 'Europe/Budapest'
-const RUN_COLS = 'id, realm, map_id, dungeon, level, time_ms, medal, affixes, party, day, completed_at'
+const RUN_COLS = 'id, realm, map_id, dungeon, level, time_ms, medal, affixes, party, day, first_seen, completed_at'
 
 // Today's date on the game server, "YYYY-MM-DD".
 export function serverToday(now = new Date()) {
@@ -391,7 +425,7 @@ export function getLatestRuns(opts = {}) {
 }
 async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, board = null, offset = 0 } = {}) {
   if (!supabase) return { runs: [], total: 0 }
-  let q = supabase.from('mplus_runs').select(`${RUN_COLS}, first_seen`, offset === 0 ? { count: 'exact' } : undefined)
+  let q = supabase.from('mplus_runs').select(RUN_COLS, offset === 0 ? { count: 'exact' } : undefined)
   if (mapId) q = q.eq('map_id', mapId)
   if (minKey) q = q.gte('level', minKey)
   if (timedOnly) q = q.gt('medal', 0)
