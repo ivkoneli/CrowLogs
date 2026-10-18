@@ -155,21 +155,34 @@ function matchPull(fight, pulls) {
   return best
 }
 
-// The hash of a player's own (comm/self) snapshot in `spec` captured nearest `epoch`,
-// within the snapshot age limit either side, or null.
-function nearestBroadcast(loadouts, guid, epoch, spec) {
-  let best = null
-  let bestDist = Infinity
-  for (const [hash, lo] of Object.entries(loadouts || {})) {
-    if (lo?.guid !== guid || (lo.source !== 'comm' && lo.source !== 'self')) continue
-    if (spec && lo.specName !== spec) continue
-    const dist = Math.abs((epoch || 0) - (lo.capturedAt || 0))
-    if (dist <= SNAPSHOT_MAX_AGE_SEC && dist < bestDist) {
-      bestDist = dist
-      best = hash
-    }
-  }
-  return best
+// A gear set's identity: the item ids in each slot (enchants/gems/bonus ids aside).
+const gearKey = (lo) =>
+  Object.entries(lo?.gear || {})
+    .map(([slot, item]) => `${slot}:${String(item).split(':')[1] || ''}`)
+    .sort()
+    .join(',')
+
+// The player's own (comm/self) snapshot in the inspect's spec that best stands in for an
+// inspect attached to a pull at `epoch`. Broadcasts fire mid gear-swap too (one legendary
+// off, the next not on yet), so time alone can pick a build that was never worn on the
+// pull. In order: the same gear the inspect saw, nearest; else the latest one before the
+// pull started; else the earliest after it — all within the snapshot age limit.
+function standInBroadcast(loadouts, guid, epoch, inspect) {
+  const own = Object.entries(loadouts || {}).filter(
+    ([, lo]) =>
+      lo?.guid === guid &&
+      (lo.source === 'comm' || lo.source === 'self') &&
+      (!inspect?.specName || lo.specName === inspect.specName) &&
+      Math.abs((epoch || 0) - (lo.capturedAt || 0)) <= SNAPSHOT_MAX_AGE_SEC,
+  )
+  if (!own.length) return null
+  const dist = ([, lo]) => Math.abs((epoch || 0) - (lo.capturedAt || 0))
+  const want = gearKey(inspect)
+  const same = own.filter(([, lo]) => gearKey(lo) === want).sort((a, b) => dist(a) - dist(b))
+  if (same.length) return same[0][0]
+  const before = own.filter(([, lo]) => lo.capturedAt <= epoch).sort((a, b) => b[1].capturedAt - a[1].capturedAt)
+  if (before.length) return before[0][0]
+  return own.sort((a, b) => a[1].capturedAt - b[1].capturedAt)[0][0]
 }
 
 // Join parsed combat-log fights with an addon DB, freezing each matched fight's
@@ -197,10 +210,10 @@ export function freezeFromAddon(fights, addon) {
     if (!pull) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
     let hash = pull.participants[f.guid]
     // Addons before 1.14 let a pre-pull inspect landing mid-fight replace an addon user's
-    // own broadcast on that pull (an inspect has no ilvl). Use their nearest broadcast of
-    // the same spec from the same night instead.
+    // own broadcast on that pull (an inspect has no ilvl). Use their own broadcast of the
+    // same build instead (see standInBroadcast).
     if (addon.loadouts[hash]?.source === 'inspect') {
-      const alt = nearestBroadcast(addon.loadouts, f.guid, pull.startEpoch, addon.loadouts[hash].specName)
+      const alt = standInBroadcast(addon.loadouts, f.guid, pull.startEpoch, addon.loadouts[hash])
       if (alt) hash = alt
     }
     // Addon versions before 1.12 attached the newest stored snapshot at pull start with no
