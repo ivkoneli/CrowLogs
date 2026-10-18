@@ -56,7 +56,7 @@ export async function getPlayerRuns(player) {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('mplus_runs')
-      .select('id, map_id, dungeon, level, time_ms, medal, affixes, party, day, first_seen')
+      .select('id, map_id, dungeon, level, time_ms, medal, affixes, party, day, first_seen, completed_at')
       .eq('realm', board)
       .contains('members', [name.toLowerCase()])
       .order('id')
@@ -122,6 +122,10 @@ export function sortRunsByRecent(runs) {
   return [...runs].sort(
     (a, b) =>
       b.day.localeCompare(a.day) ||
+      // Exact completion time where Tauri Achievements has it (a run without one yet is the
+      // newest of its day), then the scrape that first saw it.
+      (!b.completed_at - !a.completed_at) ||
+      (b.completed_at || '').localeCompare(a.completed_at || '') ||
       (b.first_seen || '').localeCompare(a.first_seen || '') ||
       b.level - a.level ||
       timeOrInf(a) - timeOrInf(b),
@@ -170,7 +174,7 @@ export async function searchMplusPlayers(query, limit = 8) {
 // out of the week (it never matters: anything +4 or higher outranks it).
 
 const SERVER_TZ = 'Europe/Budapest'
-const RUN_COLS = 'id, realm, map_id, dungeon, level, time_ms, medal, affixes, party, day'
+const RUN_COLS = 'id, realm, map_id, dungeon, level, time_ms, medal, affixes, party, day, completed_at'
 
 // Today's date on the game server, "YYYY-MM-DD".
 export function serverToday(now = new Date()) {
@@ -376,7 +380,8 @@ export function formatUpdated(d) {
   return `${when} · ${ago}`
 }
 
-// Every stored run, newest first (by day, then the scrape that first saw it), one page at
+// Every stored run, newest first (by day, then the exact completion time where Tauri
+// Achievements has it, else the scrape that first saw it), one page at
 // a time for the home page's "Latest runs". Filters: `mapId` one dungeon, `minKey` key
 // level and up, `timedOnly` medal runs only, `board` the leaderboard a run came from
 // (armory string). `total` (the filtered count) only comes with the first page.
@@ -393,6 +398,7 @@ async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, 
   if (board) q = q.eq('realm', board)
   const { data, error, count } = await q
     .order('day', { ascending: false })
+    .order('completed_at', { ascending: false, nullsFirst: true })
     .order('first_seen', { ascending: false })
     .order('id', { ascending: true })
     .range(offset, offset + LATEST_PAGE_SIZE - 1)

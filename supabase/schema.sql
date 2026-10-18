@@ -135,9 +135,15 @@ create index if not exists mplus_runs_realm_day_idx on mplus_runs (realm, day de
 -- cold database timed out (HTTP 500) on the first All-time load.
 create index if not exists mplus_runs_map_level_idx on mplus_runs (map_id, level desc, time_ms asc nulls last);
 create index if not exists mplus_runs_map_level_timed_idx on mplus_runs (map_id, level desc, time_ms asc nulls last) where medal > 0;
--- The home page's "Latest runs" feed: every run newest first, paged.
-create index if not exists mplus_runs_latest_idx on mplus_runs (day desc, first_seen desc, id);
-create index if not exists mplus_runs_map_latest_idx on mplus_runs (map_id, day desc, first_seen desc, id);
+-- Exact completion time, from Tauri Achievements (the armory only gives the day). Set by
+-- the scraper when it matches the run there, about a day after it was played; null until.
+alter table mplus_runs add column if not exists completed_at timestamptz;
+-- The home page's "Latest runs" feed: newest first by day, then exact time (runs not on
+-- Tauri Achievements yet, i.e. the newest, first), then the scrape that first saw them.
+drop index if exists mplus_runs_latest_idx;
+drop index if exists mplus_runs_map_latest_idx;
+create index if not exists mplus_runs_latest2_idx on mplus_runs (day desc, completed_at desc nulls first, first_seen desc, id);
+create index if not exists mplus_runs_map_latest2_idx on mplus_runs (map_id, day desc, completed_at desc nulls first, first_seen desc, id);
 alter table mplus_runs enable row level security;
 drop policy if exists "public read mplus" on mplus_runs;
 create policy "public read mplus" on mplus_runs for select using (true);

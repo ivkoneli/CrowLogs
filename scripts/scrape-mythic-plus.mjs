@@ -247,7 +247,7 @@ async function updateRuns(rows) {
 
 // Every stored run whose specs aren't matched yet (all columns but first_seen).
 async function pendingSpecRuns(realm) {
-  const cols = 'id,realm,map_id,dungeon,level,time_ms,medal,affixes,party,members,day,specs_matched'
+  const cols = 'id,realm,map_id,dungeon,level,time_ms,medal,affixes,party,members,day,specs_matched,completed_at'
   const out = []
   for (let offset = 0; ; offset += 1000) {
     const q = new URLSearchParams({ select: cols, realm: `eq.${realm}`, specs_matched: 'eq.false', order: 'id', offset: String(offset), limit: '1000' })
@@ -283,7 +283,8 @@ const TA_REALMS = {
 // tauriachievements' data: index.json lists players ([name, realm, …]) and specs
 // ([{ class, name, role }]); <dungeon>.json has runs as
 // [level, clearMs, timestamp, score, affixIds, [[playerIndex, specIndex] × 5]].
-// Returns lookup(run) → Map(lowercased name → spec) for the matching run, or null.
+// Returns lookup(run) → { specs: Map(lowercased name → spec), ts } for the matching run, or
+// null. `ts` is the run's exact completion time (unix seconds): the armory only gives the day.
 // No realm filter: Legion realms share groups, so an Evermoon board run can hold players
 // from [HU] Tauri. Dungeon + key + exact clear time + 3 shared names is specific enough.
 async function loadSpecSource() {
@@ -293,7 +294,7 @@ async function loadSpecSource() {
     return res.json()
   }
   const index = await get('index.json')
-  const byKey = new Map() // "mapId|level|clearMs" → [Map(name → spec)]
+  const byKey = new Map() // "mapId|level|clearMs" → [{ specs: Map(name → spec), ts }]
   for (const d of index.dungeons) {
     if (!MPLUS_DUNGEONS.some((x) => x.id === d.challengeId)) continue
     const file = await get(`${d.id}.json`)
@@ -307,7 +308,7 @@ async function loadSpecSource() {
       if (!specs.size) continue
       const key = `${d.challengeId}|${r[0]}|${r[1]}`
       const list = byKey.get(key) || []
-      list.push(specs)
+      list.push({ specs, ts: r[2] || null })
       byKey.set(key, list)
     }
   }
@@ -322,10 +323,10 @@ async function loadSpecSource() {
     // names. Needs 3+ shared names: a renamed character can differ, a different group can't.
     let best = null
     let bestHits = 0
-    for (const specs of byKey.get(`${run.map_id}|${run.level}|${run.time_ms}`) || []) {
-      const hits = run.party.filter((p) => specs.has(p.name.toLowerCase())).length
+    for (const cand of byKey.get(`${run.map_id}|${run.level}|${run.time_ms}`) || []) {
+      const hits = run.party.filter((p) => cand.specs.has(p.name.toLowerCase())).length
       if (hits > bestHits) {
-        best = specs
+        best = cand
         bestHits = hits
       }
     }
@@ -342,10 +343,12 @@ function specFromRole(klass, role) {
   return fits.length === 1 ? fits[0].name : null
 }
 
-// Returns the run with party[].spec filled and specs_matched set. Matched specs win;
-// otherwise a spec the role decides; otherwise whatever was already stored.
+// Returns the run with party[].spec filled, specs_matched set and completed_at (the exact
+// completion time) when the source has the run. Matched specs win; otherwise a spec the
+// role decides; otherwise whatever was already stored.
 function withSpecs(run, lookup) {
-  const matched = lookup ? lookup(run) : null
+  const hit = lookup ? lookup(run) : null
+  const matched = hit?.specs || null
   const party = run.party.map((p) => {
     // spec_guess marks a spec the database ASSUMED from the player's last known one (see
     // refresh_mplus_scores in schema.sql); a real match replaces it and drops the flag.
@@ -355,7 +358,10 @@ function withSpecs(run, lookup) {
     delete rest.spec_guess
     return { ...rest, spec: real }
   })
-  return { ...run, party, specs_matched: !!matched }
+  // Always present (bulk writes need the same keys on every row); an unmatched run keeps
+  // whatever time it already had.
+  const completed_at = hit?.ts ? new Date(hit.ts * 1000).toISOString() : run.completed_at ?? null
+  return { ...run, party, specs_matched: !!matched, completed_at }
 }
 
 // Run `fn` over `items` with at most `n` in flight.

@@ -3079,67 +3079,6 @@ img.icon-slot.trinket {
   padding: 0.35rem 0.75rem;
   font-size: 0.85rem;
 }
-.lr-table {
-  table-layout: fixed;
-  min-width: 860px;
-}
-.lr-table th.lr-day,
-.lr-table td.lr-day {
-  width: 92px;
-  white-space: nowrap;
-}
-.lr-table th:nth-child(2) {
-  width: 210px;
-}
-.lr-table th:nth-child(3) {
-  width: 52px;
-}
-.lr-table th:nth-child(4) {
-  width: 104px;
-}
-.lr-table th:nth-child(5) {
-  width: 66px;
-}
-.lr-table td {
-  padding-top: 0.4rem;
-  padding-bottom: 0.4rem;
-}
-/* A new day starts with a slightly stronger divider. */
-.lr-table tr.lr-first:not(:first-child) td {
-  border-top: 1px solid var(--border);
-}
-.lr-dungeon {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.lr-dname {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 600;
-}
-.lr-dshort,
-.lr-party-btn,
-.lr-party-row {
-  display: none;
-}
-.lr-party-btn {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 0.78rem;
-  padding: 0.1rem 0.45rem;
-}
-.lr-party-btn .chevron {
-  display: inline-block;
-  transition: transform 0.15s;
-}
-.lr-party-btn .chevron.open {
-  transform: rotate(90deg);
-}
 .lr-more {
   display: flex;
   align-items: center;
@@ -4170,68 +4109,6 @@ a.mp-rank.link:hover {
     width: 100%;
   }
 
-  /* Home, Latest runs: dungeon · key · time · score fit; the party opens under the run. */
-  .lr-table {
-    min-width: 0;
-  }
-  .lr-table th.lr-day,
-  .lr-table td.lr-day {
-    width: 52px;
-    padding-right: 0;
-    font-size: 0.7rem;
-    white-space: normal;
-  }
-  .lr-table th:nth-child(3) {
-    width: 42px;
-  }
-  .lr-table th:nth-child(2) {
-    width: auto;
-  }
-  .lr-table th:nth-child(4) {
-    width: 92px;
-  }
-  .lr-table th:nth-child(5) {
-    width: 48px;
-  }
-  .lr-table .mp-dicon {
-    width: 20px;
-    height: 20px;
-  }
-  .lr-table td.lr-time {
-    gap: 0.25rem;
-    padding-right: 0.2rem;
-  }
-  .lr-table .lr-time .mp-medal {
-    width: 15px;
-    height: 15px;
-  }
-  .lr-dungeon {
-    gap: 0.3rem;
-  }
-  .lr-table th.lr-party,
-  .lr-table td.lr-party {
-    width: 44px;
-    padding-left: 0;
-    padding-right: 0.3rem;
-    text-align: right;
-  }
-  .lr-table th.lr-party {
-    font-size: 0;
-  }
-  .lr-dname,
-  .lr-table td.lr-party .mp-party {
-    display: none;
-  }
-  .lr-dshort,
-  .lr-party-btn {
-    display: inline;
-  }
-  .lr-party-row {
-    display: table-row;
-  }
-  .lr-party-row .mp-party {
-    flex-wrap: wrap;
-  }
   .home-best-right {
     width: 100%;
     justify-content: space-between;

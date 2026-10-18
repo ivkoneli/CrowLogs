@@ -159,7 +159,16 @@ export function RunCells({ run, selfName, realm, onSelectPlayer }) {
       <td>
         <Party party={run.party} selfName={selfName} realm={realm} onSelectPlayer={onSelectPlayer} />
       </td>
-      <td className="num muted mp-day" title={formatRunDay(run.day, { long: true })}>
+      <td
+        className="num muted mp-day"
+        title={
+          // The exact time once Tauri Achievements has the run (see completed_at), in the viewer's zone.
+          formatRunDay(run.day, { long: true }) +
+          (run.completed_at
+            ? ` · ${new Date(run.completed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+            : '')
+        }
+      >
         {formatRunDay(run.day)}
       </td>
     </>
