@@ -26,7 +26,11 @@ import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { MPLUS_DUNGEONS, MPLUS_BOARDS } from '../src/lib/mplusDungeons.js'
 
-const { TAURI_API_KEY, TAURI_API_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY, MPLUS_FULL } = process.env
+const { SUPABASE_URL, SUPABASE_SERVICE_KEY, MPLUS_FULL } = process.env
+// Pasted secrets often carry a stray newline, space or quotes; the API rejects any of them.
+const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').trim()
+const TAURI_API_KEY = clean(process.env.TAURI_API_KEY)
+const TAURI_API_SECRET = clean(process.env.TAURI_API_SECRET)
 // Boards, not realms: DEFAULT_REALM (set for the armory scraper) is deliberately ignored
 // here, or the Warriors of Darkness board would silently never be mirrored.
 const REALMS = (process.env.MPLUS_REALMS || MPLUS_BOARDS.join(','))
@@ -69,11 +73,23 @@ async function tauriApi(method, params, what) {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: encodeURIComponent(JSON.stringify({ secret: TAURI_API_SECRET, url: method, params })),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = JSON.parse(await res.text())
-      if (!json.success) throw new Error(`API error ${json.errorcode}: ${json.errorstring} (bad TAURI_API_KEY/SECRET?)`)
+      const text = await res.text()
+      let json = null
+      try {
+        json = JSON.parse(text)
+      } catch {
+        /* not JSON: reported below */
+      }
+      // errorcode 2 = "invalid authentication data": the key/secret are wrong, retrying won't help.
+      if (json?.errorcode === 2) {
+        const err = new Error(`${what}: ${json.errorstring} (check TAURI_API_KEY / TAURI_API_SECRET)`)
+        err.fatal = true
+        throw err
+      }
+      if (!res.ok || !json?.success) throw new Error(`HTTP ${res.status} — ${json?.errorstring || text.slice(0, 200)}`)
       return json.response
     } catch (e) {
+      if (e.fatal) throw e
       if (attempt >= 3) throw new Error(`${what}: ${e.message}`)
       await new Promise((r) => setTimeout(r, 2000 * attempt))
     }
@@ -334,8 +350,10 @@ async function main() {
   }
 
   // Guilds (every member's current one, from the boards) → mplus_guilds. Only after a clean
-  // pass: sync_mplus_guilds drops everyone not listed, so a missing board would wipe guilds.
-  if (!failed && guilds.size) {
+  // pass over EVERY board: sync_mplus_guilds drops everyone not listed, so a failed or
+  // skipped board (MPLUS_REALMS) would wipe that board's guilds.
+  const allBoards = MPLUS_BOARDS.every((b) => REALMS.includes(b))
+  if (!failed && allBoards && guilds.size) {
     try {
       const n = await rpc('sync_mplus_guilds', { p: [...guilds.values()] })
       console.log(`guilds: ${n} players in a guild`)
