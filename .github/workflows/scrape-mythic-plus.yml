@@ -1,9 +1,10 @@
 name: Scrape Mythic+ leaderboards
 
-# Mirrors Tauri's armory Challenge Mode leaderboards into the Supabase `mplus_runs`
-# table, so a player's M+ best runs + history are one indexed lookup on the profile.
-# Same TAURI_COOKIE / SUPABASE_SERVICE_KEY secrets as the armory scrape. Fails on purpose
-# (GitHub emails the repo owner) if the cookie stops working or Tauri changes the page.
+# Mirrors Tauri's Challenge Mode leaderboards (official API: exact completion times, specs,
+# guilds) into the Supabase `mplus_runs` table, so a player's M+ best runs + history are one
+# indexed lookup on the profile. Needs TAURI_API_KEY / TAURI_API_SECRET (tauriwow.com/account
+# → API) and SUPABASE_SERVICE_KEY. Fails on purpose (GitHub emails the repo owner) if the
+# API key stops working or the API changes.
 #
 # Started by Supabase, not by a `schedule:` here: GitHub's cron ran "hourly" every 3-5 h.
 # pg_cron calls dispatch_mplus_scrape() (see supabase/schema.sql) hourly at :05, and with
@@ -37,7 +38,8 @@ jobs:
       - run: npm ci
       - run: node scripts/scrape-mythic-plus.mjs
         env:
-          TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
+          TAURI_API_KEY: ${{ secrets.TAURI_API_KEY }}
+          TAURI_API_SECRET: ${{ secrets.TAURI_API_SECRET }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           MPLUS_FULL: ${{ inputs.full && '1' || '' }}

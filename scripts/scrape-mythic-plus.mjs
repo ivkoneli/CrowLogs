@@ -1,37 +1,32 @@
 // CrowLogs Mythic+ scraper — runs in CI (GitHub Action, hourly) or locally, NEVER in the browser.
 //
-// Tauri's armory "Challenge Mode" leaderboards hold EVERY timed/depleted key, but only as
-// one page per dungeon: the pager on the site is client-side, so a single request returns
-// the whole board (~5k rows, ~20 MB of HTML). Finding one player there means downloading
-// every board, so instead we mirror all of them into the Supabase `mplus_runs` table and
-// the profile page looks a player up by the indexed `members` array.
+// Tauri's official API (chapi.tauri.hu, `challenge-leaderboard`) returns EVERY timed/depleted
+// key on a dungeon's board in one call (~7k runs, ~16 MB of JSON), each with its exact
+// completion time and every member's spec, realm and guild. Finding one player there means
+// downloading every board, so instead we mirror all of them into the Supabase `mplus_runs`
+// table and the profile page looks a player up by the indexed `members` array.
 //
 // Incremental: the first run (empty table, or MPLUS_FULL=1) inserts everything. After that
 // only runs completed since the newest stored day (minus one day of slack) are sent, and
 // existing ids are left untouched (ignore-duplicates), so `first_seen` keeps the time the
-// run was first scraped — that orders same-day runs, since Tauri only reports the day.
+// run was first scraped.
 //
 // Required env (GitHub repo secrets, or a local .env):
-//   TAURI_COOKIE                       — "username=…; pasw=…" (same as scrape-armory.mjs)
+//   TAURI_API_KEY, TAURI_API_SECRET    — from tauriwow.com/account → API
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY — service role key (server-side only!)
 // Optional:
 //   MPLUS_REALMS — comma-separated leaderboards to mirror (default: every board in
 //                  MPLUS_BOARDS — Evermoon+Tauri share one, Warriors of Darkness has its own)
 //   MPLUS_FULL=1 — re-send every run, not just recent days (backfill / repair). Existing
-//                  runs are UPDATED too (party realms/specs re-read), not just skipped.
+//                  runs are UPDATED too, and runs the board no longer lists are pruned.
 //
 // Run: node scripts/scrape-mythic-plus.mjs
 
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { MPLUS_DUNGEONS, MPLUS_BOARDS } from '../src/lib/mplusDungeons.js'
-import { specsOf } from '../src/lib/classes.js'
 
-// Tauri's leaderboard has no spec, but tauriachievements.github.io publishes every run
-// with each member's spec (refreshed about once a day). Specs are matched from there.
-const TA_DATA = 'https://tauriachievements.github.io/mythic-plus-data'
-
-const { TAURI_COOKIE, SUPABASE_URL, SUPABASE_SERVICE_KEY, MPLUS_FULL } = process.env
+const { TAURI_API_KEY, TAURI_API_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY, MPLUS_FULL } = process.env
 // Boards, not realms: DEFAULT_REALM (set for the armory scraper) is deliberately ignored
 // here, or the Warriors of Darkness board would silently never be mirrored.
 const REALMS = (process.env.MPLUS_REALMS || MPLUS_BOARDS.join(','))
@@ -39,23 +34,19 @@ const REALMS = (process.env.MPLUS_REALMS || MPLUS_BOARDS.join(','))
   .map((s) => s.trim())
   .filter(Boolean)
 
-const ARMORY_AJAX = 'https://tauriwow.com/sys/mod/armory.php'
-const CONCURRENCY = 3 // boards fetched at once — gentle on Tauri, still ~10 s total
+const TAURI_API = 'http://chapi.tauri.hu/apiIndex.php'
+const ICON_URL = 'https://legion-static.tauri.hu/images/icons/large'
+const CONCURRENCY = 3 // boards fetched at once — gentle on Tauri
 const BATCH = 500 // rows per Supabase insert
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_KEY')
   process.exit(1)
 }
-if (!TAURI_COOKIE) {
-  console.error('Missing TAURI_COOKIE (expected "username=…; pasw=…").')
+if (!TAURI_API_KEY || !TAURI_API_SECRET) {
+  console.error('Missing TAURI_API_KEY / TAURI_API_SECRET (tauriwow.com/account → API).')
   process.exit(1)
 }
-// Same newline-tolerant cookie cleanup as scrape-armory.mjs.
-const COOKIE = TAURI_COOKIE.split(/[\r\n]+/)
-  .map((line) => line.trim().replace(/;+$/, ''))
-  .filter(Boolean)
-  .join('; ')
 
 const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1`
 const dbHeaders = { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` }
@@ -64,51 +55,41 @@ const CLASS_BY_ID = {
   1: 'Warrior', 2: 'Paladin', 3: 'Hunter', 4: 'Rogue', 5: 'Priest', 6: 'Death Knight',
   7: 'Shaman', 8: 'Mage', 9: 'Warlock', 10: 'Monk', 11: 'Druid', 12: 'Demon Hunter',
 }
+const ROLE_BY_ID = { 0: 'tank', 1: 'healer', 2: 'dps' }
+const ROLE_ORDER = { tank: 0, healer: 1, dps: 2 }
 
 // ── FETCH ───────────────────────────────────────────────────────────────────
-async function fetchBoard(realm, mapId) {
-  const body = new URLSearchParams({
-    ajax: 'true',
-    option: 'challenge-leaderboard/ajax',
-    'dataset[r]': realm,
-    'dataset[id]': String(mapId),
-  })
-  const res = await fetch(ARMORY_AJAX, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      'X-Requested-With': 'XMLHttpRequest',
-      Cookie: COOKIE,
-    },
-    body,
-  })
-  if (!res.ok) throw new Error(`board ${mapId}: HTTP ${res.status}`)
-  const html = (await res.json()).html || ''
-  if (html.includes('armory-errorpage') || !html.includes('challenge-mode')) {
-    throw new Error(`board ${mapId}: armory error page (bad TAURI_COOKIE, or realm "${realm}" unknown)`)
+// The API takes a URL-encoded JSON body { secret, url: <method>, params } and answers
+// { success, errorcode, errorstring, response }.
+async function tauriApi(method, params, what) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(`${TAURI_API}?apikey=${encodeURIComponent(TAURI_API_KEY)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: encodeURIComponent(JSON.stringify({ secret: TAURI_API_SECRET, url: method, params })),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = JSON.parse(await res.text())
+      if (!json.success) throw new Error(`API error ${json.errorcode}: ${json.errorstring} (bad TAURI_API_KEY/SECRET?)`)
+      return json.response
+    } catch (e) {
+      if (attempt >= 3) throw new Error(`${what}: ${e.message}`)
+      await new Promise((r) => setTimeout(r, 2000 * attempt))
+    }
   }
-  return html
 }
+
+const fetchBoard = async (realm, mapId) =>
+  (await tauriApi('challenge-leaderboard', { r: realm, id: mapId }, `board ${mapId}`)).challengesdata || []
 
 // ── PARSE ───────────────────────────────────────────────────────────────────
-function decodeName(s) {
-  let out = s.replace(/&amp;/g, '&').replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
-  try {
-    out = decodeURIComponent(out)
-  } catch {
-    /* already plain text */
-  }
-  return out.trim()
-}
-
-// toolTip is "mm:ss:ms", or "hh:mm:ss:ms" past an hour.
-function parseTimeMs(tip) {
-  if (!tip) return null
-  const p = tip.split(':').map(Number)
-  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return null
-  const ms = p.pop()
-  const [s = 0, m = 0, h = 0] = p.reverse()
-  return ((h * 60 + m) * 60 + s) * 1000 + ms
+// The armory dates a run by the server's day (Budapest), and run ids were built from that
+// day before we used the API — keep it so existing rows keep their ids.
+const DAY_FMT = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Budapest', year: 'numeric', month: '2-digit', day: '2-digit' })
+function serverDay(ts) {
+  const p = Object.fromEntries(DAY_FMT.formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value]))
+  return `${p.year}-${p.month}-${p.day}`
 }
 
 function runId(r) {
@@ -117,59 +98,43 @@ function runId(r) {
   return createHash('sha1').update(raw).digest('hex')
 }
 
-// Party cell: Tauri marks the tank with fa-shield and the healer with fa-plus right
-// before their name span; the span's color-cN is the class id. The link is
-// character-sheet.xml?r=<realm>&n=<name>: group 3 = the tag up to n= (holds r=), 4 = name.
-const MEMBER_RE = /(fa-shield|fa-plus)|color-c(\d+)"[^>]*>\s*<a([^>]*)[?&;]n=([^"&]+)"/g
-const MEMBER_REALM_RE = /href="[^"]*[?&;]r=([^"&]+)/
-const AFFIX_RE = /<img class="cm-affix-icon"[^>]*src="([^"]+)"[\s\S]*?data-affix-name="([^"]+)"/g
-
-function parseBoard(html, realm, dungeon) {
-  const runs = []
-  for (const chunk of html.split('<tr class="cm-row').slice(1)) {
-    const row = chunk.slice(0, chunk.indexOf('</tr>'))
-    const tds = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1])
-    if (tds.length < 6) continue
-    const level = parseInt(tds[1], 10)
-    const dateM = tds[tds.length - 1].trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-    if (!Number.isFinite(level) || !dateM) continue
-
-    const party = []
-    let role = 'dps'
-    for (const m of tds[tds.length - 2].matchAll(MEMBER_RE)) {
-      if (m[1]) {
-        role = m[1] === 'fa-shield' ? 'tank' : 'healer'
-        continue
-      }
+// API run → mplus_runs row. Members without playerinfo are deleted characters; the armory
+// left them out too (and so did the ids). Returns null for a run with nobody left.
+function toRun(api, realm, dungeon) {
+  const party = (api.players || [])
+    .filter((p) => p.playerinfo?.charname)
+    .map((p) => ({
+      name: p.playerinfo.charname.trim(),
       // A board can mix realms (Evermoon + Tauri share one), so each member keeps their own.
-      const memberRealm = (m[3].match(MEMBER_REALM_RE) || [])[1]
-      party.push({
-        name: decodeName(m[4]),
-        realm: memberRealm ? decodeName(memberRealm) : realm,
-        class: CLASS_BY_ID[+m[2]] || null,
-        role,
-      })
-      role = 'dps'
-    }
-    if (!party.length) continue
+      realm: p.playerinfo.realm || realm,
+      class: CLASS_BY_ID[p.playerinfo.class] || null,
+      role: ROLE_BY_ID[p.specializationrole] || 'dps',
+      spec: p.specializationname || null,
+      guild: p.playerinfo.guildname?.trim() || null, // for sync_mplus_guilds; not stored
+    }))
+    .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
+  if (!party.length || !api.completedtime || !Number.isFinite(api.level)) return null
 
-    const run = {
-      realm,
-      map_id: dungeon.id,
-      dungeon: dungeon.name,
-      level,
-      time_ms: parseTimeMs((row.match(/toolTip="([\d:]+)"/) || [])[1]),
-      medal: +((row.match(/cm-medal-(\d)/) || [])[1] || 0),
-      affixes: [...row.matchAll(AFFIX_RE)].map((m) => ({ name: m[2], icon: m[1] })),
-      party,
-      members: party.map((p) => p.name.toLowerCase()),
-      day: `${dateM[3]}-${dateM[1].padStart(2, '0')}-${dateM[2].padStart(2, '0')}`,
-    }
-    run.id = runId(run)
-    runs.push(run)
+  const run = {
+    realm,
+    map_id: dungeon.id,
+    dungeon: dungeon.name,
+    level: api.level,
+    time_ms: api.completiontime || null,
+    medal: api.medal || 0,
+    affixes: (api.affixes || []).filter((a) => a.id && a.icon).map((a) => ({ name: a.name, icon: `${ICON_URL}/${a.icon}.png` })),
+    party,
+    members: party.map((p) => p.name.toLowerCase()),
+    day: serverDay(api.completedtime),
+    completed_at: new Date(api.completedtime * 1000).toISOString(),
+    specs_matched: party.every((p) => p.spec),
   }
-  return runs
+  run.id = runId(run)
+  return run
 }
+
+// The row as stored: everything but the members' guilds (those go to mplus_guilds).
+const stored = (run) => ({ ...run, party: run.party.map(({ guild: _guild, ...p }) => p) })
 
 // ── DB ──────────────────────────────────────────────────────────────────────
 async function latestDay(realm) {
@@ -228,33 +193,45 @@ async function insertRuns(rows) {
   })
 }
 
-// Full-row upsert that UPDATES existing runs (used to write specs onto them). first_seen
-// is never sent, so an update keeps it and the player-index insert trigger doesn't fire.
+// Full-row upsert that UPDATES existing runs. first_seen is never sent, so an update keeps
+// it and the player-index insert trigger doesn't fire.
 async function updateRuns(rows) {
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const res = await fetch(`${REST}/mplus_runs?on_conflict=id`, {
-      method: 'POST',
-      headers: {
-        ...dbHeaders,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates,return=minimal',
-      },
-      body: JSON.stringify(rows.slice(i, i + BATCH)),
-    })
-    if (!res.ok) throw new Error(`update mplus_runs: HTTP ${res.status} — ${await res.text()}`)
-  }
+  return serialWrite(async () => {
+    for (let i = 0; i < rows.length; i += BATCH) {
+      await postWithRetry(
+        `${REST}/mplus_runs?on_conflict=id`,
+        {
+          method: 'POST',
+          headers: {
+            ...dbHeaders,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal',
+          },
+          body: JSON.stringify(rows.slice(i, i + BATCH)),
+        },
+        'update mplus_runs',
+      )
+    }
+  })
 }
 
-// Every stored run whose specs aren't matched yet (all columns but first_seen).
-async function pendingSpecRuns(realm) {
-  const cols = 'id,realm,map_id,dungeon,level,time_ms,medal,affixes,party,members,day,specs_matched,completed_at'
-  const out = []
+// Ids of stored runs still missing their specs or exact time (stored before the API was
+// used, or a member's spec was unknown then).
+async function pendingIds(realm) {
+  const out = new Set()
   for (let offset = 0; ; offset += 1000) {
-    const q = new URLSearchParams({ select: cols, realm: `eq.${realm}`, specs_matched: 'eq.false', order: 'id', offset: String(offset), limit: '1000' })
+    const q = new URLSearchParams({
+      select: 'id',
+      realm: `eq.${realm}`,
+      or: '(specs_matched.eq.false,completed_at.is.null)',
+      order: 'id',
+      offset: String(offset),
+      limit: '1000',
+    })
     const res = await fetch(`${REST}/mplus_runs?${q}`, { headers: dbHeaders })
-    if (!res.ok) throw new Error(`pending specs: HTTP ${res.status} — ${await res.text()}`)
+    if (!res.ok) throw new Error(`pending: HTTP ${res.status} — ${await res.text()}`)
     const page = await res.json()
-    out.push(...page)
+    page.forEach((r) => out.add(r.id))
     if (page.length < 1000) break
   }
   return out
@@ -272,98 +249,6 @@ async function rpc(fn, args = {}) {
   return text ? JSON.parse(text) : null
 }
 
-// Tauri Achievements' short realm names → the armory's realm strings.
-const TA_REALMS = {
-  Evermoon: '[EN] Evermoon',
-  Tauri: '[HU] Tauri WoW Server',
-  WoD: '[HU] Warriors of Darkness',
-}
-
-// ── SPECS ───────────────────────────────────────────────────────────────────
-// tauriachievements' data: index.json lists players ([name, realm, …]) and specs
-// ([{ class, name, role }]); <dungeon>.json has runs as
-// [level, clearMs, timestamp, score, affixIds, [[playerIndex, specIndex] × 5]].
-// Returns lookup(run) → { specs: Map(lowercased name → spec), ts } for the matching run, or
-// null. `ts` is the run's exact completion time (unix seconds): the armory only gives the day.
-// No realm filter: Legion realms share groups, so an Evermoon board run can hold players
-// from [HU] Tauri. Dungeon + key + exact clear time + 3 shared names is specific enough.
-async function loadSpecSource() {
-  const get = async (path) => {
-    const res = await fetch(`${TA_DATA}/${path}`)
-    if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
-    return res.json()
-  }
-  const index = await get('index.json')
-  const byKey = new Map() // "mapId|level|clearMs" → [{ specs: Map(name → spec), ts }]
-  for (const d of index.dungeons) {
-    if (!MPLUS_DUNGEONS.some((x) => x.id === d.challengeId)) continue
-    const file = await get(`${d.id}.json`)
-    for (const r of file.runs) {
-      const specs = new Map()
-      for (const [pi, si] of r[5]) {
-        const p = index.players[pi]
-        const s = index.specs[si]
-        if (p && s) specs.set(p[0].toLowerCase(), s.name)
-      }
-      if (!specs.size) continue
-      const key = `${d.challengeId}|${r[0]}|${r[1]}`
-      const list = byKey.get(key) || []
-      list.push({ specs, ts: r[2] || null })
-      byKey.set(key, list)
-    }
-  }
-  console.log(`  spec source: ${byKey.size} runs (tauriachievements, generated ${index.generatedAt})`)
-  // The same index lists every player's guild ([name, realm, guild, …]); the armory boards
-  // don't. Carried on the lookup so main() can mirror them (see sync_mplus_guilds).
-  const guilds = index.players
-    .filter((p) => p[2] && TA_REALMS[p[1]])
-    .map((p) => ({ realm: TA_REALMS[p[1]], name: p[0], guild: p[2] }))
-  const lookup = (run) => {
-    // Same dungeon, key and exact clear time; then the candidate sharing the most party
-    // names. Needs 3+ shared names: a renamed character can differ, a different group can't.
-    let best = null
-    let bestHits = 0
-    for (const cand of byKey.get(`${run.map_id}|${run.level}|${run.time_ms}`) || []) {
-      const hits = run.party.filter((p) => cand.specs.has(p.name.toLowerCase())).length
-      if (hits > bestHits) {
-        best = cand
-        bestHits = hits
-      }
-    }
-    return bestHits >= 3 ? best : null
-  }
-  lookup.guilds = guilds
-  return lookup
-}
-
-// The one spec a class can play in a role, or null when the role leaves a choice
-// (a Warrior tank is Protection; a Warrior dps could be Arms or Fury).
-function specFromRole(klass, role) {
-  const fits = specsOf(klass).filter((s) => s.role === role)
-  return fits.length === 1 ? fits[0].name : null
-}
-
-// Returns the run with party[].spec filled, specs_matched set and completed_at (the exact
-// completion time) when the source has the run. Matched specs win; otherwise a spec the
-// role decides; otherwise whatever was already stored.
-function withSpecs(run, lookup) {
-  const hit = lookup ? lookup(run) : null
-  const matched = hit?.specs || null
-  const party = run.party.map((p) => {
-    // spec_guess marks a spec the database ASSUMED from the player's last known one (see
-    // refresh_mplus_scores in schema.sql); a real match replaces it and drops the flag.
-    const real = matched?.get(p.name.toLowerCase()) || specFromRole(p.class, p.role)
-    if (!real) return { ...p, spec: p.spec || null }
-    const rest = { ...p }
-    delete rest.spec_guess
-    return { ...rest, spec: real }
-  })
-  // Always present (bulk writes need the same keys on every row); an unmatched run keeps
-  // whatever time it already had.
-  const completed_at = hit?.ts ? new Date(hit.ts * 1000).toISOString() : run.completed_at ?? null
-  return { ...run, party, specs_matched: !!matched, completed_at }
-}
-
 // Run `fn` over `items` with at most `n` in flight.
 async function pool(items, n, fn) {
   let next = 0
@@ -377,7 +262,7 @@ async function pool(items, n, fn) {
 // ── MAIN ────────────────────────────────────────────────────────────────────
 async function main() {
   let failed = false
-  let guildsSynced = false
+  const guilds = new Map() // "realm|name" → { realm, name, guild }, from every board
   for (const realm of REALMS) {
     const latest = MPLUS_FULL === '1' ? null : await latestDay(realm)
     // One day of slack: a run finished just before midnight may land after the last scrape.
@@ -386,88 +271,81 @@ async function main() {
       : null
     console.log(`\n${realm}: ${cutoff ? `incremental, runs since ${cutoff}` : 'full backfill'}`)
 
-    // Best effort: without the spec source, runs still land (with role-decided specs only)
-    // and stay pending, so a later scrape fills them in.
-    let lookup = null
+    // Stored runs still missing specs / exact time: filled from the boards in the same pass.
+    let pending = new Set()
     try {
-      lookup = await loadSpecSource()
+      pending = await pendingIds(realm)
     } catch (e) {
-      console.warn(`  spec source unavailable (${e.message}) — specs will be filled on a later run`)
-    }
-    // Guilds come with the spec source and cover every realm: mirror them once per run.
-    // Best effort — on failure the previous guilds simply stay.
-    if (lookup?.guilds && !guildsSynced) {
-      guildsSynced = true
-      try {
-        const n = await rpc('sync_mplus_guilds', { p: lookup.guilds })
-        console.log(`  guilds: ${n} players in a guild`)
-      } catch (e) {
-        console.warn(`  guilds: ${e.message}`)
-      }
+      failed = true
+      console.error(`  pending: ${e.message}`)
     }
 
     let seen = 0
     let sent = 0
     let added = 0
     let stale = 0
+    let filled = 0
     await pool(MPLUS_DUNGEONS, CONCURRENCY, async (dungeon) => {
       try {
-        const runs = parseBoard(await fetchBoard(realm, dungeon.id), realm, dungeon)
         // The same id twice in one insert makes Postgres reject the whole batch.
-        const fresh = [
-          ...new Map(runs.filter((r) => !cutoff || r.day >= cutoff).map((r) => [r.id, withSpecs(r, lookup)])).values(),
-        ]
+        const board = [...new Map((await fetchBoard(realm, dungeon.id)).map((r) => toRun(r, realm, dungeon)).filter(Boolean).map((r) => [r.id, r])).values()]
+        for (const r of board) {
+          for (const p of r.party) if (p.guild) guilds.set(`${p.realm}|${p.name.toLowerCase()}`, { realm: p.realm, name: p.name, guild: p.guild })
+        }
+        const fresh = board.filter((r) => !cutoff || r.day >= cutoff).map(stored)
         const n = fresh.length ? await insertRuns(fresh) : 0
-        // A full run also rewrites the runs that already existed, so data added to the
-        // parser later (each member's realm) reaches old rows. Specs are re-matched from
-        // the source in the same pass; `first_seen` is never sent, so it's kept.
-        if (MPLUS_FULL === '1' && fresh.length) {
-          await serialWrite(() => updateRuns(fresh))
+        if (MPLUS_FULL === '1') {
+          // A full run rewrites the runs that already existed too (specs, member realms,
+          // exact times); `first_seen` is never sent, so it's kept…
+          if (fresh.length) await updateRuns(fresh)
           // …and drops stored runs the board no longer lists (renamed/deleted characters
           // give a run a new id; see prune_mplus_runs in schema.sql). `fresh` is the whole
-          // board here: a full run has no day cutoff.
-          const keep = fresh.map((r) => r.id)
-          // Awaited into a local first: dungeons run concurrently, and `stale += await …`
-          // would read the total before the wait and drop the other dungeons' counts.
-          const pruned = await serialWrite(() => rpc('prune_mplus_runs', { p_realm: realm, p_map: dungeon.id, p_keep: keep }))
-          stale += pruned
+          // board here: a full run has no day cutoff. Never prune against an empty board.
+          if (fresh.length) {
+            // Awaited into a local first: dungeons run concurrently, and `stale += await …`
+            // would read the total before the wait and drop the other dungeons' counts.
+            const pruned = await serialWrite(() => rpc('prune_mplus_runs', { p_realm: realm, p_map: dungeon.id, p_keep: fresh.map((r) => r.id) }))
+            stale += pruned
+          }
+        } else {
+          // Stored runs the board now has full data for (the insert above skips existing ids).
+          const fill = board.filter((r) => pending.has(r.id)).map(stored)
+          if (fill.length) await updateRuns(fill)
+          filled += fill.length
         }
-        seen += runs.length
+        seen += board.length
         sent += fresh.length
         added += n
-        console.log(`  ${dungeon.name.padEnd(22)} ${String(runs.length).padStart(6)} on board, ${String(n).padStart(5)} new`)
+        console.log(`  ${dungeon.name.padEnd(22)} ${String(board.length).padStart(6)} on board, ${String(n).padStart(5)} new`)
       } catch (e) {
         failed = true
         console.error(`  ${dungeon.name}: ${e.message}`)
       }
     })
-    console.log(`  total: ${seen} on boards, ${sent} checked, ${added} new${MPLUS_FULL === '1' ? `, ${stale} stale removed` : ''}`)
-
-    // Specs for runs stored before they could be matched (the source updates daily).
-    try {
-      const pending = await pendingSpecRuns(realm)
-      const changed = []
-      for (const r of pending) {
-        const next = withSpecs(r, lookup)
-        const specsChanged = next.party.some((p, i) => p.spec !== (r.party[i]?.spec ?? null))
-        if (next.specs_matched || specsChanged) changed.push(next)
-      }
-      if (changed.length) await updateRuns(changed)
-      const nowMatched = changed.filter((r) => r.specs_matched).length
-      console.log(`  specs: ${pending.length} pending, ${nowMatched} matched now, ${pending.length - nowMatched} still pending`)
-    } catch (e) {
-      failed = true
-      console.error(`  specs: ${e.message}`)
-    }
-    // Every board parsing to nothing means Tauri changed the page, not that nobody played.
+    console.log(
+      `  total: ${seen} on boards, ${sent} checked, ${added} new` +
+        (MPLUS_FULL === '1' ? `, ${stale} stale removed` : `, ${filled} older runs filled in (specs/exact time)`),
+    )
+    // Every board parsing to nothing means the API changed, not that nobody played.
     if (seen === 0) {
       failed = true
-      console.error('  no runs parsed from any board — has the leaderboard HTML changed?')
+      console.error('  no runs from any board — has the API response changed?')
     }
   }
+
+  // Guilds (every member's current one, from the boards) → mplus_guilds. Only after a clean
+  // pass: sync_mplus_guilds drops everyone not listed, so a missing board would wipe guilds.
+  if (!failed && guilds.size) {
+    try {
+      const n = await rpc('sync_mplus_guilds', { p: [...guilds.values()] })
+      console.log(`guilds: ${n} players in a guild`)
+    } catch (e) {
+      console.warn(`guilds: ${e.message}`)
+    }
+  }
+
   // Once every board is in: after a full run the player search index is rebuilt (pruned
-  // and re-keyed runs change who exists), then the score table the profile rankings read
-  // (it also assumes a spec for brand-new runs whose real one isn't published yet).
+  // and re-keyed runs change who exists), then the score table the profile rankings read.
   // A failure leaves the previous index/scores in place.
   for (const fn of MPLUS_FULL === '1' ? ['rebuild_mplus_players', 'refresh_mplus_scores'] : ['refresh_mplus_scores']) {
     try {
