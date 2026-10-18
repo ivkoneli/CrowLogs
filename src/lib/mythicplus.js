@@ -367,6 +367,39 @@ export async function getLeaderboard({ klass = null, spec = null, realm = null, 
   return (data || []).map((r) => ({ ...r, score: Number(r.score) }))
 }
 
+// "Oct 17, 14:23 · 2 h ago" in the viewer's own time zone.
+export function formatUpdated(d) {
+  const when = d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+  const min = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000))
+  const ago =
+    min < 1 ? 'just now' : min < 60 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`
+  return `${when} · ${ago}`
+}
+
+// Every stored run, newest first (by day, then the scrape that first saw it), one page at
+// a time for the home page's "Latest runs". Filters: `mapId` one dungeon, `minKey` key
+// level and up, `timedOnly` medal runs only, `board` the leaderboard a run came from
+// (armory string). `total` (the filtered count) only comes with the first page.
+export const LATEST_PAGE_SIZE = 25
+export function getLatestRuns(opts = {}) {
+  return withRetry(() => loadLatestRuns(opts))
+}
+async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, board = null, offset = 0 } = {}) {
+  if (!supabase) return { runs: [], total: 0 }
+  let q = supabase.from('mplus_runs').select(`${RUN_COLS}, first_seen`, offset === 0 ? { count: 'exact' } : undefined)
+  if (mapId) q = q.eq('map_id', mapId)
+  if (minKey) q = q.gte('level', minKey)
+  if (timedOnly) q = q.gt('medal', 0)
+  if (board) q = q.eq('realm', board)
+  const { data, error, count } = await q
+    .order('day', { ascending: false })
+    .order('first_seen', { ascending: false })
+    .order('id', { ascending: true })
+    .range(offset, offset + LATEST_PAGE_SIZE - 1)
+  if (error) throw error
+  return { runs: data || [], total: count ?? null }
+}
+
 // When the rankings were last rebuilt (the end of the last scrape), as a Date, or null.
 export async function getLastUpdated() {
   if (!supabase) return null

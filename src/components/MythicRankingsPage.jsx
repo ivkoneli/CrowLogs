@@ -13,6 +13,7 @@ import {
   getLeaderboard,
   getPopulation,
   getLastUpdated,
+  formatUpdated,
   getGuilds,
   dungeonIconUrl,
   formatScore,
@@ -269,13 +270,6 @@ function BestCell({ dungeon, run }) {
   )
 }
 
-// "Oct 17, 14:23 · 2 h ago" in the viewer's own time zone.
-function formatUpdated(d) {
-  const when = d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
-  const min = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000))
-  const ago = min < 1 ? 'just now' : min < 60 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`
-  return `${when} · ${ago}`
-}
 
 // Key levels the rankings can be narrowed to: players who TIMED a key this high or higher.
 const KEY_LEVELS = [10, 15, 20]

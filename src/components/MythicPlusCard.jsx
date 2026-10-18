@@ -128,7 +128,7 @@ function useFitOneLine(ref) {
 }
 
 // Tauri's order: tank, healer, then the dps, on one line (see useFitOneLine).
-function Party({ party, ...memberProps }) {
+export function Party({ party, ...memberProps }) {
   const members = [...party].sort((a, b) => (ROLE_ORDER[a.role] ?? 2) - (ROLE_ORDER[b.role] ?? 2))
   const ref = useRef(null)
   useFitOneLine(ref)

@@ -135,6 +135,9 @@ create index if not exists mplus_runs_realm_day_idx on mplus_runs (realm, day de
 -- cold database timed out (HTTP 500) on the first All-time load.
 create index if not exists mplus_runs_map_level_idx on mplus_runs (map_id, level desc, time_ms asc nulls last);
 create index if not exists mplus_runs_map_level_timed_idx on mplus_runs (map_id, level desc, time_ms asc nulls last) where medal > 0;
+-- The home page's "Latest runs" feed: every run newest first, paged.
+create index if not exists mplus_runs_latest_idx on mplus_runs (day desc, first_seen desc, id);
+create index if not exists mplus_runs_map_latest_idx on mplus_runs (map_id, day desc, first_seen desc, id);
 alter table mplus_runs enable row level security;
 drop policy if exists "public read mplus" on mplus_runs;
 create policy "public read mplus" on mplus_runs for select using (true);

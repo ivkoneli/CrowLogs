@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react'
 import { MPLUS_DUNGEONS, DEFAULT_MPLUS_REALM, getTopRuns } from '../lib/mythicplus.js'
 import { Cols, Head, DungeonCell, RunCells, EmptyRunCells } from './MythicPlusCard.jsx'
 import { reportFailure } from '../lib/notify.js'
+import LatestRuns from './LatestRuns.jsx'
+
+// Which run counts as a dungeon's best: the highest score, or the highest key.
+const BEST_BY = [
+  { id: 'score', label: 'Score', hint: 'The highest-scoring run in each dungeon. A timed key beats a depleted key one level higher.' },
+  { id: 'key', label: 'Key', hint: 'The highest key finished in each dungeon, timed or not. Ties go to the higher score.' },
+]
 
 const SCOPES = [
   { id: 'week', label: 'This week' },
@@ -16,8 +23,9 @@ function shortDay(day) {
   return `${WEEKDAYS[d.getUTCDay()]}, ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`
 }
 
-// One "best run per dungeon" table: the same layout as a profile's Mythic+ best runs.
-function BestTable({ title, hint, best, scopeLabel, onSelectPlayer }) {
+// The "best run per dungeon" table: the same layout as a profile's Mythic+ best runs, with
+// the same Best by Score | Key switch.
+function BestTable({ title, hint, best, scopeLabel, bestBy, onBestBy, onSelectPlayer }) {
   const done = best.filter((b) => b.run).length
   const topLevel = Math.max(1, ...best.map((b) => b.run?.level || 0))
   return (
@@ -27,9 +35,19 @@ function BestTable({ title, hint, best, scopeLabel, onSelectPlayer }) {
           {title}
           <span className="home-scope-pill">{scopeLabel}</span>
         </h3>
-        <span className="muted">
-          {done} of {MPLUS_DUNGEONS.length} dungeons
-        </span>
+        <div className="home-best-right">
+          <div className="mp-sort-toggle" role="group" aria-label="Pick each dungeon's best run by">
+            <span className="mp-sort-toggle-label">Best by</span>
+            {BEST_BY.map((o) => (
+              <button key={o.id} className={`seg ${bestBy === o.id ? 'on' : ''}`} onClick={() => onBestBy(o.id)}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <span className="muted">
+            {done} of {MPLUS_DUNGEONS.length} dungeons
+          </span>
+        </div>
       </div>
       <p className="home-card-hint muted">{hint}</p>
       <div className="table-scroll">
@@ -59,11 +77,13 @@ function BestTable({ title, hint, best, scopeLabel, onSelectPlayer }) {
   )
 }
 
-// Landing page: the realm's best Mythic+ run in every dungeon, by highest key and by
-// highest score, for the current M+ week (Wednesday → Tuesday) or all time.
+// Landing page: the realm's best Mythic+ run in every dungeon (by highest score or highest
+// key) for the current M+ week (Wednesday → Tuesday) or all time, then every run as a
+// newest-first feed (LatestRuns).
 // Importing a combat log lives on its own page (#/import).
 export default function HomePage({ onSelectPlayer, onImport }) {
   const [scope, setScope] = useState('week')
+  const [bestBy, setBestBy] = useState('score')
   const [state, setState] = useState({ loading: true, data: null, error: null })
   const [attempt, setAttempt] = useState(0) // bumped by the Retry button
 
@@ -85,7 +105,6 @@ export default function HomePage({ onSelectPlayer, onImport }) {
   const { loading, data, error } = state
   const week = data?.week
   const scopeLabel = scope === 'week' ? 'This week' : 'All time'
-  const when = scope === 'week' ? 'this week' : 'all time'
 
   return (
     <div className="home">
@@ -143,21 +162,18 @@ export default function HomePage({ onSelectPlayer, onImport }) {
       ) : (
         <div className={`home-cards ${loading ? 'is-loading' : ''}`}>
           <BestTable
-            title="Highest keys"
-            hint={`The highest key finished in each dungeon (${when}), timed or not. Ties go to the higher score.`}
-            best={data.keys}
+            title="Best runs"
+            hint={`${BEST_BY.find((o) => o.id === bestBy).hint.replace('each dungeon', `each dungeon (${scope === 'week' ? 'this week' : 'all time'})`)}`}
+            best={bestBy === 'key' ? data.keys : data.scores}
             scopeLabel={scopeLabel}
-            onSelectPlayer={onSelectPlayer}
-          />
-          <BestTable
-            title="Highest scores"
-            hint={`The highest-scoring run in each dungeon (${when}). A timed key beats a depleted key one level higher.`}
-            best={data.scores}
-            scopeLabel={scopeLabel}
+            bestBy={bestBy}
+            onBestBy={setBestBy}
             onSelectPlayer={onSelectPlayer}
           />
         </div>
       )}
+
+      <LatestRuns onSelectPlayer={onSelectPlayer} />
     </div>
   )
 }
