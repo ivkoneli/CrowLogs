@@ -2997,12 +2997,24 @@ img.icon-slot.trinket {
 .home-import:hover {
   background: var(--accent-2);
 }
+/* The line under the title: the week + affix icons, or the all-time sentence. One fixed
+   height for both, so switching scope never moves anything below it. */
 .home-week {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* always one line: the affix names give way first (below) */
   gap: 0.4rem 1rem;
+  white-space: nowrap;
+  margin: 0;
   font-size: 0.95rem;
+  line-height: 1.4;
+  min-height: 1.6rem;
+}
+/* The text column of the header takes the free width, so its box no longer shrinks to
+   whichever line is longest. */
+.home-head > div:first-child {
+  flex: 1 1 22rem;
+  min-width: 0;
 }
 .home-week strong {
   color: var(--accent-2);
@@ -3011,10 +3023,17 @@ img.icon-slot.trinket {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  min-width: 0;
 }
 .home-week-affixes .muted {
   margin-left: 0.3rem;
   font-size: 0.85rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis; /* names cut first; the icons (with tooltips) stay */
+}
+.home-week-affixes .mp-affix {
+  flex: none;
 }
 .home-cards {
   display: flex;
@@ -3028,8 +3047,28 @@ img.icon-slot.trinket {
 .home-card-hint {
   margin: -0.4rem 0 0.2rem;
   font-size: 0.8rem;
+  line-height: 1.35;
+  min-height: 1.35em; /* one line on wide screens */
+}
+.home-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.home-retry {
+  margin-left: auto;
+  padding: 0.3rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(231, 76, 60, 0.5);
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
 }
 .home-scope-pill {
+  display: inline-block;
+  min-width: 8.4em; /* "THIS WEEK" and "ALL TIME" take the same room */
+  text-align: center;
   padding: 0.12rem 0.55rem;
   border-radius: 999px;
   border: 1px solid var(--highlight);

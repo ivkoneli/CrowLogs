@@ -266,6 +266,19 @@ async function topRunsForDungeon(mapId, from, to) {
   return [...new Map([...(top.data || []), ...(timed.data || [])].map((r) => [r.id, r])).values()]
 }
 
+// Run `fn` again (up to twice, after a short wait) if it fails: a dropped request or a
+// slow first query on a cold connection shouldn't leave the page on an error.
+async function withRetry(fn, tries = 3) {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      if (i >= tries) throw e
+      await new Promise((r) => setTimeout(r, 700 * i))
+    }
+  }
+}
+
 // Best run per dungeon, site-wide, for `scope` = 'week' | 'all':
 //   { keys: bestRuns(…,'key'), scores: bestRuns(…,'score'), week: { start, end, affixes } | null }
 // `week.affixes` is the current week's full affix set (icons), for the header.
@@ -273,7 +286,7 @@ const scopeCache = new Map()
 export function getTopRuns(scope = 'week', realm = DEFAULT_MPLUS_REALM) {
   const ck = `${scope}|${realm}`
   if (!scopeCache.has(ck)) {
-    const p = loadTopRuns(scope, realm)
+    const p = withRetry(() => loadTopRuns(scope, realm))
     p.catch(() => scopeCache.delete(ck)) // let a failed load retry
     scopeCache.set(ck, p)
   }

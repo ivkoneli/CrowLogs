@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MPLUS_DUNGEONS, DEFAULT_MPLUS_REALM, getTopRuns } from '../lib/mythicplus.js'
 import { Cols, Head, DungeonCell, RunCells, EmptyRunCells } from './MythicPlusCard.jsx'
+import { reportFailure } from '../lib/notify.js'
 
 const SCOPES = [
   { id: 'week', label: 'This week' },
@@ -64,22 +65,27 @@ function BestTable({ title, hint, best, scopeLabel, onSelectPlayer }) {
 export default function HomePage({ onSelectPlayer, onImport }) {
   const [scope, setScope] = useState('week')
   const [state, setState] = useState({ loading: true, data: null, error: null })
+  const [attempt, setAttempt] = useState(0) // bumped by the Retry button
 
   useEffect(() => {
     let cancelled = false
     setState((s) => ({ ...s, loading: true, error: null }))
     getTopRuns(scope)
       .then((data) => !cancelled && setState({ loading: false, data, error: null }))
-      .catch((e) => !cancelled && setState({ loading: false, data: null, error: e.message || 'Request failed.' }))
+      .catch((e) => {
+        // Already retried inside getTopRuns; report it so the real cause can be found.
+        reportFailure('home-top-runs', e, { scope })
+        if (!cancelled) setState((s) => ({ loading: false, data: s.data, error: e.message || 'Request failed.' }))
+      })
     return () => {
       cancelled = true
     }
-  }, [scope])
+  }, [scope, attempt])
 
   const { loading, data, error } = state
   const week = data?.week
   const scopeLabel = scope === 'week' ? 'This week' : 'All time'
-  const when = scope === 'week' ? 'this week' : 'of all time'
+  const when = scope === 'week' ? 'this week' : 'all time'
 
   return (
     <div className="home">
@@ -102,7 +108,7 @@ export default function HomePage({ onSelectPlayer, onImport }) {
               )}
             </div>
           ) : (
-            <p className="kills">{scope === 'all' ? 'The best keys ever finished on the realm.' : ' '}</p>
+            <p className="kills home-week">{scope === 'all' ? 'The best keys ever finished on the realm.' : ' '}</p>
           )}
         </div>
         <div className="home-head-right">
@@ -125,22 +131,27 @@ export default function HomePage({ onSelectPlayer, onImport }) {
         </div>
       </div>
 
-      {error ? (
-        <div className="error">Couldn’t load Mythic+ runs: {error}</div>
+      {error && !data ? (
+        <div className="error home-error">
+          Couldn’t load Mythic+ runs: {error}
+          <button className="home-retry" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </button>
+        </div>
       ) : loading && !data ? (
         <div className="empty-state mp-empty">Loading Mythic+ runs…</div>
       ) : (
         <div className={`home-cards ${loading ? 'is-loading' : ''}`}>
           <BestTable
             title="Highest keys"
-            hint={`The highest key finished in each dungeon ${when}, timed or not. Ties go to the higher score.`}
+            hint={`The highest key finished in each dungeon (${when}), timed or not. Ties go to the higher score.`}
             best={data.keys}
             scopeLabel={scopeLabel}
             onSelectPlayer={onSelectPlayer}
           />
           <BestTable
             title="Highest scores"
-            hint={`The highest-scoring run in each dungeon ${when}. A timed key beats a depleted key one level higher.`}
+            hint={`The highest-scoring run in each dungeon (${when}). A timed key beats a depleted key one level higher.`}
             best={data.scores}
             scopeLabel={scopeLabel}
             onSelectPlayer={onSelectPlayer}

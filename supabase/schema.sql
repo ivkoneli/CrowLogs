@@ -130,6 +130,11 @@ create table if not exists mplus_runs (
 );
 create index if not exists mplus_runs_members_idx on mplus_runs using gin (members);
 create index if not exists mplus_runs_realm_day_idx on mplus_runs (realm, day desc);
+-- The home page's best runs per dungeon: a dungeon's runs by key level, then clear time
+-- (all of them, and the timed ones). Without these each query sorted the whole table and a
+-- cold database timed out (HTTP 500) on the first All-time load.
+create index if not exists mplus_runs_map_level_idx on mplus_runs (map_id, level desc, time_ms asc nulls last);
+create index if not exists mplus_runs_map_level_timed_idx on mplus_runs (map_id, level desc, time_ms asc nulls last) where medal > 0;
 alter table mplus_runs enable row level security;
 drop policy if exists "public read mplus" on mplus_runs;
 create policy "public read mplus" on mplus_runs for select using (true);
