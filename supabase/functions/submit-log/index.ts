@@ -7,14 +7,22 @@
 // runs with the service-role key. It validates + sanitizes every row, recomputes dps/hps
 // server-side (never trusts the client's numbers), caps size, and rate-limits by IP.
 //
+// Boss KILLS are then rewritten from Tauri's own record of the kill (exact damage/healing
+// for every member, pets included, nothing lost to combat-log range) — see
+// ../_shared/tauri-kills.js. Wipes keep the log's numbers; ilvl/gear/talents never change.
+//
 // Deploy:
 //   supabase functions deploy submit-log --no-verify-jwt
+// Secrets: TAURI_API_KEY, TAURI_API_SECRET (without them kills keep the log's numbers).
 // (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically.)
+
+import { tauriClient, applyTauriKills } from '../_shared/tauri-kills.js'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const REST = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1`
 const dbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
+const tauri = tauriClient(Deno.env.get('TAURI_API_KEY') || '', Deno.env.get('TAURI_API_SECRET') || '')
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -86,6 +94,8 @@ function sanitize(row: Record<string, unknown>) {
   out.potions = Math.max(num(row.potions), 0)
   out.hits = Math.max(num(row.hits), 0)
   out.ilvl = row.ilvl == null ? null : num(row.ilvl)
+  out.encounter_id = row.encounter_id == null ? null : num(row.encounter_id) || null
+  out.tauri_log = null // server-set only (applyTauriKills), never taken from the client
   out.started = num(row.started)
   out.duration = duration
   out.bloodlust = jsonOrNull(row.bloodlust)
@@ -128,6 +138,14 @@ function cleanSpells(v: unknown, damage: number, healing: number) {
   const dmg = cleanSpellList(o.dmg, damage)
   const heal = cleanSpellList(o.heal, healing)
   return dmg.length || heal.length ? { dmg, heal } : null
+}
+
+// A re-import whose kill now matched Tauri: drop that kill's separate pet rows.
+async function deleteFights(ids: string[]) {
+  if (!ids.length) return
+  const list = ids.map((id) => `"${id.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')
+  const res = await fetch(`${REST}/fights?id=in.(${encodeURIComponent(list)})`, { method: 'DELETE', headers: dbHeaders })
+  if (!res.ok) throw new Error(`delete pet rows: HTTP ${res.status} — ${await res.text()}`)
 }
 
 async function upsertFights(rows: unknown[]) {
@@ -185,13 +203,26 @@ Deno.serve(async (req) => {
   // Dedupe by id (a batch can resolve two segments to one id; PostgREST rejects a
   // batch that lists the same conflict key twice).
   const byId = new Map(clean.map((r) => [(r as Record<string, unknown>).id, r]))
-  const deduped = [...byId.values()]
+  let deduped = [...byId.values()] as Record<string, unknown>[]
+
+  // Kills → Tauri's numbers. Best effort: any failure keeps the log's own numbers.
+  let tauriInfo: { matched: unknown[]; errors: string[] } = { matched: [], errors: [] }
+  let removeIds: string[] = []
+  try {
+    const res = await applyTauriKills(tauri, deduped)
+    deduped = res.rows.filter((r: Record<string, unknown>) => (r.dps as number) <= MAX_DPS && (r.hps as number) <= MAX_DPS)
+    removeIds = res.removeIds
+    tauriInfo = { matched: res.matched, errors: res.errors }
+  } catch (e) {
+    tauriInfo.errors.push((e as Error).message)
+  }
 
   try {
     await upsertFights(deduped)
+    await deleteFights(removeIds)
     const logid = str(body.logid)
     if (logid) await upsertLog(logid, str(body.label), deduped.length, await hashIp(ip))
-    return json({ inserted: deduped.length, skipped: fights.length - deduped.length })
+    return json({ inserted: deduped.length, skipped: fights.length - deduped.length, tauri: tauriInfo })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)
   }

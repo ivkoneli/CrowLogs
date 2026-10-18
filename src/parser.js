@@ -247,6 +247,10 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
     if (DAMAGE_EVENTS.has(ev.event)) {
       const srcGuid = f[1]
       if (!isPlayerGuid(srcGuid)) continue
+      // Damage done to players (or their pets) isn't raid damage: friendly fire, self-damage
+      // (Burning Rush), and mind-controlled raiders (Mythic Nythendra's Infested Mind) made
+      // up 7–13M of some players' totals. Tauri's own kill records count NPCs only.
+      if (isPlayerGuid(f[5])) continue
       const amount = parseInt(f[f.length - DAMAGE_SUFFIX_LEN], 10)
       if (!Number.isFinite(amount) || amount <= 0) continue
       const who = resolveActor(srcGuid, f[2], petOwners, petBaseOwners)
@@ -322,6 +326,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
         // Numeric ENCOUNTER_START id (null when the log had no markers). Used to join
         // fights onto CrowLogsHelper addon pulls (see lib/addon.js).
         encounterID: encounterID ?? null,
+        encounter_id: encounterID ?? null, // the stored column (store.js FIELDS)
         kill,
         bloodlust,
         player: p.player,
