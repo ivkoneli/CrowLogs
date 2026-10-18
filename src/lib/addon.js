@@ -155,6 +155,23 @@ function matchPull(fight, pulls) {
   return best
 }
 
+// The hash of a player's own (comm/self) snapshot in `spec` captured nearest `epoch`,
+// within the snapshot age limit either side, or null.
+function nearestBroadcast(loadouts, guid, epoch, spec) {
+  let best = null
+  let bestDist = Infinity
+  for (const [hash, lo] of Object.entries(loadouts || {})) {
+    if (lo?.guid !== guid || (lo.source !== 'comm' && lo.source !== 'self')) continue
+    if (spec && lo.specName !== spec) continue
+    const dist = Math.abs((epoch || 0) - (lo.capturedAt || 0))
+    if (dist <= SNAPSHOT_MAX_AGE_SEC && dist < bestDist) {
+      bestDist = dist
+      best = hash
+    }
+  }
+  return best
+}
+
 // Join parsed combat-log fights with an addon DB, freezing each matched fight's
 // spec/talents/ilvl/trinkets from the Lua snapshot. Unmatched fights pass through
 // unchanged (the armory cache still fills them in at read time). Pets are skipped.
@@ -178,13 +195,29 @@ export function freezeFromAddon(fights, addon) {
     const pull = matchPull(f, addon.pulls)
     // Even with no matched pull / snapshot, a confirmed addon user still counts as one.
     if (!pull) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
-    const hash = pull.participants[f.guid]
+    let hash = pull.participants[f.guid]
+    // Addons before 1.14 let a pre-pull inspect landing mid-fight replace an addon user's
+    // own broadcast on that pull (an inspect has no ilvl). Use their nearest broadcast of
+    // the same spec from the same night instead.
+    if (addon.loadouts[hash]?.source === 'inspect') {
+      const alt = nearestBroadcast(addon.loadouts, f.guid, pull.startEpoch, addon.loadouts[hash].specName)
+      if (alt) hash = alt
+    }
     // Addon versions before 1.12 attached the newest stored snapshot at pull start with no
     // age limit, so a build inspected on a past raid night (a different spec, old talents
     // and gear) could be frozen onto tonight's pull. Ignore any snapshot captured more than
     // 12h before the pull; the player then falls back to the armory like an uncovered one.
+    //
+    // But addons before 1.14 also kept an unchanged build's FIRST capture time, so an
+    // addon user who didn't touch their build since yesterday looked a day stale. Those
+    // snapshots are still trusted when they can't be a past night's build: the recorder's
+    // own (rebuilt at every pull start), or a broadcast one whose spec matches the spec the
+    // log shows them playing on this pull.
     const lo = addon.loadouts[hash]
-    const stale = lo?.capturedAt && pull.startEpoch && pull.startEpoch - lo.capturedAt > SNAPSHOT_MAX_AGE_SEC
+    const old = lo?.capturedAt && pull.startEpoch && pull.startEpoch - lo.capturedAt > SNAPSHOT_MAX_AGE_SEC
+    const ownBuild = pull.myGUID != null && f.guid === pull.myGUID
+    const sameSpec = (lo?.source === 'comm' || lo?.source === 'self') && f.spec && lo.specName === f.spec
+    const stale = old && !ownBuild && !sameSpec
     const snap = stale ? null : snapshotFor(hash)
     if (!snap) return hasAddon(f.guid) ? { ...f, from_addon: true } : f
     // Only a COMPLETE snapshot marks the player covered (skips the armory). A partial one
