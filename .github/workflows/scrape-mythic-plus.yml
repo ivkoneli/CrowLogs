@@ -2,17 +2,16 @@ name: Scrape Mythic+ leaderboards
 
 # Mirrors Tauri's armory Challenge Mode leaderboards into the Supabase `mplus_runs`
 # table, so a player's M+ best runs + history are one indexed lookup on the profile.
-# Hourly; after the first backfill each run only checks the last couple of days of runs.
 # Same TAURI_COOKIE / SUPABASE_SERVICE_KEY secrets as the armory scrape. Fails on purpose
 # (GitHub emails the repo owner) if the cookie stops working or Tauri changes the page.
-# NOTE: GitHub auto-disables scheduled workflows after 60 days with no repo commits.
+#
+# Started by Supabase, not by a `schedule:` here: GitHub's cron ran "hourly" every 3-5 h.
+# pg_cron calls dispatch_mplus_scrape() (see supabase/schema.sql) hourly at :05, and with
+# full=true Wednesday 04:47 UTC (before the EU reset) — the weekly pass that re-reads every
+# run on every board, so renamed/deleted characters' stale runs are pruned. It emails the
+# owner if GitHub refuses a dispatch or no scrape has finished in 3 h. No schedule also
+# means GitHub's 60-days-without-commits auto-disable doesn't apply.
 on:
-  schedule:
-    - cron: '23 * * * *'
-    # Weekly full pass (Wednesday 04:47 UTC, before the EU reset): re-reads every run on
-    # every board, so characters renamed or deleted since (the armory rewrites their old
-    # runs) are picked up and the stale copies pruned. See prune_mplus_runs in schema.sql.
-    - cron: '47 4 * * 3'
   workflow_dispatch:
     inputs:
       full:
@@ -41,4 +40,4 @@ jobs:
           TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          MPLUS_FULL: ${{ (inputs.full || github.event.schedule == '47 4 * * 3') && '1' || '' }}
+          MPLUS_FULL: ${{ inputs.full && '1' || '' }}
