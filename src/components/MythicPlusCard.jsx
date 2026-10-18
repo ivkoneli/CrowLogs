@@ -142,7 +142,9 @@ export function Party({ party, ...memberProps }) {
 }
 
 // Key / time+medal / affixes / party / date — shared by the best-runs and history tables.
-export function RunCells({ run, selfName, realm, onSelectPlayer }) {
+// `dateInTime` also puts the date under the time, for phones, where the Date column sits
+// off-screen (the home feed, where when it happened is the point).
+export function RunCells({ run, selfName, realm, onSelectPlayer, dateInTime = false }) {
   return (
     <>
       <td className="num strong mp-key">+{run.level}</td>
@@ -150,6 +152,7 @@ export function RunCells({ run, selfName, realm, onSelectPlayer }) {
       <td className="mp-time">
         <span className={run.medal ? '' : 'muted'}>{formatRunTime(run.time_ms)}</span>
         <Medal medal={run.medal} />
+        {dateInTime && <span className="mp-time-date muted">{formatRunDay(run.day)}</span>}
       </td>
       <td className="mp-affixes">
         {(run.affixes || []).map((a) => (

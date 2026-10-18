@@ -381,7 +381,7 @@ export function formatUpdated(d) {
 }
 
 // Every stored run, newest first (by day, then the exact completion time where Tauri
-// Achievements has it, else the scrape that first saw it), one page at
+// Achievements has it, else the hour of the scrape that first saw it, mixed), one page at
 // a time for the home page's "Latest runs". Filters: `mapId` one dungeon, `minKey` key
 // level and up, `timedOnly` medal runs only, `board` the leaderboard a run came from
 // (armory string). `total` (the filtered count) only comes with the first page.
@@ -399,7 +399,7 @@ async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, 
   const { data, error, count } = await q
     .order('day', { ascending: false })
     .order('completed_at', { ascending: false, nullsFirst: true })
-    .order('first_seen', { ascending: false })
+    .order('seen_hour', { ascending: false })
     .order('id', { ascending: true })
     .range(offset, offset + LATEST_PAGE_SIZE - 1)
   if (error) throw error

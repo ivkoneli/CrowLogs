@@ -138,12 +138,19 @@ create index if not exists mplus_runs_map_level_timed_idx on mplus_runs (map_id,
 -- Exact completion time, from Tauri Achievements (the armory only gives the day). Set by
 -- the scraper when it matches the run there, about a day after it was played; null until.
 alter table mplus_runs add column if not exists completed_at timestamptz;
+-- The hour of the scrape that first saw a run. Runs without an exact time yet are ordered
+-- by it, then by id (a hash, so effectively mixed): first_seen itself differs per dungeon
+-- within one scrape, which would list the newest runs grouped by dungeon.
+alter table mplus_runs add column if not exists seen_hour timestamp
+  generated always as (date_trunc('hour', first_seen at time zone 'UTC')) stored;
 -- The home page's "Latest runs" feed: newest first by day, then exact time (runs not on
--- Tauri Achievements yet, i.e. the newest, first), then the scrape that first saw them.
+-- Tauri Achievements yet, i.e. the newest, first), then the scrape hour.
 drop index if exists mplus_runs_latest_idx;
 drop index if exists mplus_runs_map_latest_idx;
-create index if not exists mplus_runs_latest2_idx on mplus_runs (day desc, completed_at desc nulls first, first_seen desc, id);
-create index if not exists mplus_runs_map_latest2_idx on mplus_runs (map_id, day desc, completed_at desc nulls first, first_seen desc, id);
+drop index if exists mplus_runs_latest2_idx;
+drop index if exists mplus_runs_map_latest2_idx;
+create index if not exists mplus_runs_latest3_idx on mplus_runs (day desc, completed_at desc nulls first, seen_hour desc, id);
+create index if not exists mplus_runs_map_latest3_idx on mplus_runs (map_id, day desc, completed_at desc nulls first, seen_hour desc, id);
 alter table mplus_runs enable row level security;
 drop policy if exists "public read mplus" on mplus_runs;
 create policy "public read mplus" on mplus_runs for select using (true);
