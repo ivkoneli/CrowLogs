@@ -42,6 +42,8 @@ const FIELDS = [
   'logid',
   // ENCOUNTER_START id: submit-log uses it to find a kill on Tauri (tauri_log is server-set).
   'encounter_id',
+  // The logger disconnected during this pull (parser.js); submit-log settles it from Tauri.
+  'log_gap',
   // Set by hand in the database on a result that a game bug inflated: it stays in the
   // log and on the player's profile but is left off the boss rankings. Never sent by an
   // import (submit-log drops it), so re-importing the log keeps the mark.

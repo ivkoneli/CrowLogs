@@ -96,6 +96,7 @@ function sanitize(row: Record<string, unknown>) {
   out.ilvl = row.ilvl == null ? null : num(row.ilvl)
   out.encounter_id = row.encounter_id == null ? null : num(row.encounter_id) || null
   out.tauri_log = null // server-set only (applyTauriKills), never taken from the client
+  out.log_gap = !!row.log_gap
   out.started = num(row.started)
   out.duration = duration
   out.bloodlust = jsonOrNull(row.bloodlust)

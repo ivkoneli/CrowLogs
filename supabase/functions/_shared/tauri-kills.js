@@ -44,14 +44,28 @@ export function tauriClient(apiKey, secret) {
       cache.set(
         ck,
         (async () => {
-          const res = await fetch(`${API}?apikey=${encodeURIComponent(key)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: encodeURIComponent(JSON.stringify({ secret: sec, url, params })),
-          })
-          const json = JSON.parse(await res.text())
-          if (!json.success) throw new Error(`${url}: ${json.errorstring}`)
-          return json.response
+          // The API has short outages: an HTML error page, or a false "raid log not found"
+          // for a log it returned a minute earlier (2026-10-20). Retry those; bad credentials
+          // (errorcode 2) won't fix themselves.
+          for (let attempt = 1; ; attempt++) {
+            let err
+            try {
+              const res = await fetch(`${API}?apikey=${encodeURIComponent(key)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: encodeURIComponent(JSON.stringify({ secret: sec, url, params })),
+              })
+              const json = JSON.parse(await res.text())
+              if (json.success) return json.response
+              err = new Error(`${url}: ${json.errorstring}`)
+              if (json.errorcode === 2) throw err
+            } catch (e) {
+              if (e === err && err.message.includes('authentication')) throw e
+              err = e
+            }
+            if (attempt >= 3) throw err
+            await new Promise((r) => setTimeout(r, 1500 * attempt))
+          }
         })(),
       )
       cache.get(ck).catch(() => cache.delete(ck))
@@ -77,7 +91,22 @@ async function encounterIdByName(client, realm, boss) {
   return null
 }
 
+// Our `started` is the log's local wall clock stored as if UTC, in a fixed year (the log has
+// none). Tauri's start (killtime − fight_time) is real UTC. Same date and time within a
+// time-zone's reach (±14 h) = the same night; a different week's kill of the same boss by
+// the same group is days away.
+const SAME_NIGHT_MS = 14 * 3600 * 1000
+function sameNight(row, tauriLog) {
+  const ours = new Date(row.started || 0)
+  const tauriStart = tauriLog.killtime * 1000 - (tauriLog.fight_time || 0)
+  const year = new Date(tauriStart).getUTCFullYear()
+  const guess = Date.UTC(year, ours.getUTCMonth(), ours.getUTCDate(), ours.getUTCHours(), ours.getUTCMinutes(), ours.getUTCSeconds())
+  return Math.abs(guess - tauriStart) <= SAME_NIGHT_MS
+}
+
 // One kill (rows of the same boss/difficulty/start, kill = true) → Tauri's raid-log, or null.
+// A pull the logger disconnected during (log_gap) has no usable length: it's matched by
+// night + party alone (a group kills a boss once per lockout and difficulty).
 async function findKill(client, rows) {
   const players = rows.filter((r) => !r.pet)
   if (!players.length) return null
@@ -87,14 +116,15 @@ async function findKill(client, rows) {
   const realm = API_REALM[slug] || API_REALM.evermoon
   const duration = Math.max(...rows.map((r) => r.duration || 0))
   const encId = rows.find((r) => r.encounter_id)?.encounter_id || (await encounterIdByName(client, realm, rows[0].boss))
-  if (!encId || !duration) return null
+  const gap = rows.some((r) => r.log_gap)
+  if (!encId || (!duration && !gap)) return null
 
   for (const difficulty of DIFFICULTY_IDS[rows[0].difficulty] || []) {
     const list = (await client.call('raid-rank-encounter', { r: realm, encounter: encId, difficulty, from: 0, limit: 0 }))?.logs || []
     const cands = list
-      .filter((l) => Math.abs(l.fight_time - duration) <= DURATION_SLACK_MS)
+      .filter((l) => sameNight(rows[0], l) && (gap || Math.abs(l.fight_time - duration) <= DURATION_SLACK_MS))
       .sort((a, b) => Math.abs(a.fight_time - duration) - Math.abs(b.fight_time - duration))
-      .slice(0, 6)
+      .slice(0, gap ? 20 : 6)
     for (const c of cands) {
       const log = await client.call('raid-log', { r: realm, id: c.log_id })
       const hit = (log?.members || []).filter((m) => names.has(norm(m.name))).length
@@ -138,7 +168,11 @@ export async function applyTauriKills(client, rows) {
       out.errors.push(`${group[0].boss}: ${e.message}`)
       continue
     }
-    if (!log) continue
+    if (!log) {
+      // A disconnected pull Tauri has no kill for was a wipe (the parser had to guess).
+      if (group.some((r) => r.log_gap)) for (const r of group) replaced.set(r.id, { ...r, kill: false })
+      continue
+    }
     const byName = new Map(log.members.map((m) => [norm(m.name), m]))
     const pairs = group.filter((r) => !r.pet).map((r) => [r, byName.get(nameOf(r.player))]).filter(([, m]) => m)
     const tauriHeal = (m) => (+m.heal_done || 0) + (+m.absorb_done || 0)

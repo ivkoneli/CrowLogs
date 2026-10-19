@@ -22,6 +22,9 @@ create table fights (
   -- Tauri's own record of it, that raid-log id (set by submit-log only; see
   -- functions/_shared/tauri-kills.js). Null = the log's own numbers.
   encounter_id int, tauri_log bigint,
+  -- The logger disconnected during this pull (log restarted mid-fight): its result and
+  -- length are taken from Tauri; with no Tauri kill it's stored as a wipe.
+  log_gap boolean,
   -- TRUE on a result a game bug inflated (set by hand, see below): the row stays in the
   -- log and on the player's profile and history, but is left off the boss rankings.
   discredited boolean,
@@ -49,6 +52,7 @@ create table fights (
 --   alter table fights add column if not exists spells jsonb;
 --   alter table fights add column if not exists encounter_id int;
 --   alter table fights add column if not exists tauri_log bigint;
+--   alter table fights add column if not exists log_gap boolean;
 alter table fights enable row level security;
 -- The public (browser anon key) may ONLY read. All writes go through the `submit-log`
 -- edge function (service-role key), which validates, recomputes dps/hps, and rate-limits.

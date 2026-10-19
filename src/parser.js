@@ -38,6 +38,7 @@ const RELEVANT_EVENTS = new Set([
   'SPELL_SUMMON', // pet → owner mapping
   'ENCOUNTER_START',
   'ENCOUNTER_END',
+  'COMBAT_LOG_VERSION', // logging (re)started — mid-fight it means the logger disconnected
 ])
 // "Lust" effects — Bloodlust/Heroism/Time Warp and the equivalent pet/drum versions.
 // Keyed by spellId (string, as fields come out of the log). SPELL_CAST_SUCCESS for one
@@ -212,7 +213,7 @@ function isSoloClear(recs) {
   return players.size > 0 && players.size <= SOLO_MAX_PLAYERS
 }
 
-function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endMs, events, petOwners, petBaseOwners }) {
+function buildRecords({ raid, boss, difficulty, encounterID, kill, logGap, startMs, endMs, events, petOwners, petBaseOwners }) {
   const players = new Map()
   const lusts = [] // { name, ts } — Bloodlust/Heroism/Time Warp casts this fight
   let firstActivity = null
@@ -331,6 +332,8 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, startMs, endM
         // fights onto CrowLogsHelper addon pulls (see lib/addon.js).
         encounterID: encounterID ?? null,
         encounter_id: encounterID ?? null, // the stored column (store.js FIELDS)
+        // The logger disconnected mid-pull: result and length come from Tauri (submit-log).
+        log_gap: !!logGap,
         kill,
         bloodlust,
         player: p.player,
@@ -433,6 +436,21 @@ export function createLogParser() {
       }
       encounters.push(seg)
       openStack.push(seg)
+      return
+    }
+    if (event === 'COMBAT_LOG_VERSION') {
+      // Logging restarted. During an open boss fight that's the logger disconnecting: after
+      // the reconnect the client doesn't know it's in an encounter and never writes its
+      // ENCOUNTER_END (Heroic Dragons of Nightmare, 2026-10-19: the kill happened during the
+      // disconnect and the pull ran on to the end of the file as a 64-minute "kill"). Close
+      // it at its last player damage before the restart, flagged `logGap`: the log can't
+      // tell the result or the real length; submit-log takes both from Tauri's record.
+      for (const seg of openStack) {
+        seg.endMs = lastDamageSince(seg.startMs) ?? ts
+        seg.kill = true
+        seg.logGap = true
+      }
+      openStack.length = 0
       return
     }
     if (event === 'ENCOUNTER_END') {
