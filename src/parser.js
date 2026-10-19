@@ -202,6 +202,10 @@ function eventsInWindow(events, loTs, hiTs) {
 // and a boss attempted by one or two people is not a raid pull at any length.
 const SOLO_MAX_PLAYERS = 2
 
+// Two ENCOUNTER_STARTs for the same boss closer together than this are one start recorded
+// twice (a merged / double-logged file); further apart, the second is a new attempt.
+const DUPLICATE_START_MS = 5000
+
 function isSoloClear(recs) {
   const players = new Set()
   for (const r of recs) if (!r.pet) players.add(r.player)
@@ -369,6 +373,16 @@ export function createLogParser() {
   let firstTs = null
   let lastTs = null
 
+  // Timestamp of the last damage a player did since `sinceTs` (events are in file order,
+  // so walk back from the newest), or null.
+  function lastDamageSince(sinceTs) {
+    for (let k = events.length - 1; k >= 0 && events[k].ts >= sinceTs; k--) {
+      const e = events[k]
+      if (DAMAGE_EVENTS.has(e.event) && isPlayerGuid(e.fields[1])) return e.ts
+    }
+    return null
+  }
+
   function pushLine(line) {
     if (!line) return
     const gap = line.indexOf('  ')
@@ -394,7 +408,19 @@ export function createLogParser() {
       // double-recorded log can emit the same ENCOUNTER_START twice (you can't be in
       // one encounter twice at once); a second segment would overlap the first, double
       // the fight, and collide on its id (raid::boss::diff::player::start) at upsert.
-      if (encId != null && openStack.some((s) => s.encounterID === encId)) return
+      //
+      // But a START well after the open one is a NEW attempt: the server sometimes sends no
+      // ENCOUNTER_END when a boss resets after a wipe (Heroic Dragons of Nightmare,
+      // 2026-10-19: every attempt merged into one 64-minute "kill"). Close the open one as
+      // a wipe at its last player damage, then open the new attempt.
+      const openIdx = encId == null ? -1 : openStack.findIndex((s) => s.encounterID === encId)
+      if (openIdx !== -1) {
+        const open = openStack[openIdx]
+        if (ts - open.startMs < DUPLICATE_START_MS) return
+        open.endMs = lastDamageSince(open.startMs) ?? ts
+        open.kill = false
+        openStack.splice(openIdx, 1)
+      }
       const matched = matchBoss(name)
       const seg = {
         boss: matched ? matched.boss : name,
