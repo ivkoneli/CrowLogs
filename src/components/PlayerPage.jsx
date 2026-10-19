@@ -367,9 +367,11 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                                       )}
                                     </td>
                                     {!histSpec && (
-                                      <td className="muted spec-cell">
-                                        {log.specIcon && <img className="spec-tab-icon" src={log.specIcon} alt="" />}
-                                        <span className="spec-name">{log.spec || '—'}</span>
+                                      <td className="muted">
+                                        <span className="spec-cell">
+                                          {log.specIcon && <img className="spec-tab-icon" src={log.specIcon} alt="" />}
+                                          <span className="spec-name">{log.spec || '—'}</span>
+                                        </span>
                                       </td>
                                     )}
                                     <td className="num strong">

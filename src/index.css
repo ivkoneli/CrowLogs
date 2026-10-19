@@ -1741,10 +1741,13 @@ img.icon-slot.trinket {
   object-fit: cover;
   vertical-align: middle;
 }
+/* Inline-flex on a span INSIDE the cell: a <td> set to flex drops out of the table row
+   (it sat above its row with its own divider, out of line with the rest). */
 .spec-cell {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  vertical-align: middle;
 }
 .player-main .player-card + .player-card {
   margin-top: 1.25rem;
@@ -4168,8 +4171,7 @@ a.mp-rank.link:hover {
   .mp-col-dungeon {
     width: 196px;
   }
-  .hist-meter td.spec-cell {
-    display: table-cell; /* a flex cell drops out of the row and breaks its divider */
+  .hist-meter td:has(> .spec-cell) {
     padding-left: 0;
     padding-right: 0;
     text-align: center;
