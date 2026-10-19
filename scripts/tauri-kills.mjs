@@ -20,9 +20,10 @@ const client = tauriClient(TAURI_API_KEY, TAURI_API_SECRET)
 for (const logid of logids) {
   const q = new URLSearchParams({ select: '*', logid: `eq.${logid}`, kill: 'eq.true' })
   const rows = await fetch(`${REST}/fights?${q}`, { headers }).then((r) => r.json())
-  const { rows: next, removeIds, matched, errors } = await applyTauriKills(client, rows)
+  const { rows: next, removeIds, matched, errors, outliers } = await applyTauriKills(client, rows)
+  for (const o of outliers) console.log(`  kept the log's number — ${o}`)
   const before = new Map(rows.map((r) => [r.id, r]))
-  const changed = next.filter((r) => r.tauri_log && r.tauri_log !== before.get(r.id)?.tauri_log || r.damage !== before.get(r.id)?.damage)
+  const changed = next.filter((r) => r.tauri_log !== before.get(r.id)?.tauri_log || r.damage !== before.get(r.id)?.damage || r.healing !== before.get(r.id)?.healing)
   for (const r of changed) {
     const b = before.get(r.id)
     console.log(`  ${r.boss.padEnd(22)} ${r.player.padEnd(22)} dmg ${(b.damage / 1e6).toFixed(1)}M → ${(r.damage / 1e6).toFixed(1)}M   heal ${(b.healing / 1e6).toFixed(1)}M → ${(r.healing / 1e6).toFixed(1)}M`)

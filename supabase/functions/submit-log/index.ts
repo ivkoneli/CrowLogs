@@ -206,13 +206,13 @@ Deno.serve(async (req) => {
   let deduped = [...byId.values()] as Record<string, unknown>[]
 
   // Kills → Tauri's numbers. Best effort: any failure keeps the log's own numbers.
-  let tauriInfo: { matched: unknown[]; errors: string[] } = { matched: [], errors: [] }
+  let tauriInfo: { matched: unknown[]; errors: string[]; outliers?: string[] } = { matched: [], errors: [] }
   let removeIds: string[] = []
   try {
     const res = await applyTauriKills(tauri, deduped)
     deduped = res.rows.filter((r: Record<string, unknown>) => (r.dps as number) <= MAX_DPS && (r.hps as number) <= MAX_DPS)
     removeIds = res.removeIds
-    tauriInfo = { matched: res.matched, errors: res.errors }
+    tauriInfo = { matched: res.matched, errors: res.errors, outliers: res.outliers }
   } catch (e) {
     tauriInfo.errors.push((e as Error).message)
   }
@@ -220,8 +220,21 @@ Deno.serve(async (req) => {
   try {
     await upsertFights(deduped)
     await deleteFights(removeIds)
-    const logid = str(body.logid)
-    if (logid) await upsertLog(logid, str(body.label), deduped.length, await hashIp(ip))
+    // One audit row per log in the batch: a file holding several nights is split into one
+    // log per night client-side, and each needs its own row to be listed / rolled back.
+    const ipHash = await hashIp(ip)
+    const byLog = new Map<string, Record<string, unknown>[]>()
+    for (const r of deduped) {
+      const id = str(r.logid)
+      if (!id) continue
+      if (!byLog.has(id)) byLog.set(id, [])
+      byLog.get(id)!.push(r)
+    }
+    for (const [id, rows] of byLog) {
+      const first = rows.reduce((a, b) => ((b.started as number) < (a.started as number) ? b : a))
+      const label = [first.raid, first.day].filter(Boolean).join(' · ') || str(body.label)
+      await upsertLog(id, label, rows.length, ipHash)
+    }
     return json({ inserted: deduped.length, skipped: fights.length - deduped.length, tauri: tauriInfo })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)

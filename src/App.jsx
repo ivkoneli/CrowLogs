@@ -13,6 +13,7 @@ import { getFights, addFights, isShared } from './lib/store.js'
 import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf, legendariesOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
+import { splitByNight } from './lib/splitNights.js'
 import { specIconUrl } from './lib/classes.js'
 import { initAdminFromUrl } from './lib/admin.js'
 import { selectionFromHash, selectionToHash, inAppClick, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
@@ -112,10 +113,13 @@ export default function App() {
       // this file's logid — so re-uploading a combat log that still holds last week's raid
       // (the .txt wasn't reset) only adds the new night, never re-creates the old one.
       const priorLogid = new Map(stored.map((f) => [f.id, f.logid]))
-      let recs = records.map((r) => {
-        const prev = priorLogid.get(r.id)
-        return prev && prev !== r.logid ? { ...r, logid: prev } : r
-      })
+      let recs = splitByNight(
+        records.map((r) => {
+          const prev = priorLogid.get(r.id)
+          return prev && prev !== r.logid ? { ...r, logid: prev } : r
+        }),
+        logId,
+      )
 
       // Cross-logger duplicate guard: flag incoming encounters that match ones already saved
       // (same boss/difficulty, near-identical start + roster) but under a different id — these
@@ -145,7 +149,10 @@ export default function App() {
         return { nothingNew: true }
       }
       const newest = recs.length ? recs.reduce((a, b) => (b.started > a.started ? b : a)) : null
-      const openLogId = hasNew ? logId : newest?.logid || logId
+      // A file holding several nights is split into one log per night (splitByNight): open
+      // the newest night's.
+      const newestNew = recs.filter((r) => !priorLogid.has(r.id)).reduce((a, b) => (!a || b.started > a.started ? b : a), null)
+      const openLogId = hasNew ? newestNew?.logid || logId : newest?.logid || logId
 
       // Show the full-screen loading overlay immediately, with tips drawn from this log
       // (enriched with any character data we already have for sharper jabs).

@@ -17,6 +17,14 @@
 const API = 'http://chapi.tauri.hu/apiIndex.php'
 const DURATION_SLACK_MS = 3000
 const MIN_NAME_OVERLAP = 0.6
+// Tauri's records aren't always right: on Heroic Elerethe Renferal it credited one Fury
+// warrior with ~7× and a Mistweaver with ~97× what the log shows, two weeks running, while
+// everyone else matched. A player whose Tauri number is more than OUTLIER × the raid's
+// typical Tauri/log ratio (and at least OUTLIER_MIN more) keeps the log's number instead.
+// The typical ratio is the median, so a log short on everyone (the logger died and
+// released) still takes Tauri's numbers.
+const OUTLIER = 3
+const OUTLIER_MIN = 20e6
 // Tauri difficulty ids a CrowLogs difficulty can be (Legion ids first, then 10/25-man).
 const DIFFICULTY_IDS = { Normal: [14, 3, 4], Heroic: [15, 5, 6], Mythic: [16], LFR: [17, 7] }
 // Player keys are "Name-realmslug"; Evermoon and Tauri share one API realm.
@@ -96,12 +104,23 @@ async function findKill(client, rows) {
   return null
 }
 
+// What the combat log itself measured for a row: its own totals, or (for a row already
+// rewritten from Tauri) the per-spell breakdown, which always stays from the log.
+const spellSum = (list) => (Array.isArray(list) ? list.reduce((s, x) => s + (+x?.[2] || 0), 0) : 0)
+const logDamage = (r) => (r.tauri_log ? spellSum(r.spells?.dmg) : +r.damage || 0)
+const logHealing = (r) => (r.tauri_log ? spellSum(r.spells?.heal) : +r.healing || 0)
+
+function median(xs) {
+  const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b)
+  return v.length ? v[Math.floor(v.length / 2)] : 1
+}
+
 // rows: sanitized fight rows of one upload (or one stored log). Returns the rows to keep
 // (kills rewritten from Tauri, each tagged with tauri_log), the ids of rows to delete (a
 // matched kill's separate pet rows: Tauri already counts pets under their owner), and what
 // matched. Never throws: a kill that can't be looked up keeps the log's numbers.
 export async function applyTauriKills(client, rows) {
-  const out = { rows, removeIds: [], matched: [], errors: [] }
+  const out = { rows, removeIds: [], matched: [], errors: [], outliers: [] }
   if (!client?.enabled) return out
   const kills = new Map()
   for (const r of rows) {
@@ -121,6 +140,15 @@ export async function applyTauriKills(client, rows) {
     }
     if (!log) continue
     const byName = new Map(log.members.map((m) => [norm(m.name), m]))
+    const pairs = group.filter((r) => !r.pet).map((r) => [r, byName.get(nameOf(r.player))]).filter(([, m]) => m)
+    const tauriHeal = (m) => (+m.heal_done || 0) + (+m.absorb_done || 0)
+    const dmgPairs = pairs.filter(([r]) => logDamage(r) > 5e6)
+    const healPairs = pairs.filter(([r]) => logHealing(r) > 5e6)
+    const dmgRatio = median(dmgPairs.map(([r, m]) => m.dmg_done / logDamage(r)))
+    const healRatio = median(healPairs.map(([r, m]) => tauriHeal(m) / logHealing(r)))
+    // No log number to compare (no breakdown) or too few players to know what's typical:
+    // nothing to judge by, so Tauri's number stands.
+    const outlier = (tauri, mine, ratio, n) => n >= 5 && mine > 0 && tauri > mine * ratio * OUTLIER && tauri - mine * ratio > OUTLIER_MIN
     for (const r of group) {
       if (r.pet) {
         out.removeIds.push(r.id)
@@ -129,8 +157,16 @@ export async function applyTauriKills(client, rows) {
       const m = byName.get(nameOf(r.player))
       if (!m) continue // in our log but not in Tauri's kill (outside the instance): keep ours
       const durationSec = log.fight_time / 1000
-      const damage = Math.max(+m.dmg_done || 0, 0)
-      const healing = Math.max((+m.heal_done || 0) + (+m.absorb_done || 0), 0)
+      let damage = Math.max(+m.dmg_done || 0, 0)
+      let healing = Math.max(tauriHeal(m), 0)
+      if (outlier(damage, logDamage(r), dmgRatio, dmgPairs.length)) {
+        out.outliers.push(`${r.boss}: ${r.player} damage ${Math.round(damage / 1e6)}M on Tauri vs ${Math.round(logDamage(r) / 1e6)}M in the log`)
+        damage = logDamage(r)
+      }
+      if (outlier(healing, logHealing(r), healRatio, healPairs.length)) {
+        out.outliers.push(`${r.boss}: ${r.player} healing ${Math.round(healing / 1e6)}M on Tauri vs ${Math.round(logHealing(r) / 1e6)}M in the log`)
+        healing = logHealing(r)
+      }
       replaced.set(r.id, {
         ...r,
         damage,
