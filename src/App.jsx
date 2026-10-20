@@ -10,6 +10,7 @@ import LogLoading from './components/LogLoading.jsx'
 import DuplicatePrompt from './components/DuplicatePrompt.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { getFights, addFights, isShared } from './lib/store.js'
+import { getKillCounts } from './lib/raidBests.js'
 import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf, legendariesOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
@@ -78,11 +79,15 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
+  // Server-wide kills per raid/boss/difficulty (Tauri + uploads), for the sidebar + boss page.
+  const [killCounts, setKillCounts] = useState([])
+
   const reload = useCallback(async () => {
     try {
       const [data, chars] = await Promise.all([getFights(), getCharacters()])
       setStored(data)
       setCharacters(chars)
+      getKillCounts().then(setKillCounts, () => {})
       setLoadError('')
     } catch (e) {
       setLoadError(e.message)
@@ -324,6 +329,7 @@ export default function App() {
       <Sidebar
         onClose={closeNav}
         fights={fights}
+        killCounts={isShared ? killCounts : null}
         selection={selection}
         onSelectBoss={onSelectBoss}
         onSelectPlayer={onSelectPlayer}
@@ -360,6 +366,7 @@ export default function App() {
           {!loading && selection.view === 'boss' && (
             <BossPage
               fights={fights}
+              killCounts={killCounts}
               raid={selection.raid}
               boss={selection.boss}
               onSelectPlayer={onSelectPlayer}

@@ -477,6 +477,15 @@ code {
   font-size: 0.95rem;
   letter-spacing: 0.02em;
 }
+/* Boss board: the previous rows stay (dimmed) while a filter change loads. */
+.board-refreshing {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.board-more {
+  text-align: center;
+  margin: 0.9rem 0 0;
+}
 /* Admin-only addon-coverage line in the log header. */
 .addon-coverage {
   margin: 0.35rem 0 0;

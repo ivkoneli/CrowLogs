@@ -11,6 +11,8 @@ import PlayerGear from './PlayerGear.jsx'
 import MythicPlusCard from './MythicPlusCard.jsx'
 import SpecTabs from './SpecTabs.jsx'
 import { charKey } from '../lib/characters.js'
+import { getPlayerBests, playerBestSummary } from '../lib/raidBests.js'
+import { isShared } from '../lib/store.js'
 
 // Difficulty sections inside the Rankings tab (hardest first).
 const DIFF_TABS = ['Mythic', 'Heroic', 'Normal', 'LFR']
@@ -24,8 +26,12 @@ const rankClass = (rank) => {
 
 // One raid's per-boss ranking for the selected difficulty + metric. `klass` colors
 // the bars; `valueLabel` is the rate column header (DPS / Heals / Absorbs).
-function RaidRankCard({ fights, player, raid, difficulty, metric, spec, klass, valueLabel, onSelectBoss }) {
-  const rows = playerSummary(fights, player, raid.name, raid.bosses, difficulty, metric, spec)
+// Shared mode ranks the player's server-wide bests (every Tauri kill + uploaded logs);
+// local-only mode ranks the uploaded fights in the browser.
+function RaidRankCard({ fights, bests, player, raid, difficulty, metric, spec, klass, valueLabel, onSelectBoss }) {
+  const rows = isShared
+    ? playerBestSummary(bests, raid.name, raid.bosses, difficulty, metric, spec)
+    : playerSummary(fights, player, raid.name, raid.bosses, difficulty, metric, spec)
   const rate = (rec) => (metric === 'hps' ? rec.hps : rec.dps)
   const ranked = rows.filter((r) => r.record)
   const best = ranked.length ? Math.max(...ranked.map((r) => rate(r.record)), 1) : 1
@@ -110,15 +116,37 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
     () => (characters || []).find((c) => charKey(c.key || c.name) === charKey(player)) || null,
     [characters, player],
   )
-  const profile = playerProfile(fights, player, character)
+  // Server-wide bests + ranks (raid_player_bests). { player, rows } so a profile never
+  // shows the previous player's bests while the next one loads.
+  const [bestsState, setBestsState] = useState({ player: null, rows: [] })
+  useEffect(() => {
+    if (!isShared) return
+    let cancelled = false
+    getPlayerBests(player)
+      .then((rows) => !cancelled && setBestsState({ player, rows }))
+      .catch(() => !cancelled && setBestsState({ player, rows: [] }))
+    return () => {
+      cancelled = true
+    }
+  }, [player])
+  const bests = useMemo(() => (bestsState.player === player ? bestsState.rows : []), [bestsState, player])
+  // A raider seen only on Tauri (no uploaded log, never scraped): the header comes from
+  // their most recent best, which carries the build Tauri recorded at that kill.
+  const profile = useMemo(() => {
+    const p = playerProfile(fights, player, character)
+    if (p.class || !bests.length) return p
+    const b = bests.reduce((a, x) => ((x.day || '') > (a.day || '') ? x : a))
+    return { ...p, class: b.class, spec: b.spec, race: b.race, gender: b.gender, faction: b.faction, guild: b.guild, ilvl: b.ilvl, talents: b.talents || [] }
+  }, [fights, player, character, bests])
   const logs = useMemo(() => playerLogs(fights, player), [fights, player])
   // Mythic first, then Heroic, Normal, LFR: the first one with a kill in a listed raid, so
   // a player with no Mythic logs lands on their Heroic rankings instead of an empty table.
   const autoDiff = useMemo(() => {
     const raids = new Set(MAIN_RAIDS.map((r) => r.name))
     const killed = new Set(logs.filter((l) => l.kill !== false && raids.has(l.raid)).map((l) => l.difficulty))
+    for (const b of bests) if (raids.has(b.raid)) killed.add(b.difficulty)
     return DIFF_TABS.find((d) => killed.has(d)) || DIFF_TABS[0]
-  }, [logs])
+  }, [logs, bests])
   const diff = pickedDiff ?? autoDiff
   // A hand-picked difficulty belongs to the profile it was picked on.
   useEffect(() => setDiff(null), [player])
@@ -274,6 +302,7 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                 <RaidRankCard
                   key={raid.name}
                   fights={fights}
+                  bests={bests}
                   player={player}
                   raid={raid}
                   difficulty={diff}

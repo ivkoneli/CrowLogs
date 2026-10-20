@@ -848,3 +848,308 @@ revoke all on function notify_owner(text, text) from public, anon, authenticated
 -- workflow's concurrency group queues one behind the other if they meet.
 select cron.schedule('mplus-scrape-hourly', '5 * * * *', $$select dispatch_mplus_scrape('hourly')$$);
 select cron.schedule('mplus-scrape-full', '47 4 * * 3', $$select dispatch_mplus_scrape('full')$$);
+
+-- ── SERVER-WIDE RAID BESTS (scripts/scrape-raids.mjs) ─────────────────────────
+-- Every boss kill on Tauri, read from the official API every 30 min, keeps ONE row per
+-- player × boss × difficulty × metric × spec: that player's best DPS (or HPS) kill in that
+-- spec, with the build Tauri froze at the kill (spec, ilvl, talents, trinkets). No per-kill
+-- history: a kill only writes the rows it beats. Detailed history stays in `fights` (uploaded
+-- logs). Tracking started 2026-10-20; earlier kills are only here through the seed from `fights`.
+--
+-- legendary_status: Tauri's record has no legendaries, so the scraper reads them off the
+-- armory right after the kill and keeps them only if the armory still shows the kill's spec,
+-- trinkets and ilvl ('ok'); otherwise they're left out ('mismatch' / 'unknown'). 'log' = the
+-- row came from an uploaded log (addon/armory snapshot frozen at import).
+create table if not exists raid_bests (
+  player_key text not null,          -- lower("Name-realmslug"), the profile key
+  player text not null,              -- "Name-realmslug" as displayed
+  raid text not null,
+  boss text not null,
+  difficulty text not null,          -- Normal / Heroic / Mythic / LFR
+  metric text not null check (metric in ('dps', 'hps')),
+  spec text not null default '',
+  class text,
+  race text,
+  gender smallint,
+  faction text,
+  guild text,
+  value double precision not null,   -- dps or hps
+  amount bigint not null,            -- damage or healing (+absorbs) total
+  duration int not null,             -- fight length, ms
+  day text,                          -- kill date (YYYY-MM-DD)
+  ilvl smallint,
+  talents jsonb,                     -- [{ row, col }] like fights.talents
+  trinkets jsonb,                    -- [{ id, name, icon, ilvl, quality }] like fights.trinkets
+  legendaries jsonb,                 -- same shape; null = not known
+  legendary_status text,
+  source text not null default 'tauri',  -- 'tauri' | 'log'
+  api_realm text,                    -- Tauri API realm the kill was read from
+  log_id bigint,                     -- Tauri raid-log id (links an uploaded log via fights.tauri_log)
+  logid text,                        -- uploaded log, for rows seeded from `fights`
+  started bigint,                    -- …and its encounter start
+  updated_at timestamptz not null default now(),
+  primary key (player_key, raid, boss, difficulty, metric, spec)
+);
+create index if not exists raid_bests_board_idx on raid_bests (raid, boss, difficulty, metric, value desc);
+alter table raid_bests enable row level security;
+drop policy if exists "public read raid bests" on raid_bests;
+create policy "public read raid bests" on raid_bests for select using (true);
+
+-- One row per kill seen by the scraper (no members): kill counts + "already processed".
+create table if not exists raid_kills (
+  api_realm text not null,
+  log_id bigint not null,
+  raid text not null,
+  boss text not null,
+  difficulty text not null,
+  killed_at timestamptz,
+  fight_time int,
+  guild text,
+  members smallint,
+  primary key (api_realm, log_id)
+);
+create index if not exists raid_kills_boss_idx on raid_kills (raid, boss, difficulty);
+alter table raid_kills enable row level security;
+drop policy if exists "public read raid kills" on raid_kills;
+create policy "public read raid kills" on raid_kills for select using (true);
+
+-- Scraper progress per API realm: newest raid-log id processed. The first run only records
+-- the current newest id, so tracking starts from that moment (no backfill).
+create table if not exists raid_status (
+  api_realm text primary key,
+  last_log_id bigint not null,
+  refreshed_at timestamptz not null default now()
+);
+alter table raid_status enable row level security;
+drop policy if exists "public read raid status" on raid_status;
+create policy "public read raid status" on raid_status for select using (true);
+
+-- Everyone seen in a kill: which realm they're on (Evermoon and [HU] Tauri share one API
+-- realm, so the armory decides — `verified`) and the sidebar search for raiders with no logs.
+create table if not exists raid_players (
+  api_realm text not null,
+  name text not null,
+  slug text not null,                -- evermoon / tauri / wod
+  verified boolean not null default false,
+  class text,
+  name_fold text,
+  updated_at timestamptz not null default now(),
+  primary key (api_realm, name)
+);
+create index if not exists raid_players_fold_trgm on raid_players using gin (name_fold extensions.gin_trgm_ops);
+alter table raid_players enable row level security;
+drop policy if exists "public read raid players" on raid_players;
+create policy "public read raid players" on raid_players for select using (true);
+
+-- The board/profile join an uploaded log to the Tauri kill it was matched to.
+create index if not exists fights_tauri_log_idx on fights (tauri_log) where tauri_log is not null;
+
+-- Seed: the bests already in uploaded logs (kills only, no pets, not discredited), so the
+-- board keeps everything it showed before the Tauri tracking started. Safe to re-run: a row
+-- the scraper has since beaten is left alone.
+insert into raid_bests (player_key, player, raid, boss, difficulty, metric, spec, class, race, gender,
+                        faction, guild, value, amount, duration, day, ilvl, talents, trinkets,
+                        legendaries, legendary_status, source, log_id, logid, started)
+select distinct on (lower(f.player), f.raid, f.boss, f.difficulty, m.metric, coalesce(f.spec, c.spec, ''))
+  lower(f.player), f.player, f.raid, f.boss, f.difficulty, m.metric, coalesce(f.spec, c.spec, ''),
+  coalesce(f.class, c.class), c.race, c.gender, c.faction, c.guild,
+  m.value, m.amount, f.duration, f.day, f.ilvl,
+  (select jsonb_agg(jsonb_build_object('row', t->'row', 'col', t->'col'))
+   from jsonb_array_elements(case when jsonb_typeof(f.talents) = 'array' then f.talents else '[]'::jsonb end) t),
+  f.trinkets, nullif(f.legendaries, '[]'::jsonb), 'log', 'log', f.tauri_log, f.logid, f.started
+from fights f
+left join characters c on c.key = lower(f.player)
+cross join lateral (values ('dps', f.dps, f.damage), ('hps', f.hps, f.healing)) m(metric, value, amount)
+where f.kill is not false and not coalesce(f.pet, false) and not coalesce(f.discredited, false)
+  and f.raid is not null and f.boss is not null and f.difficulty is not null
+  and m.value > 0 and m.amount > 0
+order by lower(f.player), f.raid, f.boss, f.difficulty, m.metric, coalesce(f.spec, c.spec, ''), m.value desc
+on conflict (player_key, raid, boss, difficulty, metric, spec) do update set
+  value = excluded.value, amount = excluded.amount, duration = excluded.duration, day = excluded.day,
+  ilvl = excluded.ilvl, talents = excluded.talents, trinkets = excluded.trinkets,
+  legendaries = excluded.legendaries, legendary_status = excluded.legendary_status,
+  source = excluded.source, log_id = excluded.log_id, logid = excluded.logid, started = excluded.started
+where raid_bests.value < excluded.value;
+
+-- Boss board: each player's best for the boss (best across difficulties when p_difficulty is
+-- null, and across specs unless p_specs narrows it), top p_limit, plus the matched total.
+-- A row whose kill is an uploaded log gets that log's id/start (row click opens it) and its
+-- frozen legendaries; a kill an admin discredited in its log is left off.
+create or replace function raid_board(
+  p_raid text, p_boss text, p_difficulty text, p_metric text,
+  p_specs text[] default null, p_class text default null, p_faction text default null,
+  p_realm text default null, p_limit int default 500
+)
+returns table (
+  player text, class text, spec text, race text, gender smallint, faction text, guild text,
+  value double precision, amount bigint, duration int, day text, difficulty text, ilvl smallint,
+  talents jsonb, trinkets jsonb, legendaries jsonb, legendary_status text, source text,
+  logid text, started bigint, total int
+)
+language sql stable set search_path = public as $$
+  with cand as (
+    select rb.*, f.logid as f_logid, f.started as f_started, f.legendaries as f_leg,
+           coalesce(f.discredited, false) as disc
+    from raid_bests rb
+    left join lateral (
+      select x.logid, x.started, x.legendaries, x.discredited from fights x
+      where rb.log_id is not null and x.tauri_log = rb.log_id and lower(x.player) = rb.player_key
+      limit 1
+    ) f on true
+    where rb.raid = p_raid and rb.boss = p_boss and rb.metric = p_metric
+      and (p_difficulty is null or rb.difficulty = p_difficulty)
+      and (p_specs is null or rb.spec = any (p_specs))
+      and (p_class is null or rb.class = p_class)
+      and (p_faction is null or rb.faction = p_faction)
+      and (p_realm is null or split_part(rb.player_key, '-', 2) = lower(p_realm))
+  ), best as (
+    select distinct on (player_key) * from cand where not disc order by player_key, value desc
+  )
+  select b.player, b.class, b.spec, b.race, b.gender, b.faction, b.guild, b.value, b.amount,
+         b.duration, b.day, b.difficulty, b.ilvl, b.talents, b.trinkets,
+         case when jsonb_array_length(coalesce(b.f_leg, '[]'::jsonb)) > 0 then b.f_leg else b.legendaries end,
+         case when jsonb_array_length(coalesce(b.f_leg, '[]'::jsonb)) > 0 then 'log' else b.legendary_status end,
+         b.source, coalesce(b.logid, b.f_logid), coalesce(b.started, b.f_started),
+         (count(*) over ())::int
+  from best b
+  order by b.value desc
+  limit least(greatest(p_limit, 1), 1000)
+$$;
+grant execute on function raid_board(text, text, text, text, text[], text, text, text, int) to anon, authenticated;
+
+-- A player's bests on every boss, with their rank among all players (rank_all: everyone's
+-- best across specs) and within that spec (rank_spec), for the profile's Rankings tab.
+create or replace function raid_player_bests(p_player text)
+returns table (
+  raid text, boss text, difficulty text, metric text, spec text, class text, race text,
+  gender smallint, faction text, guild text, value double precision, amount bigint,
+  duration int, day text, ilvl smallint, talents jsonb, trinkets jsonb, legendaries jsonb,
+  legendary_status text, logid text, started bigint,
+  rank_all int, total_all int, rank_spec int, total_spec int
+)
+language sql stable set search_path = public as $$
+  select rb.raid, rb.boss, rb.difficulty, rb.metric, rb.spec, rb.class, rb.race, rb.gender,
+         rb.faction, rb.guild, rb.value, rb.amount, rb.duration, rb.day, rb.ilvl, rb.talents,
+         rb.trinkets, rb.legendaries, rb.legendary_status,
+         coalesce(rb.logid, f.logid), coalesce(rb.started, f.started),
+         1 + (select count(distinct b.player_key) from raid_bests b
+              where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
+                and b.metric = rb.metric and b.value > rb.value and b.player_key <> rb.player_key)::int,
+         (select count(distinct b.player_key) from raid_bests b
+          where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
+            and b.metric = rb.metric)::int,
+         1 + (select count(*) from raid_bests b
+              where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
+                and b.metric = rb.metric and b.spec = rb.spec and b.value > rb.value
+                and b.player_key <> rb.player_key)::int,
+         (select count(*) from raid_bests b
+          where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
+            and b.metric = rb.metric and b.spec = rb.spec)::int
+  from raid_bests rb
+  left join lateral (
+    select x.logid, x.started from fights x
+    where rb.log_id is not null and x.tauri_log = rb.log_id and lower(x.player) = rb.player_key
+    limit 1
+  ) f on true
+  where rb.player_key = lower(p_player)
+$$;
+grant execute on function raid_player_bests(text) to anon, authenticated;
+
+-- Kills per raid/boss/difficulty: everything the scraper saw plus uploaded kills (an upload
+-- matched to a Tauri kill counts once).
+create or replace function raid_kill_counts()
+returns table (raid text, boss text, difficulty text, kills int)
+language sql stable set search_path = public as $$
+  select k.raid, k.boss, k.difficulty, count(*)::int from (
+    select rk.raid, rk.boss, rk.difficulty, rk.log_id::text as k from raid_kills rk
+    union
+    select f.raid, f.boss, f.difficulty, coalesce(f.tauri_log::text, f.logid || ':' || f.started) from fights f
+    where f.kill is not false and f.raid is not null and f.boss is not null and f.difficulty is not null
+  ) k
+  group by k.raid, k.boss, k.difficulty
+$$;
+grant execute on function raid_kill_counts() to anon, authenticated;
+
+-- Sidebar search for raiders seen on Tauri (players in uploaded logs are matched client-side).
+create or replace function search_raid_players(q text, lim int default 8)
+returns table (player text, class text)
+language sql stable set search_path = extensions, public as $$
+  with p as (
+    select name_fold(q) as fq,
+           replace(replace(replace(name_fold(q), '\', '\\'), '%', '\%'), '_', '\_') as esc
+  )
+  select r.name || '-' || r.slug, r.class
+  from raid_players r, p
+  where length(p.fq) >= 2
+    and (r.name_fold like '%' || p.esc || '%'
+         or (length(p.fq) >= 3 and similarity(r.name_fold, p.fq) >= 0.35))
+  order by
+    case when r.name_fold like p.esc || '%' then 0 else 1 end,
+    similarity(r.name_fold, p.fq) desc
+  limit least(greatest(lim, 1), 25)
+$$;
+grant execute on function search_raid_players(text, int) to anon, authenticated;
+
+-- Every 30 min (:20 and :50, clear of the M+ scrape at :05): start scrape-raids.yml the same
+-- way dispatch_mplus_scrape starts the M+ one, and email the owner if GitHub refuses the
+-- dispatch or no raid scrape has finished for 2 h.
+create table if not exists raid_scrape_alert (
+  id int primary key default 1 check (id = 1),
+  last_stale_alert timestamptz
+);
+alter table raid_scrape_alert enable row level security;
+insert into raid_scrape_alert (id) values (1) on conflict do nothing;
+
+create or replace function dispatch_raid_scrape()
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare
+  tok text;
+  bad text;
+  req bigint;
+begin
+  select string_agg(format('raid dispatch at %s: %s', to_char(d.sent_at, 'YYYY-MM-DD HH24:MI "UTC"'),
+                           coalesce(r.status_code::text, r.error_msg, 'no answer')), E'\n')
+    into bad
+  from scrape_dispatch d
+  left join net._http_response r on r.id = d.request_id
+  where d.kind = 'raid' and not d.checked and d.sent_at < now() - interval '2 minutes'
+    and (r.id is not null or d.sent_at < now() - interval '1 hour')
+    and (r.status_code is null or r.status_code not between 200 and 299);
+  update scrape_dispatch d set checked = true
+  where d.kind = 'raid' and not d.checked and d.sent_at < now() - interval '2 minutes'
+    and (exists (select 1 from net._http_response r where r.id = d.request_id) or d.sent_at < now() - interval '1 hour');
+  if bad is not null then
+    perform notify_owner('raid-scrape-dispatch',
+      'GitHub refused to start the raid scrape (token expired/revoked, or workflow disabled?).' || E'\n' || bad);
+  end if;
+
+  if coalesce((select max(refreshed_at) from raid_status), now()) < now() - interval '2 hours'
+     and coalesce((select last_stale_alert from raid_scrape_alert where id = 1), '-infinity') < now() - interval '12 hours' then
+    update raid_scrape_alert set last_stale_alert = now() where id = 1;
+    perform notify_owner('raid-scrape-stale',
+      'No raid scrape has finished since ' || (select max(refreshed_at) from raid_status)
+      || '. Check https://github.com/ivkoneli/CrowLogs/actions/workflows/scrape-raids.yml');
+  end if;
+
+  select decrypted_secret into tok from vault.decrypted_secrets where name = 'github_dispatch_token';
+  if tok is null then
+    perform notify_owner('raid-scrape-dispatch', 'Vault secret github_dispatch_token is missing.');
+    return;
+  end if;
+  select net.http_post(
+    url := 'https://api.github.com/repos/ivkoneli/CrowLogs/actions/workflows/scrape-raids.yml/dispatches',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || tok,
+      'Accept', 'application/vnd.github+json',
+      'X-GitHub-Api-Version', '2022-11-28',
+      'User-Agent', 'crowlogs-pg-cron',
+      'Content-Type', 'application/json'),
+    body := '{"ref": "main"}'::jsonb,
+    timeout_milliseconds := 15000
+  ) into req;
+  insert into scrape_dispatch (kind, request_id) values ('raid', req);
+end;
+$$;
+revoke all on function dispatch_raid_scrape() from public, anon, authenticated;
+
+select cron.schedule('raid-scrape', '20,50 * * * *', $$select dispatch_raid_scrape()$$);

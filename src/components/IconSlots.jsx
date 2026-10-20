@@ -49,7 +49,9 @@ export function TrinketSlots({ trinkets }) {
 
 // Equipped legendaries (Legion allows two). `legendaries` is [{ name, ilvl, icon }]
 // frozen from the addon snapshot or the armory; empty squares when there are none.
+// null = not known: a Tauri-only kill whose armory no longer matched the kill's build.
 export function LegendarySlots({ legendaries }) {
+  const unknown = legendaries === null
   const list = Array.isArray(legendaries) ? legendaries : []
   return (
     <span className="icon-slots">
@@ -64,7 +66,11 @@ export function LegendarySlots({ legendaries }) {
             title={`${t.name}${t.ilvl ? ` (${t.ilvl})` : ''}`}
           />
         ) : (
-          <span key={i} className="icon-slot trinket" title="No legendary" />
+          <span
+            key={i}
+            className="icon-slot trinket"
+            title={unknown ? 'Legendaries not recorded: the player had changed gear by the time the armory was checked' : 'No legendary'}
+          />
         )
       })}
     </span>

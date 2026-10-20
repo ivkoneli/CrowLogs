@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { RAIDS, MAIN_RAIDS, OTHER_RAIDS } from '../lib/raids.js'
 import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
 import { searchMplusPlayers } from '../lib/mythicplus.js'
+import { searchRaidPlayers } from '../lib/raidBests.js'
 import { classColor } from '../lib/classes.js'
 import { selectionToHash, inAppClick } from '../lib/router.js'
 import logo from '../CrowsLogo.jpg'
@@ -10,8 +11,14 @@ const KNOWN_RAID_NAMES = RAIDS.map((r) => r.name)
 
 // One collapsible raid → boss list. Shared by the main sections and the
 // "Other" drawer so both render identically.
-function RaidGroup({ raid, fights, selection, isOpen, onToggle, onSelectBoss }) {
-  const counts = bossCounts(fights, raid.name)
+// `killCounts` (server-wide, from raid_kill_counts) replaces the uploaded-log counts when set.
+function RaidGroup({ raid, fights, killCounts, selection, isOpen, onToggle, onSelectBoss }) {
+  const counts = useMemo(() => {
+    if (!killCounts) return bossCounts(fights, raid.name)
+    const out = {}
+    for (const k of killCounts) if (k.raid === raid.name) out[k.boss] = (out[k.boss] || 0) + k.kills
+    return out
+  }, [killCounts, fights, raid.name])
   return (
     <div className="raid-group">
       <button className="raid-header" onClick={() => onToggle(raid.name)}>
@@ -44,7 +51,7 @@ function RaidGroup({ raid, fights, selection, isOpen, onToggle, onSelectBoss }) 
   )
 }
 
-export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings, onClose }) {
+export default function Sidebar({ fights, killCounts, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings, onClose }) {
   const [query, setQuery] = useState('')
   // Current progression starts expanded; everything under "Other" starts collapsed.
   const [openRaids, setOpenRaids] = useState(() => new Set(MAIN_RAIDS.map((r) => r.name)))
@@ -70,8 +77,9 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
     if (q.length < 2) return
     let cancelled = false
     const t = setTimeout(() => {
-      searchMplusPlayers(q)
-        .then((list) => !cancelled && setMplus({ q, list }))
+      // Raiders seen on Tauri first (they have raid rankings), then M+ players.
+      Promise.all([searchRaidPlayers(q).catch(() => []), searchMplusPlayers(q)])
+        .then(([raid, mp]) => !cancelled && setMplus({ q, list: [...raid, ...mp] }))
         .catch(() => !cancelled && setMplus({ q, list: [] }))
     }, 200)
     return () => {
@@ -168,6 +176,7 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
             key={raid.name}
             raid={raid}
             fights={fights}
+            killCounts={killCounts}
             selection={selection}
             isOpen={openRaids.has(raid.name)}
             onToggle={toggleRaid}
@@ -191,6 +200,7 @@ export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlaye
                     key={raid.name}
                     raid={raid}
                     fights={fights}
+                    killCounts={killCounts}
                     selection={selection}
                     isOpen={openRaids.has(raid.name)}
                     onToggle={toggleRaid}

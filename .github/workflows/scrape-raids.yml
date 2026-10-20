@@ -1,0 +1,34 @@
+name: Scrape raid kills
+
+# Reads every new boss kill on Tauri (official API) and keeps each player's best DPS/HPS per
+# boss/difficulty/spec in the Supabase `raid_bests` table; legendaries come from the armory
+# when it still matches the kill's build. See scripts/scrape-raids.mjs.
+#
+# Started by Supabase pg_cron every 30 min (dispatch_raid_scrape() in supabase/schema.sql),
+# not by a `schedule:` here — GitHub's cron runs late by hours. A Tauri outage ends a run
+# quietly; dispatch_raid_scrape() emails the owner if nothing has finished for 2 h.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-raids
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/scrape-raids.mjs
+        env:
+          TAURI_API_KEY: ${{ secrets.TAURI_API_KEY }}
+          TAURI_API_SECRET: ${{ secrets.TAURI_API_SECRET }}
+          TAURI_COOKIE: ${{ secrets.TAURI_COOKIE }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
