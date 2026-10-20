@@ -16,6 +16,7 @@
 
 import { matchBoss, difficultyFromId, DEFAULT_DIFFICULTY } from './lib/raids.js'
 import { specFromSpells } from './lib/specDetect.js'
+import { BOSS_HP, npcIdOf, bossPctLeft } from './lib/bossHp.js'
 
 const DAMAGE_EVENTS = new Set([
   'SWING_DAMAGE',
@@ -213,8 +214,11 @@ function isSoloClear(recs) {
   return players.size > 0 && players.size <= SOLO_MAX_PLAYERS
 }
 
-function buildRecords({ raid, boss, difficulty, encounterID, kill, logGap, startMs, endMs, events, petOwners, petBaseOwners }) {
+function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, logGap, startMs, endMs, events, petOwners, petBaseOwners }) {
   const players = new Map()
+  // Damage the boss itself took this pull (from anyone, overkill excluded) → its health left.
+  const bossNpcs = new Set(BOSS_HP[encounterID]?.npcs || [])
+  let bossDamage = 0
   const lusts = [] // { name, ts } — Bloodlust/Heroism/Time Warp casts this fight
   let firstActivity = null
   let lastActivity = null
@@ -251,6 +255,11 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, logGap, start
 
     if (DAMAGE_EVENTS.has(ev.event)) {
       const srcGuid = f[1]
+      if (bossNpcs.size && bossNpcs.has(npcIdOf(f[5]))) {
+        const hit = parseInt(f[f.length - DAMAGE_SUFFIX_LEN], 10)
+        const over = parseInt(f[f.length - DAMAGE_SUFFIX_LEN + 1], 10)
+        if (hit > 0) bossDamage += hit - (over > 0 ? over : 0)
+      }
       if (!isPlayerGuid(srcGuid)) continue
       // Damage done to players (or their pets) isn't raid damage: friendly fire, self-damage
       // (Burning Rush), and mind-controlled raiders (Mythic Nythendra's Infested Mind) made
@@ -318,6 +327,9 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, logGap, start
   const bloodlust = lusts
     .sort((a, b) => a.ts - b.ts)
     .map((l) => ({ player: l.name, t: Math.max(0, Math.round((l.ts - base) / 1000)) }))
+  // Boss health left when the pull ended: 0 on a kill, null when the boss isn't in BOSS_HP.
+  // A disconnected pull (logGap) missed part of the fight, so it can't say.
+  const bossPct = kill ? 0 : logGap ? null : bossPctLeft(encounterID, difficulty, groupSize, bossDamage)
 
   return [...players.values()]
     .filter((p) => p.damage > 0 || p.healing > 0)
@@ -336,6 +348,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, kill, logGap, start
         log_gap: !!logGap,
         kill,
         bloodlust,
+        boss_pct: bossPct,
         player: p.player,
         guid: p.guid,
         pet: p.pet,
@@ -430,6 +443,7 @@ export function createLogParser() {
         raid: matched ? matched.raid : 'Other',
         difficulty: difficultyFromId(fields[3]),
         encounterID: encId,
+        groupSize: Number(fields[4]) || null, // players in the raid at the pull (Normal/Heroic boss health scales with it)
         kill: false, // set true if ENCOUNTER_END reports success
         startMs: ts,
         endMs: Infinity,

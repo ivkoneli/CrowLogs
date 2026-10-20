@@ -21,6 +21,8 @@ const FIELDS = [
   'hps',
   'kill',
   'bloodlust',
+  // Boss health left at the end of a pull, 0-100 (0 on a kill; see lib/bossHp.js).
+  'boss_pct',
   'potions',
   // Frozen character snapshot, written at import time (see App.jsx onImported).
   // `class` is persisted because the addon snapshot supplies it for players the armory

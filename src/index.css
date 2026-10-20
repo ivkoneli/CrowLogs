@@ -531,6 +531,39 @@ code {
   gap: 12px;
   margin-bottom: 10px;
 }
+/* Wipe: boss health left, on its own line above the lust hint. */
+.boss-hp {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+.boss-hp-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--accent-2);
+  font-size: 0.7rem;
+}
+.boss-hp-bar {
+  position: relative;
+  width: 160px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.boss-hp-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #e2566b, #ff8a65);
+}
+.boss-hp-value {
+  font-weight: 700;
+  color: #ff8a65;
+}
 /* Bloodlust / Heroism / Time Warp hint, on its own line under the encounter head. */
 .lust-hint {
   flex-basis: 100%;

@@ -215,6 +215,8 @@ export function logSummary(fights, logId) {
         day: f.day,
         kill: f.kill !== false, // wipes are flagged false; legacy/unknown → kill
         bloodlust: f.bloodlust || [], // [{ player, t }] — same for the whole encounter
+        // Boss health left when the pull ended (0-100), same for the whole encounter; null = unknown.
+        bossPct: f.boss_pct ?? null,
         duration: 0,
         rows: [],
       }

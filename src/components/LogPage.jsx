@@ -8,6 +8,8 @@ import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 import LogSkeleton from './LogSkeleton.jsx'
 
 // "Iplayretail 0:04" — a lust cast and how far into the fight it landed.
+// Boss health left: one decimal under 10% (1.7%), whole numbers above (58%).
+const fmtPct = (p) => `${p < 10 ? p.toFixed(1) : Math.round(p)}%`
 const lustLabel = (l) => `${l.player.split('-')[0]} ${formatDuration(l.t * 1000)}`
 
 // `focus` (optional) = { started }: open on the tab of the encounter with that start
@@ -143,7 +145,11 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
             >
               <span className="tab-num">{i + 1}</span>
               {e.boss}
-              {!e.kill && <span className="wipe-dot" title="Wipe">✕</span>}
+              {!e.kill && (
+                <span className="wipe-dot" title={e.bossPct != null ? `Wipe with the boss at ${fmtPct(e.bossPct)}` : 'Wipe'}>
+                  {e.bossPct != null ? fmtPct(e.bossPct) : '✕'}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -157,13 +163,22 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
               {enc.kill ? (
                 <span className="result-badge kill">Kill</span>
               ) : (
-                <span className="result-badge wipe">Wipe</span>
+                <span className="result-badge wipe">Wipe{enc.bossPct != null && ` · ${fmtPct(enc.bossPct)}`}</span>
               )}
             </h3>
             <span className="kicker">
               {enc.difficulty} · {formatDuration(enc.duration)} · {rows.length}{' '}
               {rows.length === 1 ? 'player' : 'players'}
             </span>
+            {!enc.kill && enc.bossPct != null && (
+              <div className="boss-hp" title="Boss health left when the raid wiped (from the damage it took)">
+                <span className="boss-hp-label">Boss HP</span>
+                <span className="boss-hp-bar">
+                  <span style={{ width: `${enc.bossPct}%` }} />
+                </span>
+                <span className="boss-hp-value">{fmtPct(enc.bossPct)} left</span>
+              </div>
+            )}
             {enc.bloodlust?.length > 0 && (
               <div className="lust-hint" title="Bloodlust / Heroism / Time Warp">
                 <img className="lust-icon" src={HEROISM_ICON} alt="" />

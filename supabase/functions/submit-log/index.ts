@@ -100,6 +100,8 @@ function sanitize(row: Record<string, unknown>) {
   out.started = num(row.started)
   out.duration = duration
   out.bloodlust = jsonOrNull(row.bloodlust)
+  // Boss health left when the pull ended (parser.js, from damage the boss took): 0-100.
+  out.boss_pct = row.boss_pct == null ? null : Math.min(Math.max(num(row.boss_pct), 0), 100)
   out.talents = jsonOrNull(row.talents)
   out.trinkets = jsonOrNull(row.trinkets)
   out.legendaries = cleanItems(row.legendaries)
