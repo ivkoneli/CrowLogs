@@ -6,6 +6,7 @@ import MythicRankingsPage from './components/MythicRankingsPage.jsx'
 import BossPage from './components/BossPage.jsx'
 import PlayerPage from './components/PlayerPage.jsx'
 import LogPage from './components/LogPage.jsx'
+import UploadPicker from './components/UploadPicker.jsx'
 import LogLoading from './components/LogLoading.jsx'
 import DuplicatePrompt from './components/DuplicatePrompt.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
@@ -14,7 +15,7 @@ import { getKillCounts } from './lib/raidBests.js'
 import { findDuplicateEncounters, encounterKey, STRICT } from './lib/dedup.js'
 import { getCharacters, mergeCharacters, requestCharacterScrape, charKey, trinketsOf, legendariesOf } from './lib/characters.js'
 import { foldPetsByClass } from './lib/petfold.js'
-import { splitByNight } from './lib/splitNights.js'
+import { splitByRun } from './lib/splitNights.js'
 import { specIconUrl } from './lib/classes.js'
 import { initAdminFromUrl } from './lib/admin.js'
 import { selectionFromHash, selectionToHash, inAppClick, pushSelection, replaceSelection, canGoBack } from './lib/router.js'
@@ -118,7 +119,7 @@ export default function App() {
       // this file's logid — so re-uploading a combat log that still holds last week's raid
       // (the .txt wasn't reset) only adds the new night, never re-creates the old one.
       const priorLogid = new Map(stored.map((f) => [f.id, f.logid]))
-      let recs = splitByNight(
+      let recs = splitByRun(
         records.map((r) => {
           const prev = priorLogid.get(r.id)
           return prev && prev !== r.logid ? { ...r, logid: prev } : r
@@ -154,10 +155,14 @@ export default function App() {
         return { nothingNew: true }
       }
       const newest = recs.length ? recs.reduce((a, b) => (b.started > a.started ? b : a)) : null
-      // A file holding several nights is split into one log per night (splitByNight): open
-      // the newest night's.
-      const newestNew = recs.filter((r) => !priorLogid.has(r.id)).reduce((a, b) => (!a || b.started > a.started ? b : a), null)
+      // A file holding several raids is split into one log per raid run (splitByRun). One new
+      // log opens directly; several open a page listing them (newest first) to pick from.
+      const fresh = recs.filter((r) => !priorLogid.has(r.id))
+      const newestNew = fresh.reduce((a, b) => (!a || b.started > a.started ? b : a), null)
       const openLogId = hasNew ? newestNew?.logid || logId : newest?.logid || logId
+      const lastPull = new Map()
+      for (const r of fresh) lastPull.set(r.logid, Math.max(lastPull.get(r.logid) ?? -Infinity, r.started || 0))
+      const newLogIds = [...lastPull.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
 
       // Show the full-screen loading overlay immediately, with tips drawn from this log
       // (enriched with any character data we already have for sharper jabs).
@@ -220,7 +225,8 @@ export default function App() {
       const elapsed = Date.now() - startedAt
       if (elapsed < 5000) await new Promise((r) => setTimeout(r, 5000 - elapsed))
       // Open the log's full breakdown (this file's, or the existing one on a pure re-upload).
-      if (openLogId) navigate({ view: 'log', logId: openLogId })
+      if (newLogIds.length > 1) navigate({ view: 'upload', logIds: newLogIds })
+      else if (openLogId) navigate({ view: 'log', logId: openLogId })
       // Drop the spinner/tips but keep the skeleton over the now-mounted log for ~1s, so
       // the real meters fade in instead of snapping in the instant analysis finishes.
       setAnalyzePhase('reveal')
@@ -339,7 +345,7 @@ export default function App() {
       />
 
       <main
-        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'player' || selection.view === 'import' || selection.view === 'home' || selection.view === 'mplus' ? 'content-wide' : ''}`}
+        className={`content ${selection.view === 'boss' || selection.view === 'log' || selection.view === 'upload' || selection.view === 'player' || selection.view === 'import' || selection.view === 'home' || selection.view === 'mplus' ? 'content-wide' : ''}`}
       >
         {loading && selection.view !== 'home' && selection.view !== 'mplus' && <div className="empty-state">Loading rankings…</div>}
         {loadError && <div className="error">Couldn’t load rankings: {loadError}</div>}
@@ -384,6 +390,9 @@ export default function App() {
               onUpdateProfile={onUpdateProfile}
               onSelectRankings={onRankings}
             />
+          )}
+          {!loading && selection.view === 'upload' && (
+            <UploadPicker fights={fights} logIds={selection.logIds} onSelectLog={onSelectLog} />
           )}
           {!loading && selection.view === 'log' && (
             <LogPage

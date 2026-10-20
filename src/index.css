@@ -4304,3 +4304,70 @@ a.mp-rank.link:hover {
     overflow: visible; /* as on the log meter: lets the pinned cells stick */
   }
 }
+
+/* ---------- upload picker (one upload split into several raids) ---------- */
+.upload-picker .page-head p {
+  margin: 0.3rem 0 0;
+}
+.upload-list {
+  list-style: none;
+  margin: 1.25rem auto 0;
+  padding: 0;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.upload-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1rem 6rem 1rem 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.upload-item:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.upload-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+.upload-diff.diff-mythic {
+  color: #ff8000;
+}
+.upload-diff.diff-heroic {
+  color: #a335ee;
+}
+.upload-diff.diff-normal {
+  color: #1eff00;
+}
+.upload-date {
+  color: var(--text);
+}
+.upload-raid {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.upload-meta,
+.upload-bosses {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.upload-open {
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--highlight);
+  font-weight: 700;
+}

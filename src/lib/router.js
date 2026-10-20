@@ -10,6 +10,7 @@
 //   #/player/<name>           player profile
 //   #/log/<logId>             uploaded log breakdown (first encounter)
 //   #/log/<logId>/<started>   …opened on the encounter with that start time
+//   #/upload/<id>,<id>,…      the logs one upload was split into (pick one to open)
 
 const seg = encodeURIComponent
 
@@ -23,6 +24,8 @@ export function selectionToHash(sel) {
       return (
         `#/log/${seg(sel.logId)}` + (sel.focus?.started != null ? `/${seg(sel.focus.started)}` : '')
       )
+    case 'upload':
+      return `#/upload/${(sel.logIds || []).map(seg).join(',')}`
     case 'import':
       return '#/import'
     case 'mplus': {
@@ -86,6 +89,7 @@ export function selectionFromHash(hash) {
   if (view === 'boss' && a && b) return { view: 'boss', raid: a, boss: b }
   if (view === 'player' && a) return { view: 'player', player: a }
   if (view === 'log' && a) return { view: 'log', logId: a, focus: b ? { started: b } : null }
+  if (view === 'upload' && a) return { view: 'upload', logIds: a.split(',').filter(Boolean) }
   if (view === 'import') return { view: 'import' }
   return { view: 'home' }
 }
