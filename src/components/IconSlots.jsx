@@ -1,4 +1,4 @@
-import { specIconUrl, raceIconUrl } from '../lib/classes.js'
+import { specIconUrl, raceIconUrl, classIconUrl } from '../lib/classes.js'
 
 // Spec + race icons shown next to the name. Each sits inside its placeholder
 // square, so if an image is missing/blocked the square shows through (rather than
@@ -6,7 +6,7 @@ import { specIconUrl, raceIconUrl } from '../lib/classes.js'
 // per-class spec-icon map.
 export function SpecRaceSlots({ klass, spec, specIcon, race, gender, size = 16 }) {
   const dim = { width: size, height: size }
-  const sIcon = specIcon || specIconUrl(klass, spec)
+  const sIcon = specIcon || specIconUrl(klass, spec) || classIconUrl(klass)
   const rIcon = raceIconUrl(race, gender)
   const hide = (e) => {
     e.currentTarget.style.display = 'none'

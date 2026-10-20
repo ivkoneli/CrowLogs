@@ -21,7 +21,7 @@ import {
   splitPlayerKey,
   memberPlayerKey,
 } from '../lib/mythicplus.js'
-import { LEGION_CLASSES, classColor, specsOf, specIconUrl } from '../lib/classes.js'
+import { LEGION_CLASSES, classColor, specsOf, specIconUrl, classIconUrl } from '../lib/classes.js'
 import { selectionToHash, inAppClick } from '../lib/router.js'
 import { Medal, Pager, RankMove } from './MythicPlusCard.jsx'
 
@@ -503,7 +503,14 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
                         <RankMove rank={r.rank} prev={r.prev_rank} />
                       </td>
                       <td className="mr-player">
-                        {rowSpec && <img className="mr-spec-icon" src={specIconUrl(r.class, rowSpec)} alt="" title={`${rowSpec} ${r.class || ''}`} />}
+                        {(rowSpec || r.class) && (
+                          <img
+                            className="mr-spec-icon"
+                            src={(rowSpec && specIconUrl(r.class, rowSpec)) || classIconUrl(r.class)}
+                            alt=""
+                            title={[rowSpec, r.class].filter(Boolean).join(' ')}
+                          />
+                        )}
                         <a
                           className="name link"
                           style={r.class ? { color: classColor(r.class) } : undefined}

@@ -166,14 +166,34 @@ export function specIconUrl(className, spec) {
 }
 
 // Race portrait icon (Tauri CDN uses the achievement_character_<race>_<gender> set).
-// gender: 0/'0' = male, 1/'1' = female. Worgen/Goblin aren't on the CDN — the UI
-// hides a failed image and keeps the placeholder square.
+// gender: 0/'0' = male, 1/'1' = female. The CDN lacks some of that set (Worgen,
+// Goblin, Pandaren male, the allied races), so those use the closest icon it does have.
+const RACE_ICON_OVERRIDES = {
+  worgen: { male: 'achievement_worganhead', female: 'achievement_worganhead' },
+  goblin: { male: 'achievement_goblinhead', female: 'achievement_goblinhead' },
+  pandaren: { male: 'achievement_guild_classypanda' },
+  nightborne: { male: 'achievement_alliedrace_nightborne', female: 'achievement_alliedrace_nightborne' },
+  highmountaintauren: { male: 'achievement_alliedrace_highmountaintauren', female: 'achievement_alliedrace_highmountaintauren' },
+  voidelf: { male: 'achievement_alliedrace_voidelf', female: 'achievement_alliedrace_voidelf' },
+  lightforgeddraenei: { male: 'achievement_alliedrace_lightforgeddraenei', female: 'achievement_alliedrace_lightforgeddraenei' },
+}
+const RACE_KEY_ALIASES = { scourge: 'undead', forsaken: 'undead' }
 export function raceIconUrl(race, gender) {
   if (!race) return null
-  const key = race.toLowerCase().replace(/\s+/g, '')
+  const raw = race.toLowerCase().replace(/[\s-]+/g, '')
+  const key = RACE_KEY_ALIASES[raw] || raw
   const g = gender === 1 || gender === '1' ? 'female' : 'male'
-  return `${SPEC_ICON_BASE}achievement_character_${key}_${g}.png`
+  const name = RACE_ICON_OVERRIDES[key]?.[g] || `achievement_character_${key}_${g}`
+  return `${SPEC_ICON_BASE}${name}.png`
 }
+
+// Class crest icon (classicon_<class>), the fallback when a spec isn't known.
+export function classIconUrl(className) {
+  return className ? `${SPEC_ICON_BASE}classicon_${className.toLowerCase().replace(/\s+/g, '')}.png` : null
+}
+
+// Bloodlust / Heroism / Time Warp marker on the log page.
+export const HEROISM_ICON = `${SPEC_ICON_BASE}ability_shaman_heroism.png`
 
 // Faction crest icon (the PvP achievement crests).
 export function factionIconUrl(faction) {

@@ -3,6 +3,7 @@ import { logSummary } from '../lib/rankings.js'
 import { formatDuration } from '../parser.js'
 import { deleteLog, discreditLog } from '../lib/store.js'
 import { isAdmin, adminToken } from '../lib/admin.js'
+import { HEROISM_ICON } from '../lib/classes.js'
 import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 import LogSkeleton from './LogSkeleton.jsx'
 
@@ -165,7 +166,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
             </span>
             {enc.bloodlust?.length > 0 && (
               <div className="lust-hint" title="Bloodlust / Heroism / Time Warp">
-                <span className="lust-icon">🩸</span>
+                <img className="lust-icon" src={HEROISM_ICON} alt="" />
                 <span className="lust-label">Lust</span>
                 {enc.bloodlust.map((l, i) => (
                   <span key={i} className="lust-cast">

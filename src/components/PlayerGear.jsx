@@ -47,13 +47,17 @@ const SLOT_LABEL = {
 
 // Gems come from the armory as [{ icon, stat }]; the demo data uses a bare count.
 // Render real gem icons when we have them, otherwise the count as placeholder slots.
+// The tooltip gives an empty socket's art as a site-relative path (/sys/img/…), which
+// would resolve against our own host — point it at Tauri's.
+const tauriUrl = (src) => (src && src.startsWith('/') ? `https://tauriwow.com${src}` : src)
+
 function Gems({ gems }) {
   if (Array.isArray(gems)) {
     if (!gems.length) return null
     return (
       <span className="gear-slots">
         {gems.map((g, i) => (
-          <img key={i} className="gem-icon" src={g.icon} alt="" title={g.stat} />
+          <img key={i} className="gem-icon" src={tauriUrl(g.icon)} alt="" title={g.stat || 'Empty socket'} />
         ))}
       </span>
     )
