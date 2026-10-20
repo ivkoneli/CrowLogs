@@ -6,7 +6,8 @@ import { classColor, roleOf } from '../lib/classes.js'
 import FilterBar from './FilterBar.jsx'
 import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 
-const EMPTY = { difficulty: null, class: null, spec: null, role: null, faction: null, realm: null }
+// Opens on Mythic; "All difficulties" is still in the dropdown.
+const EMPTY = { difficulty: 'Mythic', class: null, spec: null, role: null, faction: null, realm: null }
 // Realm slugs a player key can carry (the board's realm filter).
 const REALMS = ['evermoon', 'tauri', 'wod']
 
@@ -118,7 +119,9 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
     ? counts.filter((k) => !difficulty || k.difficulty === difficulty).reduce((s, k) => s + k.kills, 0)
     : killCount(fights, raid, boss, difficulty)
   const realms = isShared ? REALMS : realmsIn(localRanking)
-  const empty = isShared ? !loading && board.total === 0 && !Object.values(filter).some(Boolean) : localRanking.length === 0
+  // Nothing on this difficulty at all (as opposed to nothing matching the other filters).
+  const { difficulty: _d, ...others } = filter
+  const empty = isShared ? !loading && board.total === 0 && !Object.values(others).some(Boolean) : localRanking.length === 0
 
   const maxValue = filtered.length ? Math.max(...filtered.map(rate), 1) : 1
   const groups = useMemo(() => (bySpec ? groupBySpec(filtered, metric) : null), [bySpec, filtered, metric])
@@ -153,7 +156,7 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
         <div className="empty-state">Loading rankings…</div>
       ) : empty ? (
         <div className="empty-state">
-          <p>No kills of this boss recorded yet.</p>
+          <p>No {difficulty ? `${difficulty} ` : ''}kills of this boss recorded yet.</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">

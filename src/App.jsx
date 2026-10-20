@@ -329,7 +329,7 @@ export default function App() {
       <Sidebar
         onClose={closeNav}
         fights={fights}
-        killCounts={isShared ? killCounts : null}
+
         selection={selection}
         onSelectBoss={onSelectBoss}
         onSelectPlayer={onSelectPlayer}

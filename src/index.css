@@ -804,6 +804,102 @@ code {
   color: var(--text);
 }
 
+/* Class / spec picker (ClassSpecPicker): a select-looking button + icon listbox. */
+.csp {
+  position: relative;
+}
+.csp-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 210px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 16px; /* the <select>s beside it render in Arial, whose line is shorter: same 34px height */
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.csp-button:hover {
+  border-color: var(--accent);
+}
+.csp-button.open,
+.csp-button:focus-visible {
+  outline: none;
+  border-color: var(--highlight);
+  box-shadow: 0 0 0 2px rgba(92, 210, 255, 0.25);
+}
+.csp-button .caret {
+  position: absolute;
+  right: 0.7rem;
+  color: var(--accent-2);
+  font-size: 0.75rem;
+}
+.csp-button .csp-icon {
+  width: 16px;
+  height: 16px;
+  margin: -2px 0;
+}
+.csp-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.csp-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  flex: none;
+}
+.csp-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  width: 250px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.csp-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.38rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.csp-opt:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.csp-opt.on {
+  background: rgba(92, 210, 255, 0.14);
+}
+.csp-all {
+  font-style: italic;
+  color: var(--muted);
+}
+.csp-class {
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+.csp-spec {
+  padding-left: 1.6rem;
+}
+
 /* ---------- log analysis loading overlay ---------- */
 /* Opaque backdrop that hides the import page and hosts the skeleton. Offset past the
    sidebar on desktop so the skeleton lines up with where the real log will mount (no

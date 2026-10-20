@@ -24,13 +24,11 @@ import {
 import { LEGION_CLASSES, classColor, specsOf, specIconUrl, classIconUrl } from '../lib/classes.js'
 import { selectionToHash, inAppClick } from '../lib/router.js'
 import { Medal, Pager, RankMove } from './MythicPlusCard.jsx'
+import ClassSpecPicker from './ClassSpecPicker.jsx'
 
 // Realm slug → short label for the filter and the tag after a name.
 const REALM_LABELS = { evermoon: 'Evermoon', tauri: 'Tauri', wod: 'WoD' }
 const SLUG_OF_REALM = Object.fromEntries(Object.entries(MPLUS_REALMS).map(([slug, realm]) => [realm, slug]))
-// Non-breaking spaces that indent a spec under its class in the dropdown (a plain
-// space would be collapsed by the browser).
-const SPEC_INDENT = '\u00a0\u00a0\u00a0\u00a0'
 
 function Field({ label, value, onChange, children }) {
   return (
@@ -389,27 +387,7 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
 
       <div className="filter-bar mr-filters">
         {/* One dropdown for class AND spec: each class, then its specs indented under it. */}
-        <Field
-          label="Class / spec"
-          value={klass ? (spec ? `${klass}|${spec}` : klass) : ''}
-          onChange={(v) => {
-            const [c, s] = v.split('|')
-            setFilter({ klass: c || null, spec: s || null })
-          }}
-        >
-          <option value="">All classes</option>
-          {LEGION_CLASSES.flatMap((c) => [
-            <option key={c.name} value={c.name}>
-              {c.name}
-            </option>,
-            ...specsOf(c.name).map((s) => (
-              <option key={`${c.name}|${s.name}`} value={`${c.name}|${s.name}`}>
-                {SPEC_INDENT}
-                {s.name}
-              </option>
-            )),
-          ])}
-        </Field>
+        <ClassSpecPicker klass={klass} spec={spec} onChange={({ klass: k, spec: s }) => setFilter({ klass: k, spec: s })} />
         <Field label="Realm" value={realm} onChange={(v) => setFilter({ realm: v || null })}>
           <option value="">All realms</option>
           {Object.keys(MPLUS_REALMS).map((slug) => (

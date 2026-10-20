@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RAIDS, MAIN_RAIDS, OTHER_RAIDS } from '../lib/raids.js'
-import { bossCounts, searchPlayers, extraRaids } from '../lib/rankings.js'
+import { searchPlayers, extraRaids } from '../lib/rankings.js'
 import { searchMplusPlayers } from '../lib/mythicplus.js'
 import { searchRaidPlayers } from '../lib/raidBests.js'
 import { classColor } from '../lib/classes.js'
@@ -11,14 +11,7 @@ const KNOWN_RAID_NAMES = RAIDS.map((r) => r.name)
 
 // One collapsible raid → boss list. Shared by the main sections and the
 // "Other" drawer so both render identically.
-// `killCounts` (server-wide, from raid_kill_counts) replaces the uploaded-log counts when set.
-function RaidGroup({ raid, fights, killCounts, selection, isOpen, onToggle, onSelectBoss }) {
-  const counts = useMemo(() => {
-    if (!killCounts) return bossCounts(fights, raid.name)
-    const out = {}
-    for (const k of killCounts) if (k.raid === raid.name) out[k.boss] = (out[k.boss] || 0) + k.kills
-    return out
-  }, [killCounts, fights, raid.name])
+function RaidGroup({ raid, selection, isOpen, onToggle, onSelectBoss }) {
   return (
     <div className="raid-group">
       <button className="raid-header" onClick={() => onToggle(raid.name)}>
@@ -32,7 +25,6 @@ function RaidGroup({ raid, fights, killCounts, selection, isOpen, onToggle, onSe
               selection?.view === 'boss' &&
               selection.boss === boss &&
               selection.raid === raid.name
-            const count = counts[boss] || 0
             return (
               <li key={boss}>
                 <button
@@ -40,7 +32,6 @@ function RaidGroup({ raid, fights, killCounts, selection, isOpen, onToggle, onSe
                   onClick={() => onSelectBoss(raid.name, boss)}
                 >
                   <span className="boss-name">{boss}</span>
-                  <span className={`boss-count ${count ? '' : 'zero'}`}>{count}</span>
                 </button>
               </li>
             )
@@ -51,7 +42,7 @@ function RaidGroup({ raid, fights, killCounts, selection, isOpen, onToggle, onSe
   )
 }
 
-export default function Sidebar({ fights, killCounts, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings, onClose }) {
+export default function Sidebar({ fights, selection, onSelectBoss, onSelectPlayer, onImport, onHome, onRankings, onClose }) {
   const [query, setQuery] = useState('')
   // Current progression starts expanded; everything under "Other" starts collapsed.
   const [openRaids, setOpenRaids] = useState(() => new Set(MAIN_RAIDS.map((r) => r.name)))
@@ -175,8 +166,6 @@ export default function Sidebar({ fights, killCounts, selection, onSelectBoss, o
           <RaidGroup
             key={raid.name}
             raid={raid}
-            fights={fights}
-            killCounts={killCounts}
             selection={selection}
             isOpen={openRaids.has(raid.name)}
             onToggle={toggleRaid}
@@ -199,8 +188,6 @@ export default function Sidebar({ fights, killCounts, selection, onSelectBoss, o
                   <RaidGroup
                     key={raid.name}
                     raid={raid}
-                    fights={fights}
-                    killCounts={killCounts}
                     selection={selection}
                     isOpen={openRaids.has(raid.name)}
                     onToggle={toggleRaid}

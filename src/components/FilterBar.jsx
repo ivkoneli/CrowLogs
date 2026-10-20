@@ -1,4 +1,6 @@
-import { LEGION_CLASSES, ROLES, FACTIONS, specsOf } from '../lib/classes.js'
+import { ROLES, FACTIONS } from '../lib/classes.js'
+import { DIFFICULTY_ORDER } from '../lib/rankings.js'
+import ClassSpecPicker from './ClassSpecPicker.jsx'
 
 // A labeled dropdown, styled to match the guild theme.
 function Field({ label, value, onChange, disabled, children }) {
@@ -15,11 +17,14 @@ function Field({ label, value, onChange, disabled, children }) {
   )
 }
 
-// Compact dropdown filter row: Difficulty · Class · Spec · Role · Faction · Realm.
+// Compact dropdown filter row: Difficulty · Class / spec · Role · Faction · Realm.
 // `filter` = { difficulty, class, spec, role, faction, realm }.
 export default function FilterBar({ filter, onFilter, realms, difficulties = [] }) {
   const set = (patch) => onFilter({ ...filter, ...patch })
-  const specs = filter.class ? specsOf(filter.class) : []
+  // The picked difficulty stays listed even before any kill on it (the page opens on Mythic).
+  const diffs = [...new Set([...difficulties, filter.difficulty].filter(Boolean))].sort(
+    (a, b) => DIFFICULTY_ORDER.indexOf(a) - DIFFICULTY_ORDER.indexOf(b),
+  )
 
   return (
     <div className="filter-bar">
@@ -27,42 +32,21 @@ export default function FilterBar({ filter, onFilter, realms, difficulties = [] 
         label="Difficulty"
         value={filter.difficulty}
         onChange={(v) => set({ difficulty: v || null })}
-        disabled={difficulties.length === 0}
+        disabled={diffs.length === 0}
       >
         <option value="">All difficulties</option>
-        {difficulties.map((d) => (
+        {diffs.map((d) => (
           <option key={d} value={d}>
             {d}
           </option>
         ))}
       </Field>
 
-      <Field
-        label="Class"
-        value={filter.class}
-        onChange={(v) => set({ class: v || null, spec: null })}
-      >
-        <option value="">All classes</option>
-        {LEGION_CLASSES.map((c) => (
-          <option key={c.name} value={c.name}>
-            {c.name}
-          </option>
-        ))}
-      </Field>
-
-      <Field
-        label="Spec"
-        value={filter.spec}
-        onChange={(v) => set({ spec: v || null })}
-        disabled={!filter.class}
-      >
-        <option value="">{filter.class ? 'All specs' : '—'}</option>
-        {specs.map((s) => (
-          <option key={s.name} value={s.name}>
-            {s.name}
-          </option>
-        ))}
-      </Field>
+      <ClassSpecPicker
+        klass={filter.class}
+        spec={filter.spec}
+        onChange={({ klass, spec }) => set({ class: klass, spec })}
+      />
 
       <Field label="Role" value={filter.role} onChange={(v) => set({ role: v || null })}>
         <option value="">All roles</option>
