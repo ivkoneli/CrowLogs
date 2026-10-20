@@ -79,7 +79,7 @@ export default function Sidebar({ fights, killCounts, selection, onSelectBoss, o
     const t = setTimeout(() => {
       // Raiders seen on Tauri first (they have raid rankings), then M+ players.
       Promise.all([searchRaidPlayers(q).catch(() => []), searchMplusPlayers(q)])
-        .then(([raid, mp]) => !cancelled && setMplus({ q, list: [...raid, ...mp] }))
+        .then(([raid, mp]) => !cancelled && setMplus({ q, list: [...raid.map((r) => ({ ...r, raider: true })), ...mp] }))
         .catch(() => !cancelled && setMplus({ q, list: [] }))
     }, 200)
     return () => {
@@ -97,7 +97,7 @@ export default function Sidebar({ fights, killCounts, selection, onSelectBoss, o
         if (out.length >= 8) break
         if (seen.has(m.player.toLowerCase())) continue
         seen.add(m.player.toLowerCase())
-        out.push({ player: m.player, label: m.player, class: m.class, mplusOnly: true })
+        out.push({ player: m.player, label: m.player, class: m.class, mplusOnly: !m.raider })
       }
     }
     return out

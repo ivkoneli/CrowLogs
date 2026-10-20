@@ -131,11 +131,11 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
   }, [player])
   const bests = useMemo(() => (bestsState.player === player ? bestsState.rows : []), [bestsState, player])
   // A raider seen only on Tauri (no uploaded log, never scraped): the header comes from
-  // their most recent best, which carries the build Tauri recorded at that kill.
+  // their highest-ilvl best (their most recent gear), with the build Tauri recorded then.
   const profile = useMemo(() => {
     const p = playerProfile(fights, player, character)
     if (p.class || !bests.length) return p
-    const b = bests.reduce((a, x) => ((x.day || '') > (a.day || '') ? x : a))
+    const b = bests.reduce((a, x) => ((x.ilvl || 0) > (a.ilvl || 0) ? x : a))
     return { ...p, class: b.class, spec: b.spec, race: b.race, gender: b.gender, faction: b.faction, guild: b.guild, ilvl: b.ilvl, talents: b.talents || [] }
   }, [fights, player, character, bests])
   const logs = useMemo(() => playerLogs(fights, player), [fights, player])

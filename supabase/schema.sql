@@ -876,7 +876,7 @@ create table if not exists raid_bests (
   value double precision not null,   -- dps or hps
   amount bigint not null,            -- damage or healing (+absorbs) total
   duration int not null,             -- fight length, ms
-  day text,                          -- kill date (YYYY-MM-DD)
+  day text,                          -- kill time in server time, "M/D HH:MM" like fights.day
   ilvl smallint,
   talents jsonb,                     -- [{ row, col }] like fights.talents
   trinkets jsonb,                    -- [{ id, name, icon, ilvl, quality }] like fights.trinkets

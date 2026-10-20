@@ -66,11 +66,12 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
   }, [raid, boss, metric, filter, boardKey])
   const loading = isShared && board.key !== boardKey
 
-  // A board row from an uploaded log gets that fight's id, so hovering it shows the per-spell
-  // breakdown like everywhere else.
-  const fightIdOf = useMemo(() => {
+  // A board row from an uploaded log is matched to that fight: its id (hovering shows the
+  // per-spell breakdown) and, where the stored best lacks them, the fight's merged build —
+  // e.g. the live armory ilvl (flagged as such) for a pull that never froze one.
+  const fightOf = useMemo(() => {
     const m = new Map()
-    for (const f of fights) if (f.raid === raid && f.boss === boss && f.logid) m.set(`${f.logid}|${f.started}|${f.player.toLowerCase()}`, f.id)
+    for (const f of fights) if (f.raid === raid && f.boss === boss && f.logid) m.set(`${f.logid}|${f.started}|${f.player.toLowerCase()}`, f)
     return m
   }, [fights, raid, boss])
 
@@ -80,10 +81,21 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
   )
   const filtered = useMemo(() => {
     if (isShared) {
-      return board.rows.map((r) => ({
-        ...r,
-        id: r.logid ? fightIdOf.get(`${r.logid}|${r.started}|${r.player.toLowerCase()}`) || null : null,
-      }))
+      return board.rows.map((r) => {
+        const f = r.logid ? fightOf.get(`${r.logid}|${r.started}|${r.player.toLowerCase()}`) : null
+        if (!f) return { ...r, id: null }
+        return {
+          ...r,
+          id: f.id,
+          ilvl: r.ilvl ?? f.ilvl ?? null,
+          ilvlIsLive: r.ilvl == null && f.ilvlIsLive === true,
+          talents: r.talents?.length ? r.talents : f.talents,
+          trinkets: r.trinkets?.length ? r.trinkets : f.trinkets,
+          legendaries: r.legendaries?.length ? r.legendaries : f.legendaries ?? r.legendaries,
+          specIcon: f.specIcon,
+          potions: f.potions,
+        }
+      })
     }
     return localRanking.filter((r) => {
       if (filter.class && r.class !== filter.class) return false
@@ -93,7 +105,7 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
       if (filter.realm && realmOf(r.player) !== filter.realm) return false
       return true
     })
-  }, [board.rows, fightIdOf, localRanking, filter])
+  }, [board.rows, fightOf, localRanking, filter])
 
   // Difficulties and kill counts: server-wide when shared (raid_kill_counts), else the logs'.
   const counts = useMemo(() => (killCounts || []).filter((k) => k.raid === raid && k.boss === boss), [killCounts, raid, boss])

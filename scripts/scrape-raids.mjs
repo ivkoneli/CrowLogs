@@ -15,6 +15,7 @@
 //
 // Env: TAURI_API_KEY, TAURI_API_SECRET, TAURI_COOKIE, SUPABASE_URL, SUPABASE_SERVICE_KEY
 // Run: node scripts/scrape-raids.mjs            (RAIDS_DRY=1 → fetch + print, write nothing)
+// Normal / Heroic / Mythic only: Tauri has no LFR. RAIDS_DEBUG=1 prints why an armory check failed.
 
 import 'dotenv/config'
 import { tauriClient } from '../supabase/functions/_shared/tauri-kills.js'
@@ -22,7 +23,8 @@ import { getAuthCookie, fetchArmory, parseSheet, parseGear, sleep, ICON_BASE, LE
 import { matchBoss, DIFFICULTY_MAP } from '../src/lib/raids.js'
 import { foldName } from '../src/lib/rankings.js'
 
-const { SUPABASE_URL, SUPABASE_SERVICE_KEY, TAURI_API_KEY, TAURI_API_SECRET, RAIDS_DRY } = process.env
+// RAIDS_FROM=<raid-log id> (testing): read the Tauri realm's kills after that id instead of the stored one.
+const { SUPABASE_URL, SUPABASE_SERVICE_KEY, TAURI_API_KEY, TAURI_API_SECRET, RAIDS_DRY, RAIDS_FROM } = process.env
 const DRY = !!RAIDS_DRY
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_KEY')
@@ -40,8 +42,14 @@ const API_REALMS = [
 const ARMORY_REALM = { evermoon: '[EN] Evermoon', tauri: '[HU] Tauri WoW Server', wod: '[HU] Warriors of Darkness' }
 // Legion raid maps (Emerald Nightmare → Antorus). Anything else (old raids, test dungeons) is skipped.
 const LEGION_MAPS = new Set([1520, 1530, 1648, 1676, 1712])
-const PAGE = 100 // kills per raid-last call
-const MAX_PAGES = 30 // a backlog of more than 3000 kills means something's off — stop and report
+// raid-last returns the realm's logs with id in (from, from + limit]: an id WINDOW, not "the
+// next N logs" — a window can come back short (ids belong to other realms' feeds) while newer
+// logs exist. So the scan walks windows until two in a row are empty. (Its from = 0 "newest"
+// answer is stale, so it can't be the stopping point.) Every run re-reads the last OVERLAP ids
+// in case a log was written late; kills already stored are skipped.
+const PAGE = 100
+const MAX_PAGES = 400 // ~40k ids ≈ a week of logs; past that something's off — stop and report
+const OVERLAP = 200
 const ARMORY_BUDGET = 300 // sheet reads per run; the rest of the new bests get "unknown" legendaries
 // A member whose number is this many times the raid's median (same role) is Tauri's bug, not
 // a parse: it once credited a Fury warrior ~7× and a Mistweaver ~97× what they did.
@@ -97,6 +105,13 @@ const trinketOf = (t) =>
     ? { id: t.entry, name: t.name || t.originalname || null, icon: t.icon ? `${ICON_BASE}${t.icon}.png` : null, ilvl: t.ilevel || null, quality: QUALITY_BY_RARITY[t.rarity] || null }
     : null
 
+// Kill time as uploaded logs show it ("10/20 13:45"), in server time.
+const DAY_FMT = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Budapest', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+function dayLabel(killtime) {
+  const p = Object.fromEntries(DAY_FMT.formatToParts(new Date(killtime * 1000)).map((x) => [x.type, x.value]))
+  return `${p.month}/${p.day} ${p.hour}:${p.minute}`
+}
+
 function median(xs) {
   const v = xs.filter((x) => x > 0).sort((a, b) => a - b)
   return v.length ? v[Math.floor(v.length / 2)] : 0
@@ -130,7 +145,7 @@ function rowsOfKill(log, where) {
       talents: parseTalentCode(m.talents),
       trinkets: [trinketOf(m.trinket_0), trinketOf(m.trinket_1)].filter(Boolean),
       log_id: log.log_id,
-      day: new Date(log.killtime * 1000).toISOString().slice(0, 10),
+      day: dayLabel(log.killtime),
       ...where,
     }
     for (const [metric, value, amount, typical] of [
@@ -150,12 +165,16 @@ function rowsOfKill(log, where) {
 
 // ── ARMORY CHECK ────────────────────────────────────────────────────────────
 // Read the sheet; resolve the realm when it isn't settled yet (Evermoon first, then [HU] Tauri).
-async function readSheet(cookie, name, slug, verified) {
+// Same-named characters exist on both realms, so the realm is only taken when the sheet's
+// class is the class Tauri recorded at the kill.
+async function readSheet(cookie, name, slug, verified, klass) {
   const tries = verified ? [slug] : [slug, ...Object.keys(ARMORY_REALM).filter((s) => s !== slug && s !== 'wod')]
   for (const s of tries) {
     try {
       const html = await fetchArmory('character-sheet/ajax', name, ARMORY_REALM[s], cookie)
-      return { slug: s, sheet: parseSheet(html), gear: parseGear(html) }
+      const sheet = parseSheet(html)
+      if (!verified && sheet.class && sheet.class !== klass) continue
+      return { slug: s, sheet, gear: parseGear(html) }
     } catch (e) {
       if (!/armory error/.test(e.message)) throw e
     }
@@ -164,13 +183,19 @@ async function readSheet(cookie, name, slug, verified) {
 }
 
 // Does the armory still show the build the kill recorded? Spec, both trinkets (by item id)
-// and item level (±1) must all match before its legendaries can stand for the kill's.
+// and item level must all match before its legendaries can stand for the kill's. The sheet's
+// ilvl reads ~2 above the kill record for an unchanged character (legendaries count as 910
+// there, and the two average differently), so it may be 1 below to 2 above.
 function sameBuild(row, armory) {
-  if (armory.sheet.spec !== row.spec) return false
   const want = row.trinkets.map((t) => t.id).sort().join(',')
   const have = armory.gear.filter((g) => g.slot === 'trinket').map((g) => g.id).sort().join(',')
-  if (!want || want !== have) return false
-  return row.ilvl == null || armory.sheet.ilvl == null || Math.abs(armory.sheet.ilvl - row.ilvl) <= 1
+  const why =
+    armory.sheet.spec !== row.spec ? `spec ${armory.sheet.spec} ≠ ${row.spec}`
+    : !want || want !== have ? `trinkets ${have} ≠ ${want}`
+    : row.ilvl != null && armory.sheet.ilvl != null && !(armory.sheet.ilvl - row.ilvl >= -1 && armory.sheet.ilvl - row.ilvl <= 2) ? `ilvl ${armory.sheet.ilvl} vs ${row.ilvl} at the kill`
+    : null
+  if (why && process.env.RAIDS_DEBUG) console.log(`   ${row.name}: armory differs (${why})`)
+  return !why
 }
 const legendariesOf = (gear) =>
   gear
@@ -185,7 +210,7 @@ async function main() {
   const status = new Map((await db('raid_status?select=*')).map((s) => [s.api_realm, s]))
 
   for (const realm of API_REALMS) {
-    const st = status.get(realm.api)
+    const st = RAIDS_FROM && realm.slug === 'evermoon' ? { last_log_id: RAIDS_FROM } : status.get(realm.api)
     if (!st) {
       // First run: remember where "now" is. Tracking starts here, nothing older is read.
       const newest = (await client.call('raid-last', { r: realm.api, from: 0, limit: 1 }))?.logs?.[0]?.log_id
@@ -195,21 +220,26 @@ async function main() {
       continue
     }
 
-    // New kills since the last processed id, oldest first.
+    // New logs since the last processed id (minus the overlap), oldest first.
+    const start = Math.max(+st.last_log_id - OVERLAP, 0)
     let last = +st.last_log_id
     const kills = []
-    for (let page = 0; ; page++) {
-      if (page >= MAX_PAGES) throw new Error(`${realm.api}: more than ${PAGE * MAX_PAGES} new kills — check raid-last's paging`)
-      const logs = ((await client.call('raid-last', { r: realm.api, from: last, limit: PAGE }))?.logs || [])
-        .filter((l) => +l.log_id > last)
-        .sort((a, b) => a.log_id - b.log_id)
-      if (!logs.length) break
-      kills.push(...logs)
-      last = +logs.at(-1).log_id
-      if (logs.length < PAGE) break
+    for (let from = start, page = 0, empty = 0; empty < 2; from += PAGE, page++) {
+      if (page >= MAX_PAGES) throw new Error(`${realm.api}: more than ${PAGE * MAX_PAGES} ids to scan — check raid-last's paging`)
+      const logs = (await client.call('raid-last', { r: realm.api, from, limit: PAGE }))?.logs || []
+      empty = logs.length ? 0 : empty + 1
+      for (const l of logs) {
+        kills.push(l)
+        last = Math.max(last, +l.log_id)
+      }
     }
-    const raidKills = kills.filter((l) => LEGION_MAPS.has(+l.map_id) && DIFFICULTY_MAP[l.difficulty] && [14, 15, 16, 17].includes(+l.difficulty))
-    console.log(`${realm.api}: ${kills.length} new log(s) since #${st.last_log_id}, ${raidKills.length} Legion raid kill(s)`)
+    const seen = new Set(
+      (await db(`raid_kills?select=log_id&api_realm=eq.${encodeURIComponent(realm.api)}&log_id=gt.${start}`)).map((k) => +k.log_id),
+    )
+    const raidKills = kills
+      .filter((l) => LEGION_MAPS.has(+l.map_id) && [14, 15, 16].includes(+l.difficulty) && !seen.has(+l.log_id))
+      .sort((a, b) => a.log_id - b.log_id)
+    console.log(`${realm.api}: ${kills.length} log(s) in #${start}–#${last}, ${raidKills.length} new Legion raid kill(s)`)
 
     // Each kill's members → candidate rows.
     const cands = []
@@ -271,7 +301,7 @@ async function main() {
         if (budget > 0) {
           budget--
           try {
-            armory = await readSheet(cookie, r.name, p.slug, p.verified)
+            armory = await readSheet(cookie, r.name, p.slug, p.verified, r.class)
           } catch (e) {
             console.log(`  armory ${r.name}: ${e.message}`)
           }
@@ -336,7 +366,7 @@ async function main() {
 
     console.log(`  ${cands.length} member result(s) → ${out.length} new best(s); legendaries confirmed on ${legOk}, armory reads ${ARMORY_BUDGET - budget}`)
     if (DRY) {
-      for (const r of out.slice(0, 15)) console.log(`   ${r.player.padEnd(24)} ${r.boss.padEnd(20)} ${r.difficulty.padEnd(7)} ${r.metric} ${Math.round(r.value)} ${r.spec} ilvl ${r.ilvl} leg:${r.legendary_status}`)
+      for (const r of out.slice(0, process.env.RAIDS_DEBUG ? 1000 : 15)) console.log(`   ${r.player.padEnd(24)} ${r.boss.padEnd(20)} ${r.difficulty.padEnd(7)} ${r.metric} ${Math.round(r.value)} ${r.spec} ilvl ${r.ilvl} leg:${r.legendary_status}`)
       continue
     }
     for (let i = 0; i < out.length; i += 500) await upsert('raid_bests', out.slice(i, i + 500), 'player_key,raid,boss,difficulty,metric,spec')
