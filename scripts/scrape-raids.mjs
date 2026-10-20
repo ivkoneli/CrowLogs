@@ -378,10 +378,12 @@ async function main() {
 }
 
 main().catch((e) => {
-  // Tauri's API has outages (HTML error pages / connection refused). Those end the run
-  // quietly: the next one picks up from the same last id, and dispatch_raid_scrape() emails
-  // the owner if nothing has finished for 2 h. Anything else fails the job loudly.
-  if (/Unexpected token <|Failed to connect|ECONNREFUSED|fetch failed|Bad Gateway/i.test(e.message)) {
+  // Tauri's API has outages (HTML error pages / connection refused) and, for minutes at a
+  // time, answers valid keys with "invalid authentication data" (2026-10-20). Those end the
+  // run quietly: the next one picks up from the same last id, and dispatch_raid_scrape()
+  // emails the owner if nothing has finished for 2 h (which also covers a key that really
+  // was revoked). Anything else fails the job loudly.
+  if (/Unexpected token <|Failed to connect|ECONNREFUSED|fetch failed|Bad Gateway|invalid authentication/i.test(e.message)) {
     console.warn(`Tauri unavailable, skipping this run: ${e.message}`)
     return
   }
