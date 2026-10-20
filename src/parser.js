@@ -16,7 +16,7 @@
 
 import { matchBoss, difficultyFromId, DEFAULT_DIFFICULTY } from './lib/raids.js'
 import { specFromSpells } from './lib/specDetect.js'
-import { BOSS_HP, npcIdOf, bossPctLeft } from './lib/bossHp.js'
+import { BOSS_HP, npcIdOf, wipeHealth } from './lib/bossHp.js'
 
 const DAMAGE_EVENTS = new Set([
   'SWING_DAMAGE',
@@ -217,8 +217,8 @@ function isSoloClear(recs) {
 function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, logGap, startMs, endMs, events, petOwners, petBaseOwners }) {
   const players = new Map()
   // Damage the boss itself took this pull (from anyone, overkill excluded) → its health left.
-  const bossNpcs = new Set(BOSS_HP[encounterID]?.npcs || [])
-  let bossDamage = 0
+  const bossNpcs = new Set([...(BOSS_HP[encounterID]?.npcs || []), ...(BOSS_HP[encounterID]?.phase?.npcs || [])])
+  const bossDamage = new Map() // npc id → damage taken
   const lusts = [] // { name, ts } — Bloodlust/Heroism/Time Warp casts this fight
   let firstActivity = null
   let lastActivity = null
@@ -255,10 +255,11 @@ function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, lo
 
     if (DAMAGE_EVENTS.has(ev.event)) {
       const srcGuid = f[1]
-      if (bossNpcs.size && bossNpcs.has(npcIdOf(f[5]))) {
+      const npc = bossNpcs.size ? npcIdOf(f[5]) : null
+      if (npc && bossNpcs.has(npc)) {
         const hit = parseInt(f[f.length - DAMAGE_SUFFIX_LEN], 10)
         const over = parseInt(f[f.length - DAMAGE_SUFFIX_LEN + 1], 10)
-        if (hit > 0) bossDamage += hit - (over > 0 ? over : 0)
+        if (hit > 0) bossDamage.set(npc, (bossDamage.get(npc) || 0) + hit - (over > 0 ? over : 0))
       }
       if (!isPlayerGuid(srcGuid)) continue
       // Damage done to players (or their pets) isn't raid damage: friendly fire, self-damage
@@ -329,7 +330,8 @@ function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, lo
     .map((l) => ({ player: l.name, t: Math.max(0, Math.round((l.ts - base) / 1000)) }))
   // Boss health left when the pull ended: 0 on a kill, null when the boss isn't in BOSS_HP.
   // A disconnected pull (logGap) missed part of the fight, so it can't say.
-  const bossPct = kill ? 0 : logGap ? null : bossPctLeft(encounterID, difficulty, groupSize, bossDamage)
+  const wipe = kill || logGap ? null : wipeHealth(encounterID, difficulty, groupSize, bossDamage)
+  const bossPct = kill ? 0 : (wipe?.pct ?? null)
 
   return [...players.values()]
     .filter((p) => p.damage > 0 || p.healing > 0)
@@ -349,6 +351,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, lo
         kill,
         bloodlust,
         boss_pct: bossPct,
+        boss_pct_of: wipe?.of ?? null, // set when the % is another unit's (Il'gynoth's Eye)
         player: p.player,
         guid: p.guid,
         pet: p.pet,

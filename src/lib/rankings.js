@@ -217,6 +217,7 @@ export function logSummary(fights, logId) {
         bloodlust: f.bloodlust || [], // [{ player, t }] — same for the whole encounter
         // Boss health left when the pull ended (0-100), same for the whole encounter; null = unknown.
         bossPct: f.boss_pct ?? null,
+        bossPctOf: f.boss_pct_of || null, // e.g. "Eye of Il'gynoth" when the % isn't the boss's
         duration: 0,
         rows: [],
       }

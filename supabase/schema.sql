@@ -33,6 +33,9 @@ create table fights (
   -- Boss health left when the pull ended, 0-100 (0 on a kill), worked out from the damage
   -- the boss took (src/lib/bossHp.js). Same on every row of a pull.
   boss_pct real,
+  -- The unit boss_pct describes when it isn't the boss itself: Il'gynoth's Eye, for a wipe
+  -- before the Heart phase. Null = the boss.
+  boss_pct_of text,
   created_at timestamptz default now()
 );
 -- Migration for an existing fights table (run once if you created it before
@@ -57,6 +60,7 @@ create table fights (
 --   alter table fights add column if not exists tauri_log bigint;
 --   alter table fights add column if not exists log_gap boolean;
 --   alter table fights add column if not exists boss_pct real;
+--   alter table fights add column if not exists boss_pct_of text;
 alter table fights enable row level security;
 -- The public (browser anon key) may ONLY read. All writes go through the `submit-log`
 -- edge function (service-role key), which validates, recomputes dps/hps, and rate-limits.

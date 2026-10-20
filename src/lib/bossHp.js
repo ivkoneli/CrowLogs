@@ -11,11 +11,16 @@
 // Keyed by ENCOUNTER_START id. `npcs` are the creatures whose damage counts:
 //   • Dragons of Nightmare share ONE health pool across the dragons (the 30-player Heroic
 //     kill took 1,391.8M across three dragons; one dragon's pool is 1,391.7M).
-//   • Il'gynoth's % is the Heart's (the Eye has its own fixed 1.0B and doesn't move it),
-//     so a wipe before the Heart phase reads 100%.
+//   • Il'gynoth's % is the Heart's. A wipe before the Heart is ever exposed reads the Eye
+//     of Il'gynoth instead (`phase`): a fixed 1,000,989,000 at every size and difficulty
+//     (the 25- and 30-player kills both took 1,001.0M), labelled as the Eye on the page.
 export const BOSS_HP = {
   1853: { npcs: [102672], hp: { LFR: 288982184, Normal: 412831692, Heroic: 536681200, Mythic: 1320302025 } }, // Nythendra
-  1873: { npcs: [105393], hp: { LFR: 83871756, Normal: 111830491, Heroic: 139793675, Mythic: 1339801532 } }, // Il'gynoth (Heart)
+  1873: {
+    npcs: [105393],
+    hp: { LFR: 83871756, Normal: 111830491, Heroic: 139793675, Mythic: 1339801532 },
+    phase: { name: "Eye of Il'gynoth", npcs: [105906], hp: 1000989000 },
+  }, // Il'gynoth (Heart; the Eye before the Heart phase)
   1876: { npcs: [106087], hp: { LFR: 235870950, Normal: 315261660, Heroic: 393501780, Mythic: 1361147970 } }, // Elerethe Renferal
   1841: { npcs: [100497], hp: { LFR: 256547052, Normal: 307863366, Heroic: 427582256, Mythic: 1336525344 } }, // Ursoc
   1854: {
@@ -42,9 +47,21 @@ export function npcIdOf(guid) {
   return Number(guid.split('-')[5]) || null
 }
 
+const pctOf = (taken, max) => Math.round(Math.min(Math.max(1 - taken / max, 0), 1) * 1000) / 10
+
 // Boss health left (0-100, one decimal) given the damage it took, or null when unknown.
 export function bossPctLeft(encounterId, difficulty, groupSize, damageTaken) {
   const max = bossMaxHp(encounterId, difficulty, groupSize)
-  if (!max) return null
-  return Math.round(Math.min(Math.max(1 - damageTaken / max, 0), 1) * 1000) / 10
+  return max ? pctOf(damageTaken, max) : null
+}
+
+// The wipe's health readout: { pct, of } — `of` names the unit when it isn't the boss itself
+// (Il'gynoth's Eye, when the Heart was never hit), else null. `damage` maps npc id → taken.
+export function wipeHealth(encounterId, difficulty, groupSize, damage) {
+  const b = BOSS_HP[encounterId]
+  if (!b) return { pct: null, of: null }
+  const sum = (npcs) => npcs.reduce((s, n) => s + (damage.get(n) || 0), 0)
+  const main = sum(b.npcs)
+  if (b.phase && main <= 0) return { pct: pctOf(sum(b.phase.npcs), b.phase.hp), of: b.phase.name }
+  return { pct: bossPctLeft(encounterId, difficulty, groupSize, main), of: null }
 }

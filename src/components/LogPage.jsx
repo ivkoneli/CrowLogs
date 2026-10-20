@@ -146,7 +146,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
               <span className="tab-num">{i + 1}</span>
               {e.boss}
               {!e.kill && (
-                <span className="wipe-dot" title={e.bossPct != null ? `Wipe with the boss at ${fmtPct(e.bossPct)}` : 'Wipe'}>
+                <span className="wipe-dot" title={e.bossPct != null ? `Wipe with ${e.bossPctOf || 'the boss'} at ${fmtPct(e.bossPct)}` : 'Wipe'}>
                   {e.bossPct != null ? fmtPct(e.bossPct) : '✕'}
                 </span>
               )}
@@ -163,7 +163,9 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
               {enc.kill ? (
                 <span className="result-badge kill">Kill</span>
               ) : (
-                <span className="result-badge wipe">Wipe{enc.bossPct != null && ` · ${fmtPct(enc.bossPct)}`}</span>
+                <span className="result-badge wipe">
+                  Wipe{enc.bossPct != null && ` · ${enc.bossPctOf ? 'Eye ' : ''}${fmtPct(enc.bossPct)}`}
+                </span>
               )}
             </h3>
             <span className="kicker">
@@ -171,8 +173,8 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
               {rows.length === 1 ? 'player' : 'players'}
             </span>
             {!enc.kill && enc.bossPct != null && (
-              <div className="boss-hp" title="Boss health left when the raid wiped (from the damage it took)">
-                <span className="boss-hp-label">Boss HP</span>
+              <div className="boss-hp" title={`${enc.bossPctOf || 'Boss'} health left when the raid wiped (from the damage it took)`}>
+                <span className="boss-hp-label">{enc.bossPctOf ? `${enc.bossPctOf} HP` : 'Boss HP'}</span>
                 <span className="boss-hp-bar">
                   <span style={{ width: `${enc.bossPct}%` }} />
                 </span>
