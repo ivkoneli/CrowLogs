@@ -383,7 +383,8 @@ main().catch((e) => {
   // run quietly: the next one picks up from the same last id, and dispatch_raid_scrape()
   // emails the owner if nothing has finished for 2 h (which also covers a key that really
   // was revoked). Anything else fails the job loudly.
-  if (/Unexpected token <|Failed to connect|ECONNREFUSED|fetch failed|Bad Gateway|invalid authentication/i.test(e.message)) {
+  // Node 20 quotes the character: "Unexpected token '<', \"<html>…" — match both forms.
+  if (/Unexpected token '?<|HTTP 5\d\d|Failed to connect|ECONNREFUSED|ETIMEDOUT|fetch failed|Bad Gateway|invalid authentication/i.test(e.message)) {
     console.warn(`Tauri unavailable, skipping this run: ${e.message}`)
     return
   }

@@ -275,9 +275,13 @@ async function pool(items, n, fn) {
   )
 }
 
+// Tauri being down: a 5xx, an HTML error page where JSON was expected, or no connection.
+const isOutage = (e) => /HTTP 5\d\d|Bad Gateway|Unexpected token '?<|ECONNREFUSED|ETIMEDOUT|fetch failed|Failed to connect/i.test(e?.message || '')
+
 // ── MAIN ────────────────────────────────────────────────────────────────────
 async function main() {
   let failed = false
+  let incomplete = false // some board was skipped because Tauri was down
   const guilds = new Map() // "realm|name" → { realm, name, guild }, from every board
   for (const realm of REALMS) {
     const latest = MPLUS_FULL === '1' ? null : await latestDay(realm)
@@ -334,7 +338,10 @@ async function main() {
         added += n
         console.log(`  ${dungeon.name.padEnd(22)} ${String(board.length).padStart(6)} on board, ${String(n).padStart(5)} new`)
       } catch (e) {
-        failed = true
+        // A Tauri outage (5xx / an HTML error page / no connection) isn't our failure: the
+        // board is just skipped this hour. Anything else fails the run loudly.
+        if (isOutage(e)) incomplete = true
+        else failed = true
         console.error(`  ${dungeon.name}: ${e.message}`)
       }
     })
@@ -342,7 +349,13 @@ async function main() {
       `  total: ${seen} on boards, ${sent} checked, ${added} new` +
         (MPLUS_FULL === '1' ? `, ${stale} stale removed` : `, ${filled} older runs filled in (specs/exact time)`),
     )
-    // Every board parsing to nothing means the API changed, not that nobody played.
+    // Every board parsing to nothing means the API changed, not that nobody played —
+    // unless Tauri was down. Then stop quietly WITHOUT refreshing: mplus_status keeps its
+    // old time, so dispatch_mplus_scrape() emails once if the outage passes 3 h.
+    if (seen === 0 && incomplete && !failed) {
+      console.warn('Tauri unavailable, skipping this run.')
+      return
+    }
     if (seen === 0) {
       failed = true
       console.error('  no runs from any board — has the API response changed?')
@@ -353,7 +366,7 @@ async function main() {
   // pass over EVERY board: sync_mplus_guilds drops everyone not listed, so a failed or
   // skipped board (MPLUS_REALMS) would wipe that board's guilds.
   const allBoards = MPLUS_BOARDS.every((b) => REALMS.includes(b))
-  if (!failed && allBoards && guilds.size) {
+  if (!failed && !incomplete && allBoards && guilds.size) {
     try {
       const n = await rpc('sync_mplus_guilds', { p: [...guilds.values()] })
       console.log(`guilds: ${n} players in a guild`)
