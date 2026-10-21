@@ -106,8 +106,10 @@ function sameNight(row, tauriLog) {
 
 // One kill (rows of the same boss/difficulty/start, kill = true) → Tauri's raid-log, or null.
 // A pull the logger disconnected during (log_gap) has no usable length: it's matched by
-// night + party alone (a group kills a boss once per lockout and difficulty).
-async function findKill(client, rows) {
+// night + party alone (a group kills a boss once per lockout and difficulty). `taken` holds
+// the Tauri kills other pulls of this upload already matched: a disconnected WIPE before the
+// real kill (Mythic Nythendra, 2026-10-21) would otherwise claim that kill too.
+async function findKill(client, rows, taken = new Set()) {
   const players = rows.filter((r) => !r.pet)
   if (!players.length) return null
   const names = new Set(players.map((r) => nameOf(r.player)))
@@ -122,7 +124,7 @@ async function findKill(client, rows) {
   for (const difficulty of DIFFICULTY_IDS[rows[0].difficulty] || []) {
     const list = (await client.call('raid-rank-encounter', { r: realm, encounter: encId, difficulty, from: 0, limit: 0 }))?.logs || []
     const cands = list
-      .filter((l) => sameNight(rows[0], l) && (gap || Math.abs(l.fight_time - duration) <= DURATION_SLACK_MS))
+      .filter((l) => !taken.has(l.log_id) && sameNight(rows[0], l) && (gap || Math.abs(l.fight_time - duration) <= DURATION_SLACK_MS))
       .sort((a, b) => Math.abs(a.fight_time - duration) - Math.abs(b.fight_time - duration))
       .slice(0, gap ? 20 : 6)
     for (const c of cands) {
@@ -160,10 +162,14 @@ export async function applyTauriKills(client, rows) {
     kills.get(k).push(r)
   }
   const replaced = new Map() // row id → new row
-  for (const group of kills.values()) {
+  // Pulls with a real length first (matched exactly), disconnected ones last: they may only
+  // take a kill nobody else in the upload matched.
+  const taken = new Set()
+  const ordered = [...kills.values()].sort((a, b) => Number(a.some((r) => r.log_gap)) - Number(b.some((r) => r.log_gap)))
+  for (const group of ordered) {
     let log = null
     try {
-      log = await findKill(client, group)
+      log = await findKill(client, group, taken)
     } catch (e) {
       out.errors.push(`${group[0].boss}: ${e.message}`)
       continue
@@ -211,6 +217,7 @@ export async function applyTauriKills(client, rows) {
         tauri_log: log.log_id,
       })
     }
+    taken.add(log.log_id)
     out.matched.push({ boss: group[0].boss, difficulty: group[0].difficulty, log_id: log.log_id })
   }
   const drop = new Set(out.removeIds)
