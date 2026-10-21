@@ -3931,6 +3931,10 @@ a.mp-rank.link:hover {
   vertical-align: middle;
   object-fit: cover;
 }
+/* Class crest + spec icon side by side: a tighter gap inside the pair. */
+.mr-spec-icon + .mr-spec-icon {
+  margin-left: -0.2rem;
+}
 .mr-realm {
   margin-left: 0.5rem;
   padding: 0.05rem 0.4rem;

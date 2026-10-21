@@ -481,13 +481,11 @@ export default function MythicRankingsPage({ klass, spec, realm, guild, minKey, 
                         <RankMove rank={r.rank} prev={r.prev_rank} />
                       </td>
                       <td className="mr-player">
-                        {(rowSpec || r.class) && (
-                          <img
-                            className="mr-spec-icon"
-                            src={(rowSpec && specIconUrl(r.class, rowSpec)) || classIconUrl(r.class)}
-                            alt=""
-                            title={[rowSpec, r.class].filter(Boolean).join(' ')}
-                          />
+                        {/* Class crest always; inside a class, the spec they play next to it
+                            (their main spec on the class's overall list). */}
+                        {r.class && <img className="mr-spec-icon" src={classIconUrl(r.class)} alt="" title={r.class} />}
+                        {klass && rowSpec && (
+                          <img className="mr-spec-icon" src={specIconUrl(r.class, rowSpec)} alt="" title={`${rowSpec} ${r.class}`} />
                         )}
                         <a
                           className="name link"

@@ -683,6 +683,9 @@ grant execute on function mplus_guild_list(text) to anon, authenticated;
 -- the list yet.
 -- p_min_key (optional) keeps only players who timed a key of that level or higher in this
 -- scope, AFTER ranking: ranks stay their real rank in the full list, like p_search.
+-- `spec` in a class's overall list (p_class set, no p_spec) is the player's MAIN spec — the
+-- spec with their highest spec score — so the page can show which spec each player plays.
+-- The all-classes list leaves it '' (the page shows class icons only there).
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text);
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text);
 drop function if exists mplus_leaderboard(text, text, text, int, int, text, text, text, text, int);
@@ -740,7 +743,13 @@ language sql stable set search_path = extensions, public as $$
        where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
       greatest(coalesce(p_offset, 0), 0)) as o
   )
-  select f.rk, f.total, f.realm, f.name, f.class, f.spec, f.score, f.best, f.guild, f.prev_rk
+  select f.rk, f.total, f.realm, f.name, f.class,
+         case when f.spec = '' and p_class is not null then coalesce(
+           (select ms.spec from mplus_scores ms
+            where ms.realm = f.realm and ms.name_lower = f.name_lower and ms.spec <> ''
+            order by ms.score desc limit 1), '')
+         else f.spec end,
+         f.score, f.best, f.guild, f.prev_rk
   from f, lim, start
   where f.pos > start.o and f.pos <= start.o + lim.n
   order by f.pos
