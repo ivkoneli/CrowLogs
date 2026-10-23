@@ -23,6 +23,7 @@ import {
 import { classColor, specsOf, specIconUrl } from '../lib/classes.js'
 import SpecTabs from './SpecTabs.jsx'
 import { selectionToHash, inAppClick } from '../lib/router.js'
+import { foldName } from '../lib/rankings.js'
 
 const PAGE_SIZE = 10
 const ROLE_ORDER = { tank: 0, healer: 1, dps: 2 }
@@ -480,6 +481,8 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
   const [spec, setSpec] = useState(null) // null = All specs
   const [dungeon, setDungeon] = useState(null) // history only: a map id, null = all dungeons
   const [page, setPage] = useState(1)
+  // Teammates search: find one name among everyone they've run with (accent-free).
+  const [mateQuery, setMateQuery] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -528,7 +531,11 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
     () => sortRunsByRecent(dungeon ? runs.filter((r) => r.map_id === dungeon) : runs),
     [runs, dungeon],
   )
-  const mates = useMemo(() => teammatesOf(runs, selfName, realm), [runs, selfName, realm])
+  const allMates = useMemo(() => teammatesOf(runs, selfName, realm), [runs, selfName, realm])
+  const mates = useMemo(() => {
+    const q = foldName(mateQuery.trim())
+    return q ? allMates.filter((m) => foldName(m.member.name).includes(q)) : allMates
+  }, [allMates, mateQuery])
   const pageSize = view === 'teammates' ? MATES_PAGE_SIZE : PAGE_SIZE
   const pages = Math.max(1, Math.ceil((view === 'teammates' ? mates.length : history.length) / pageSize))
   const pageRuns = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -559,13 +566,35 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
       </div>
     )
   } else if (view === 'teammates') {
+    const search = allMates.length > 0 && (
+      <div className="mp-mate-search">
+        <input
+          type="search"
+          placeholder="Search teammates…"
+          value={mateQuery}
+          onChange={(e) => {
+            setMateQuery(e.target.value)
+            setPage(1)
+          }}
+          aria-label="Search teammates"
+        />
+        {mateQuery.trim() && (
+          <span className="muted small">
+            {mates.length ? `${mates.length} of ${allMates.length}` : `Not in any of ${name}’s ${spec ? `${spec} ` : ''}runs`}
+          </span>
+        )}
+      </div>
+    )
     body = mates.length ? (
       <>
+        {search}
         <div className="table-scroll">
           <TeammatesTable mates={pageMates} realm={realm} onSelectPlayer={onSelectPlayer} />
         </div>
         <Pager page={page} pages={pages} onChange={setPage} />
       </>
+    ) : allMates.length ? (
+      search
     ) : (
       <div className="empty-state mp-empty">
         <p>No {spec ? `${spec} ` : ''}runs with a party yet.</p>
@@ -699,7 +728,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
               {view === 'best'
                 ? `${done} of ${MPLUS_DUNGEONS.length} dungeons`
                 : view === 'teammates'
-                  ? `${mates.length} ${mates.length === 1 ? 'teammate' : 'teammates'}`
+                  ? `${allMates.length} ${allMates.length === 1 ? 'teammate' : 'teammates'}`
                   : `${history.length} ${history.length === 1 ? 'run' : 'runs'} · page ${page} of ${pages}`}
             </span>
           )}
