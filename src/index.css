@@ -4431,3 +4431,9 @@ a.mp-rank.link:hover {
 .mp-mate-search input:focus {
   border-color: var(--accent);
 }
+/* Teammate rows and the blank rows that pad a search to a full page share one height,
+   so searching never changes the card's height. */
+.mp-mates tbody td {
+  box-sizing: border-box;
+  height: 49px;
+}

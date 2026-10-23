@@ -318,7 +318,9 @@ function teammatesOf(runs, selfName, realm) {
   return [...byKey.values()].sort((x, y) => y.runs - x.runs || y.timed - x.timed || y.bestScore - x.bestScore)
 }
 
-function TeammatesTable({ mates, realm, onSelectPlayer }) {
+// `fillers` blank rows pad a short page (a search) to a full one; `empty` is shown in the
+// table when nothing matches, so the card keeps its height either way.
+function TeammatesTable({ mates, realm, onSelectPlayer, fillers = 0, empty = null }) {
   return (
     <table className="meter mp-mates">
       <thead>
@@ -352,6 +354,18 @@ function TeammatesTable({ mates, realm, onSelectPlayer }) {
             </tr>
           )
         })}
+        {!mates.length && empty && (
+          <tr className="mp-filler">
+            <td className="muted" colSpan={4}>
+              {empty}
+            </td>
+          </tr>
+        )}
+        {Array.from({ length: fillers }, (_, i) => (
+          <tr key={`filler${i}`} className="mp-filler" aria-hidden="true">
+            <td colSpan={4}>&nbsp;</td>
+          </tr>
+        ))}
       </tbody>
     </table>
   )
@@ -387,6 +401,21 @@ export function Pager({ page, pages, onChange }) {
       )}
       <button className="mp-page" disabled={page === pages} onClick={() => onChange(page + 1)}>
         Next ›
+      </button>
+    </div>
+  )
+}
+
+// Invisible stand-in for the pager: keeps its space when a filter or search leaves a single
+// page, so the card's height (and everything below it) doesn't move.
+function PagerSpace() {
+  return (
+    <div className="mp-pager mp-pager-ghost" aria-hidden="true">
+      <button className="mp-page" disabled tabIndex={-1}>
+        ‹ Prev
+      </button>
+      <button className="mp-page on" disabled tabIndex={-1}>
+        1
       </button>
     </div>
   )
@@ -532,6 +561,8 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
     [runs, dungeon],
   )
   const allMates = useMemo(() => teammatesOf(runs, selfName, realm), [runs, selfName, realm])
+  // Teammates across every spec: sizes the table, so a spec tab never changes its height.
+  const mateCount = useMemo(() => teammatesOf(allRuns, selfName, realm).length, [allRuns, selfName, realm])
   const mates = useMemo(() => {
     const q = foldName(mateQuery.trim())
     return q ? allMates.filter((m) => foldName(m.member.name).includes(q)) : allMates
@@ -585,16 +616,23 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
         )}
       </div>
     )
-    body = mates.length ? (
+    // Every page as tall as a full unsearched one: a search never shrinks the card.
+    const mateRows = Math.min(MATES_PAGE_SIZE, mateCount)
+    const mateFillers = Math.max(0, mateRows - (mates.length ? pageMates.length : 1))
+    body = allMates.length ? (
       <>
         {search}
         <div className="table-scroll">
-          <TeammatesTable mates={pageMates} realm={realm} onSelectPlayer={onSelectPlayer} />
+          <TeammatesTable
+            mates={pageMates}
+            realm={realm}
+            onSelectPlayer={onSelectPlayer}
+            fillers={mateFillers}
+            empty={`No teammate matches “${mateQuery.trim()}”.`}
+          />
         </div>
-        <Pager page={page} pages={pages} onChange={setPage} />
+        {mateCount > MATES_PAGE_SIZE && (pages > 1 ? <Pager page={page} pages={pages} onChange={setPage} /> : <PagerSpace />)}
       </>
-    ) : allMates.length ? (
-      search
     ) : (
       <div className="empty-state mp-empty">
         <p>No {spec ? `${spec} ` : ''}runs with a party yet.</p>
@@ -655,18 +693,7 @@ export default function MythicPlusCard({ player, klass, onSelectPlayer, onSelect
         {/* The pager's space is kept whenever the unfiltered history has one, so filtering
             down to a single page doesn't shrink the card. */}
         {allRuns.length > PAGE_SIZE &&
-          (pages > 1 ? (
-            <Pager page={page} pages={pages} onChange={setPage} />
-          ) : (
-            <div className="mp-pager mp-pager-ghost" aria-hidden="true">
-              <button className="mp-page" disabled tabIndex={-1}>
-                ‹ Prev
-              </button>
-              <button className="mp-page on" disabled tabIndex={-1}>
-                1
-              </button>
-            </div>
-          ))}
+          (pages > 1 ? <Pager page={page} pages={pages} onChange={setPage} /> : <PagerSpace />)}
       </>
     )
   }
