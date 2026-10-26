@@ -25,6 +25,13 @@ const MIN_NAME_OVERLAP = 0.6
 // released) still takes Tauri's numbers.
 const OUTLIER = 3
 const OUTLIER_MIN = 20e6
+// Elerethe Renferal: Tauri over-credits Shimmering Feather users by 2–3× too (2026-10-26),
+// under the outlier bar and not tellable from pets the log couldn't credit. So when the log
+// saw the whole kill (no disconnect, the raid's typical Tauri/log ratio ≈ 1 — the logger
+// didn't die and release), every player keeps the log's numbers.
+const LOG_ONLY_ENCOUNTER = 1876
+const LOG_ONLY_BOSS = 'Elerethe Renferal'
+const CLEAN_RATIO = 1.1
 // Tauri difficulty ids a CrowLogs difficulty can be (Legion ids first, then 10/25-man).
 const DIFFICULTY_IDS = { Normal: [14, 3, 4], Heroic: [15, 5, 6], Mythic: [16], LFR: [17, 7] }
 // Player keys are "Name-realmslug"; Evermoon and Tauri share one API realm.
@@ -189,6 +196,11 @@ export async function applyTauriKills(client, rows) {
     // No log number to compare (no breakdown) or too few players to know what's typical:
     // nothing to judge by, so Tauri's number stands.
     const outlier = (tauri, mine, ratio, n) => n >= 5 && mine > 0 && tauri > mine * ratio * OUTLIER && tauri - mine * ratio > OUTLIER_MIN
+    const logOnly =
+      (+group[0].encounter_id === LOG_ONLY_ENCOUNTER || group[0].boss === LOG_ONLY_BOSS) &&
+      !group.some((r) => r.log_gap) &&
+      dmgPairs.length >= 5 &&
+      dmgRatio <= CLEAN_RATIO
     for (const r of group) {
       if (r.pet) {
         out.removeIds.push(r.id)
@@ -199,7 +211,11 @@ export async function applyTauriKills(client, rows) {
       const durationSec = log.fight_time / 1000
       let damage = Math.max(+m.dmg_done || 0, 0)
       let healing = Math.max(tauriHeal(m), 0)
-      if (outlier(damage, logDamage(r), dmgRatio, dmgPairs.length)) {
+      // A row already rewritten with no breakdown has no log number left: keep Tauri's.
+      if (logOnly && (!r.tauri_log || Array.isArray(r.spells?.dmg))) {
+        damage = logDamage(r)
+        healing = logHealing(r)
+      } else if (outlier(damage, logDamage(r), dmgRatio, dmgPairs.length)) {
         out.outliers.push(`${r.boss}: ${r.player} damage ${Math.round(damage / 1e6)}M on Tauri vs ${Math.round(logDamage(r) / 1e6)}M in the log`)
         damage = logDamage(r)
       }

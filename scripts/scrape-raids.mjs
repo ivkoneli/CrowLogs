@@ -55,6 +55,8 @@ const ARMORY_BUDGET = 300 // sheet reads per run; the rest of the new bests get 
 // a parse: it once credited a Fury warrior ~7× and a Mistweaver ~97× what they did.
 const OUTLIER = 4
 const OUTLIER_MIN_DPS = 1e6
+// Boss whose Tauri numbers aren't taken at all (see the kill loop).
+const LOG_ONLY_BOSS = 'Elerethe Renferal'
 
 // Tauri spec ids (Blizzard's) → [class, spec].
 const SPEC_BY_ID = {
@@ -265,7 +267,9 @@ async function main() {
         guild: log.guilddata?.name || null,
         members: log.member_count || log.members?.length || null,
       })
-      cands.push(...rowsOfKill(log, where))
+      // Elerethe: Tauri over-credits Shimmering Feather users by more than any outlier check
+      // catches, so its board comes from uploaded logs only (the kill still counts).
+      if (where.boss !== LOG_ONLY_BOSS) cands.push(...rowsOfKill(log, where))
     }
 
     // Realm per name: known players keep theirs; new ones start on the realm's default.
