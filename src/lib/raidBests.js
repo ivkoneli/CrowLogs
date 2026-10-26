@@ -39,9 +39,9 @@ function toRecord(r, metric) {
   }
 }
 
-// The boss board: each player's best (top `limit`), filtered on the server. Returns
+// The boss board: each player's best (`limit` rows from `offset`), filtered on the server. Returns
 // { rows, total } where total counts every matching player, not just the rows returned.
-export async function getRaidBoard({ raid, boss, difficulty, metric, filter = {}, limit = 500 }) {
+export async function getRaidBoard({ raid, boss, difficulty, metric, filter = {}, limit = 500, offset = 0 }) {
   if (!supabase) return { rows: [], total: 0 }
   let specs = null
   if (filter.spec) specs = [filter.spec]
@@ -59,6 +59,7 @@ export async function getRaidBoard({ raid, boss, difficulty, metric, filter = {}
     p_faction: filter.faction || null,
     p_realm: filter.realm || null,
     p_limit: limit,
+    p_offset: offset,
   })
   if (error) throw error
   const rows = (data || []).map((r) => toRecord(r, metric))

@@ -992,10 +992,12 @@ where raid_bests.value < excluded.value;
 -- null, and across specs unless p_specs narrows it), top p_limit, plus the matched total.
 -- A row whose kill is an uploaded log gets that log's id/start (row click opens it) and its
 -- frozen legendaries; a kill an admin discredited in its log is left off.
+-- (p_offset added 2026-10-26 for the boss page pager; the old 9-arg version is dropped.)
+drop function if exists raid_board(text, text, text, text, text[], text, text, text, int);
 create or replace function raid_board(
   p_raid text, p_boss text, p_difficulty text, p_metric text,
   p_specs text[] default null, p_class text default null, p_faction text default null,
-  p_realm text default null, p_limit int default 500
+  p_realm text default null, p_limit int default 500, p_offset int default 0
 )
 returns table (
   player text, class text, spec text, race text, gender smallint, faction text, guild text,
@@ -1031,8 +1033,9 @@ language sql stable set search_path = public as $$
   from best b
   order by b.value desc
   limit least(greatest(p_limit, 1), 1000)
+  offset greatest(coalesce(p_offset, 0), 0)
 $$;
-grant execute on function raid_board(text, text, text, text, text[], text, text, text, int) to anon, authenticated;
+grant execute on function raid_board(text, text, text, text, text[], text, text, text, int, int) to anon, authenticated;
 
 -- A player's bests on every boss, with their rank among all players (rank_all: everyone's
 -- best across specs) and within that spec (rank_spec), for the profile's Rankings tab.

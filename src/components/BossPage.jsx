@@ -4,12 +4,15 @@ import { getRaidBoard } from '../lib/raidBests.js'
 import { isShared } from '../lib/store.js'
 import { classColor, roleOf } from '../lib/classes.js'
 import FilterBar from './FilterBar.jsx'
+import { Pager } from './MythicPlusCard.jsx'
 import { MeterHead, MeterRow, MetricToggle } from './Meter.jsx'
 
 // Opens on Mythic; "All difficulties" is still in the dropdown.
 const EMPTY = { difficulty: 'Mythic', class: null, spec: null, role: null, faction: null, realm: null }
 // Realm slugs a player key can carry (the board's realm filter).
 const REALMS = ['evermoon', 'tauri', 'wod']
+// Overall board: players per page (fetched a page at a time). By spec still loads the top 500.
+const PAGE_SIZE = 25
 
 // Map a ranking record to the shared MeterRow for the active metric. Clicking the
 // name opens the player's profile; clicking anywhere else on the row opens the log
@@ -48,23 +51,27 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
   const [filter, setFilter] = useState(EMPTY)
   const [bySpec, setBySpec] = useState(false)
   const [metric, setMetric] = useState('dps')
+  const [page, setPage] = useState(1)
   const difficulty = filter.difficulty
   const rate = (r) => (metric === 'hps' ? r.hps : r.dps)
 
   // Server-wide board (every Tauri kill + uploaded logs), filtered on the server. Without
   // Supabase (local-only mode) the uploaded fights are ranked in the browser as before.
   const [board, setBoard] = useState({ key: null, rows: [], total: 0, error: '' })
-  const boardKey = JSON.stringify([raid, boss, metric, filter])
+  const boardKey = JSON.stringify([raid, boss, metric, filter, bySpec, page])
+  // Any other change starts over on page 1.
+  useEffect(() => setPage(1), [raid, boss, metric, filter, bySpec])
   useEffect(() => {
     if (!isShared) return
     let cancelled = false
-    getRaidBoard({ raid, boss, difficulty: filter.difficulty, metric, filter })
+    const paged = { limit: bySpec ? 500 : PAGE_SIZE, offset: bySpec ? 0 : (page - 1) * PAGE_SIZE }
+    getRaidBoard({ raid, boss, difficulty: filter.difficulty, metric, filter, ...paged })
       .then((b) => !cancelled && setBoard({ key: boardKey, ...b, error: '' }))
       .catch((e) => !cancelled && setBoard({ key: boardKey, rows: [], total: 0, error: e.message }))
     return () => {
       cancelled = true
     }
-  }, [raid, boss, metric, filter, boardKey])
+  }, [raid, boss, metric, filter, bySpec, page, boardKey])
   const loading = isShared && board.key !== boardKey
 
   // A board row from an uploaded log is matched to that fight: its id (hovering shows the
@@ -122,6 +129,11 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
   // Nothing on this difficulty at all (as opposed to nothing matching the other filters).
   const { difficulty: _d, ...others } = filter
   const empty = isShared ? !loading && board.total === 0 && !Object.values(others).some(Boolean) : localRanking.length === 0
+
+  // Overall view pages: the server already sent just this page; local mode slices here.
+  const pageStart = (page - 1) * PAGE_SIZE
+  const shown = isShared ? filtered : filtered.slice(pageStart, pageStart + PAGE_SIZE)
+  const pages = Math.max(1, Math.ceil((isShared ? board.total : filtered.length) / PAGE_SIZE))
 
   const maxValue = filtered.length ? Math.max(...filtered.map(rate), 1) : 1
   const groups = useMemo(() => (bySpec ? groupBySpec(filtered, metric) : null), [bySpec, filtered, metric])
@@ -190,14 +202,15 @@ export default function BossPage({ fights, killCounts, raid, boss, onSelectPlaye
               <table className="meter boss-meter">
                 <MeterHead metric={metric} />
                 <tbody>
-                  {filtered.map((r, i) => (
-                    <MeterRow key={r.player} {...rowProps(r, i + 1, maxValue, metric, onSelectPlayer, onSelectLog)} />
+                  {shown.map((r, i) => (
+                    <MeterRow key={r.player} {...rowProps(r, pageStart + i + 1, maxValue, metric, onSelectPlayer, onSelectLog)} />
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {isShared && board.total > filtered.length && (
+          {!bySpec && <Pager page={page} pages={pages} onChange={setPage} />}
+          {bySpec && isShared && board.total > filtered.length && (
             <p className="muted small board-more">
               Showing the top {filtered.length.toLocaleString('en-US')} of {board.total.toLocaleString('en-US')} players. Use the
               filters to narrow it down.
