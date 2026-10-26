@@ -183,7 +183,8 @@ export async function applyTauriKills(client, rows) {
     }
     if (!log) {
       // A disconnected pull Tauri has no kill for was a wipe (the parser had to guess).
-      if (group.some((r) => r.log_gap)) for (const r of group) replaced.set(r.id, { ...r, kill: false })
+      // Its boss % was the kill's 0; the log missed part of the pull, so the real % is unknown.
+      if (group.some((r) => r.log_gap)) for (const r of group) replaced.set(r.id, { ...r, kill: false, boss_pct: null, boss_pct_of: null })
       continue
     }
     const byName = new Map(log.members.map((m) => [norm(m.name), m]))
