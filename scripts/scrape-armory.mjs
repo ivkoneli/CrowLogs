@@ -172,6 +172,7 @@ async function main() {
         if (weapon) {
           weapon.artifactName = artifact.artifactName
           weapon.relics = artifact.relics
+          weapon.specTraits = artifact.specTraits
         }
       }
 

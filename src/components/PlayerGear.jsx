@@ -3,6 +3,7 @@
 // real scrape has run for this character.
 import { useEffect, useState } from 'react'
 import { DEMO_GEAR, DEMO_ARTIFACT, ARTIFACT_RELIC_SLOTS } from '../lib/demoGear.js'
+import { specIconUrl } from '../lib/classes.js'
 
 const ICON_BASE = 'https://legion-static.tauri.hu/images/icons/large/'
 
@@ -82,6 +83,25 @@ function Enchant({ enchant }) {
   return null
 }
 
+// Purchased artifact traits per spec: icon + number, spec name on hover only. One column
+// for up to three specs (lines up with the three relic rows); druids' four go 2×2.
+function SpecTraits({ klass, list }) {
+  if (!list?.length) return null
+  return (
+    <ul className={`spec-traits${list.length > 3 ? ' grid2' : ''}`}>
+      {list.map((s) => {
+        const icon = specIconUrl(klass, s.spec)
+        return (
+          <li key={s.spec} className={`spec-trait${s.traits ? '' : ' zero'}`} title={s.spec}>
+            {icon ? <img className="relic-icon" src={icon} alt="" /> : <span className="relic-icon empty" />}
+            <span className="spec-trait-num">{s.traits}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export default function PlayerGear({ profile }) {
   const realGear = profile?.gear?.length ? profile.gear : null
   const items = realGear || DEMO_GEAR
@@ -152,20 +172,23 @@ export default function PlayerGear({ profile }) {
           <span className="muted small">{isDemo ? 'demo' : 'none'}</span>
         )}
       </div>
-      <ul className="relic-list">
-        {relics.map((r, i) => (
-          <li key={r?.id ?? i} className="relic-row">
-            {r?.icon ? (
-              <img className="relic-icon" src={r.icon} alt="" />
-            ) : (
-              <span className="relic-icon empty" />
-            )}
-            <span className={`relic-name${r?.name ? '' : ' muted'}`}>
-              {r?.name || 'Empty socket'}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="artifact-body">
+        <ul className="relic-list">
+          {relics.map((r, i) => (
+            <li key={r?.id ?? i} className="relic-row">
+              {r?.icon ? (
+                <img className="relic-icon" src={r.icon} alt="" />
+              ) : (
+                <span className="relic-icon empty" />
+              )}
+              <span className={`relic-name${r?.name ? '' : ' muted'}`}>
+                {r?.name || 'Empty socket'}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <SpecTraits klass={profile?.class} list={artifact?.specTraits} />
+      </div>
     </aside>
   )
 }

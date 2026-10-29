@@ -197,8 +197,9 @@ type GearItem = {
   // `instanceId` is internal (used to fetch the per-item tooltip) and stripped before
   // storage; gems/enchant are filled from that tooltip (see scrapeOne).
   instanceId: string | null; gems?: Gem[]; enchant?: string | null
-  artifactName?: string | null; relics?: Relic[]
+  artifactName?: string | null; relics?: Relic[]; specTraits?: SpecTraits[]
 }
+type SpecTraits = { spec: string; traits: number }
 
 const GEAR_ROW_RE =
   /glist_icon[\s\S]*?\/\?item=(\d+)[\s\S]*?<img class="stats_rarity(\d+)" src="([^"]+)"[\s\S]*?glist_name[\s\S]*?<span class="stats_rarity\d+">([^<]+)<\/span>[\s\S]*?glist_ilvl">(\d+)/g
@@ -301,7 +302,37 @@ function parseArtifact(html: string): { artifactName: string | null; relics: Rel
   const relics: Relic[] = (a.relics || [])
     .filter((r: { item?: number }) => r && r.item)
     .map((r: { item: number }) => ({ id: +r.item, name: null, icon: null }))
-  return { artifactName: a.artifactName || null, relics }
+  return { artifactName: a.artifactName || null, relics, specTraits: artifactSpecTraits(data) }
+}
+
+// Each artifact's hidden "Stamina per trait purchased" power id -> spec. Its rank is the
+// server's trait count incl. the free first trait. Mirrors scripts/armory.mjs.
+const ARTIFACT_TRAIT_COUNTER: Record<string, string> = {
+  1187: 'Blood', 1188: 'Frost', 1189: 'Unholy',
+  1190: 'Havoc', 1191: 'Vengeance',
+  1192: 'Balance', 1193: 'Feral', 1194: 'Guardian', 1195: 'Restoration',
+  1196: 'Beast Mastery', 1197: 'Marksmanship', 1198: 'Survival',
+  1199: 'Arcane', 1200: 'Frost', 1201: 'Fire',
+  1202: 'Brewmaster', 1203: 'Mistweaver', 1204: 'Windwalker',
+  1205: 'Holy', 1206: 'Protection', 1207: 'Retribution',
+  1208: 'Discipline', 1209: 'Holy', 1210: 'Shadow',
+  1211: 'Assassination', 1212: 'Outlaw', 1213: 'Subtlety',
+  1214: 'Elemental', 1215: 'Enhancement', 1216: 'Restoration',
+  1217: 'Affliction', 1218: 'Demonology', 1219: 'Destruction',
+  1220: 'Arms', 1221: 'Fury', 1222: 'Protection',
+}
+
+// Purchased traits per spec artifact, in spec order (counter - 1 for the free trait).
+function artifactSpecTraits(data: unknown): SpecTraits[] {
+  const out: { id: number; spec: string; traits: number }[] = []
+  // deno-lint-ignore no-explicit-any
+  for (const a of (Array.isArray(data) ? data : [data]) as any[]) {
+    for (const [id, rank] of Object.entries(a?.powers || {})) {
+      const spec = ARTIFACT_TRAIT_COUNTER[id]
+      if (spec) out.push({ id: +id, spec, traits: Math.max(0, (Number(rank) || 0) - 1) })
+    }
+  }
+  return out.sort((x, y) => x.id - y.id).map(({ spec, traits }) => ({ spec, traits }))
 }
 
 async function upsertCharacters(rows: unknown[]) {
@@ -344,6 +375,7 @@ async function scrapeOne(player: string, cookie: string) {
     if (artifact && weapon) {
       weapon.artifactName = artifact.artifactName
       weapon.relics = artifact.relics
+      weapon.specTraits = artifact.specTraits
     }
   } catch { /* no artifact page (never picked one up) — not an error */ }
   // Gems/enchants live only in each item's tooltip — one extra request per equipped

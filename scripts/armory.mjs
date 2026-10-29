@@ -199,7 +199,41 @@ export function parseArtifact(html) {
       return { id: r.item, name: meta.name, icon: meta.icon ? `${ICON_BASE}${meta.icon}.png` : null }
     })
     .filter(Boolean)
-  return { artifactName: a.artifactName || null, relics }
+  return { artifactName: a.artifactName || null, relics, specTraits: artifactSpecTraits(data) }
+}
+
+// Every artifact carries a hidden "Stamina increased for every trait purchased" power whose
+// rank is the server's own trait count (purchased + the free first trait). Keyed by that
+// power id -> spec. Matched on id, not name, because the armory shortens some names
+// ("Talonclaw" vs "Talonclaw, Spear of the Wild Gods"). Tauri's own armory page caps the
+// 35th trait at rank 1 (bad maxlevel in its calc data), so its displayed total is wrong.
+// Keep in sync with supabase/functions/scrape-character/index.ts.
+export const ARTIFACT_TRAIT_COUNTER = {
+  1187: 'Blood', 1188: 'Frost', 1189: 'Unholy',
+  1190: 'Havoc', 1191: 'Vengeance',
+  1192: 'Balance', 1193: 'Feral', 1194: 'Guardian', 1195: 'Restoration',
+  1196: 'Beast Mastery', 1197: 'Marksmanship', 1198: 'Survival',
+  1199: 'Arcane', 1200: 'Frost', 1201: 'Fire',
+  1202: 'Brewmaster', 1203: 'Mistweaver', 1204: 'Windwalker',
+  1205: 'Holy', 1206: 'Protection', 1207: 'Retribution',
+  1208: 'Discipline', 1209: 'Holy', 1210: 'Shadow',
+  1211: 'Assassination', 1212: 'Outlaw', 1213: 'Subtlety',
+  1214: 'Elemental', 1215: 'Enhancement', 1216: 'Restoration',
+  1217: 'Affliction', 1218: 'Demonology', 1219: 'Destruction',
+  1220: 'Arms', 1221: 'Fury', 1222: 'Protection',
+}
+
+// Purchased traits per spec artifact, in spec order: [{ spec, traits }]. The counter
+// includes the free first trait, so purchased = counter - 1 (e.g. 53 -> 52, max 54).
+export function artifactSpecTraits(data) {
+  const out = []
+  for (const a of Array.isArray(data) ? data : [data]) {
+    for (const [id, rank] of Object.entries(a?.powers || {})) {
+      const spec = ARTIFACT_TRAIT_COUNTER[id]
+      if (spec) out.push({ id: +id, spec, traits: Math.max(0, (+rank || 0) - 1) })
+    }
+  }
+  return out.sort((x, y) => x.id - y.id).map(({ spec, traits }) => ({ spec, traits }))
 }
 
 export function parseGear(html) {

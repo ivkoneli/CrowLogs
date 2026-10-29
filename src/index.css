@@ -2620,6 +2620,45 @@ img.icon-slot.trinket {
   opacity: 0.45;
   font-style: italic;
 }
+/* Relics on the left, purchased traits per spec on the right. */
+.artifact-body {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.artifact-body .relic-list {
+  flex: 1;
+  min-width: 0;
+}
+.spec-traits {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0 0 0 0.75rem;
+  border-left: 1px solid var(--border);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, auto);
+  gap: 0.3rem 0.7rem;
+  flex: none;
+}
+.spec-traits.grid2 {
+  grid-template-rows: repeat(2, auto);
+}
+.spec-trait {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: default;
+}
+.spec-trait-num {
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+}
+.spec-trait.zero {
+  opacity: 0.4;
+}
 
 /* ---------- Mythic+ card (profile) ---------- */
 .mp-head {
