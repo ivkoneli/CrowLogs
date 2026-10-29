@@ -8,10 +8,16 @@ import {
   getLastUpdated,
   formatUpdated,
   dungeonIconUrl,
+  runScore,
 } from '../lib/mythicplus.js'
-import { Cols, Head, DungeonCell, RunCells } from './MythicPlusCard.jsx'
+import { Cols, Head, DungeonCell, RunCells, Pager } from './MythicPlusCard.jsx'
 
 const KEY_LEVELS = [10, 15, 20]
+// Rank colour by the run's score, one step per 25 points (0–25 … 225–250).
+const SCORE_BANDS = ['#6b7280', '#9ca3af', '#d1d5db', '#86efac', '#22c55e', '#38bdf8', '#3b82f6', '#a855f7', '#f59e0b', '#ef4444']
+const scoreBandColor = (score) =>
+  score == null ? undefined : SCORE_BANDS[Math.min(Math.max(Math.floor(+score / 25), 0), SCORE_BANDS.length - 1)]
+
 const SORTS = [
   { id: 'date', label: 'Date' },
   { id: 'score', label: 'Score' },
@@ -24,11 +30,11 @@ const BOARDS = [
 ]
 
 // Home page feed: every run on the boards, newest first (exact completion time where
-// known) or best score first, 25 at a time with "Load more". Each run carries its rank by
+// known) or best score first, 25 per page. Each run carries its rank by
 // score among the runs matching the filters. Same table as a profile's runs.
 export default function LatestRuns({ onSelectPlayer }) {
   const [filters, setFilters] = useState({ mapId: null, minKey: null, timedOnly: false, board: null, sort: 'date' })
-  const [state, setState] = useState({ runs: [], total: null, loading: true, error: null, done: false })
+  const [state, setState] = useState({ runs: [], total: null, loading: true, error: null })
   const [updated, setUpdated] = useState(null)
 
   useEffect(() => {
@@ -37,30 +43,27 @@ export default function LatestRuns({ onSelectPlayer }) {
       .catch(() => {})
   }, [])
 
-  // A filter change starts over from the newest run.
+  // A filter or sort change starts over on page 1; the page is fetched on its own.
+  const [page, setPage] = useState(1)
   useEffect(() => {
     let cancelled = false
     setState((s) => ({ ...s, loading: true, error: null }))
-    getLatestRuns({ ...filters, offset: 0 })
+    getLatestRuns({ ...filters, offset: (page - 1) * LATEST_PAGE_SIZE })
       .then(({ runs, total }) => {
-        if (!cancelled) setState({ runs, total, loading: false, error: null, done: runs.length < LATEST_PAGE_SIZE })
+        if (!cancelled) setState((s) => ({ runs, total: total ?? s.total, loading: false, error: null }))
       })
       .catch((e) => !cancelled && setState((s) => ({ ...s, loading: false, error: e.message || 'Request failed.' })))
     return () => {
       cancelled = true
     }
-  }, [filters])
+  }, [filters, page])
 
-  const loadMore = () => {
-    setState((s) => ({ ...s, loading: true, error: null }))
-    getLatestRuns({ ...filters, offset: state.runs.length })
-      .then(({ runs }) =>
-        setState((s) => ({ ...s, runs: [...s.runs, ...runs], loading: false, done: runs.length < LATEST_PAGE_SIZE })),
-      )
-      .catch((e) => setState((s) => ({ ...s, loading: false, error: e.message || 'Request failed.' })))
+  const set = (patch) => {
+    setFilters((f) => ({ ...f, ...patch }))
+    setPage(1)
   }
-  const set = (patch) => setFilters((f) => ({ ...f, ...patch }))
-  const { runs, total, loading, error, done } = state
+  const { runs, total, loading, error } = state
+  const pages = Math.max(1, Math.ceil((total || 0) / LATEST_PAGE_SIZE))
 
   return (
     <section className="player-card mp-card home-card lr-card">
@@ -135,7 +138,9 @@ export default function LatestRuns({ onSelectPlayer }) {
                 const dungeon = MPLUS_DUNGEONS.find((x) => x.id === run.map_id)
                 return (
                   <tr key={run.id}>
-                    <td className="num muted mp-rank">{run.rank != null ? run.rank.toLocaleString('en-US') : ''}</td>
+                    <td className="num lr-rank" style={{ color: scoreBandColor(run.score ?? runScore(run)) }}>
+                      {run.rank != null ? `#${run.rank.toLocaleString('en-US')}` : ''}
+                    </td>
                     {dungeon ? (
                       <DungeonCell dungeon={dungeon} run={run} topLevel={run.level} />
                     ) : (
@@ -152,16 +157,11 @@ export default function LatestRuns({ onSelectPlayer }) {
 
       {runs.length > 0 && (
         <div className="lr-more">
-          {!done && (
-            <button className="mp-page lr-more-btn" onClick={loadMore} disabled={loading}>
-              {loading ? 'Loading…' : `Load ${LATEST_PAGE_SIZE} more`}
-            </button>
-          )}
+          <Pager page={page} pages={pages} onChange={setPage} />
           <span className="muted">
-            showing {runs.length.toLocaleString('en-US')}
-            {total != null && ` of ${total.toLocaleString('en-US')}`}
+            {loading ? 'Loading…' : `page ${page.toLocaleString('en-US')} of ${pages.toLocaleString('en-US')}`}
           </span>
-          {error && <span className="lr-error">Couldn’t load more: {error}</span>}
+          {error && <span className="lr-error">Couldn’t load the page: {error}</span>}
         </div>
       )}
     </section>

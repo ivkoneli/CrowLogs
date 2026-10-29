@@ -2689,10 +2689,13 @@ img.icon-slot.trinket {
   width: 262px;
 }
 .mp-col-rank {
-  width: 62px;
+  width: 74px;
 }
 .mp-col-key {
   width: 54px;
+}
+.lr-rank {
+  font-weight: 700;
 }
 .lr-sort-label {
   align-self: center;
