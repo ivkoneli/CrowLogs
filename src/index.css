@@ -2635,23 +2635,24 @@ img.icon-slot.trinket {
   margin: 0.35rem 0 0;
   padding: 0 0 0 0.75rem;
   border-left: 1px solid var(--border);
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(3, auto);
-  gap: 0.3rem 0.7rem;
+  display: flex;
+  gap: 0.6rem;
   flex: none;
-}
-.spec-traits.grid2 {
-  grid-template-rows: repeat(2, auto);
 }
 .spec-trait {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.2rem;
   cursor: default;
 }
+.spec-trait .relic-icon {
+  width: 30px;
+  height: 30px;
+}
 .spec-trait-num {
-  font-size: 0.82rem;
+  font-size: 0.95rem;
+  text-align: center;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   min-width: 2ch;

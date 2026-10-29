@@ -83,12 +83,12 @@ function Enchant({ enchant }) {
   return null
 }
 
-// Purchased artifact traits per spec: icon + number, spec name on hover only. One column
-// for up to three specs (lines up with the three relic rows); druids' four go 2×2.
+// Purchased artifact traits per spec: icon over number, specs side by side (fits druids'
+// four in one row). Spec name on hover only.
 function SpecTraits({ klass, list }) {
   if (!list?.length) return null
   return (
-    <ul className={`spec-traits${list.length > 3 ? ' grid2' : ''}`}>
+    <ul className="spec-traits">
       {list.map((s) => {
         const icon = specIconUrl(klass, s.spec)
         return (
