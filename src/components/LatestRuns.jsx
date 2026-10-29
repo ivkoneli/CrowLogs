@@ -12,6 +12,10 @@ import {
 import { Cols, Head, DungeonCell, RunCells } from './MythicPlusCard.jsx'
 
 const KEY_LEVELS = [10, 15, 20]
+const SORTS = [
+  { id: 'date', label: 'Date' },
+  { id: 'score', label: 'Score' },
+]
 // The armory's two leaderboards (a run's `realm` is the board it was published on).
 const BOARDS = [
   { id: null, label: 'All' },
@@ -20,9 +24,10 @@ const BOARDS = [
 ]
 
 // Home page feed: every run on the boards, newest first (exact completion time where
-// known), 25 at a time with "Load more". Same table as a profile's runs.
+// known) or best score first, 25 at a time with "Load more". Each run carries its rank by
+// score among the runs matching the filters. Same table as a profile's runs.
 export default function LatestRuns({ onSelectPlayer }) {
-  const [filters, setFilters] = useState({ mapId: null, minKey: null, timedOnly: false, board: null })
+  const [filters, setFilters] = useState({ mapId: null, minKey: null, timedOnly: false, board: null, sort: 'date' })
   const [state, setState] = useState({ runs: [], total: null, loading: true, error: null, done: false })
   const [updated, setUpdated] = useState(null)
 
@@ -106,6 +111,14 @@ export default function LatestRuns({ onSelectPlayer }) {
             </button>
           ))}
         </div>
+        <div className="view-toggle mr-keys" role="group" aria-label="Sort by">
+          <span className="muted lr-sort-label">Sort by:</span>
+          {SORTS.map((o) => (
+            <button key={o.id} className={`seg ${filters.sort === o.id ? 'on' : ''}`} onClick={() => set({ sort: o.id })}>
+              {o.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && !runs.length ? (
@@ -115,13 +128,14 @@ export default function LatestRuns({ onSelectPlayer }) {
       ) : (
         <div className="table-scroll">
           <table className="meter mp-meter">
-            <Cols />
-            <Head />
+            <Cols rank />
+            <Head rank />
             <tbody>
               {runs.map((run) => {
                 const dungeon = MPLUS_DUNGEONS.find((x) => x.id === run.map_id)
                 return (
                   <tr key={run.id}>
+                    <td className="num muted mp-rank">{run.rank != null ? run.rank.toLocaleString('en-US') : ''}</td>
                     {dungeon ? (
                       <DungeonCell dungeon={dungeon} run={run} topLevel={run.level} />
                     ) : (

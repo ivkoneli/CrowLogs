@@ -1173,3 +1173,50 @@ $$;
 revoke all on function dispatch_raid_scrape() from public, anon, authenticated;
 
 select cron.schedule('raid-scrape', '20,50 * * * *', $$select dispatch_raid_scrape()$$);
+
+
+-- Latest runs feed: every run's score kept on the row (computed by Postgres from map, key
+-- level and time — the scraper never writes it), so the home page can sort by it and rank.
+alter table mplus_runs add column if not exists score numeric
+  generated always as (mplus_run_score(map_id, level, time_ms)) stored;
+-- Covering, so ranking reads only the index (the rows are wide: party jsonb). 10 s cold → ~0.14 s.
+create index if not exists mplus_runs_score_idx on mplus_runs (score desc nulls last, id)
+  include (day, completed_at, seen_hour, map_id, level, medal, realm);
+
+-- One page of the home feed with each run's rank by score among the runs that match the
+-- filters (1 = highest score), newest first or best first (p_sort 'date' | 'score').
+create or replace function latest_runs(
+  p_map int default null, p_min_key int default null, p_timed boolean default false,
+  p_board text default null, p_sort text default 'date', p_offset int default 0, p_limit int default 25
+)
+returns table (
+  id text, realm text, map_id int, dungeon text, level int, time_ms int, medal smallint,
+  affixes jsonb, party jsonb, day date, first_seen timestamptz, completed_at timestamptz,
+  score numeric, rank bigint, total bigint
+)
+language sql stable set search_path = public as $$
+  -- Rank on the narrow columns only, then read the full rows for just the page (3 s → fast).
+  with m as (
+    select r.id, rank() over (order by r.score desc nulls last) as rnk, count(*) over () as tot,
+           r.day, r.completed_at, r.seen_hour
+    from mplus_runs r
+    where (p_map is null or r.map_id = p_map)
+      and (p_min_key is null or r.level >= p_min_key)
+      and (not coalesce(p_timed, false) or r.medal > 0)
+      and (p_board is null or r.realm = p_board)
+  ), pg as (
+    select * from m
+    order by
+      case when p_sort = 'score' then m.rnk end asc,
+      m.day desc, m.completed_at desc nulls first, m.seen_hour desc, m.id
+    offset greatest(coalesce(p_offset, 0), 0)
+    limit least(greatest(coalesce(p_limit, 25), 1), 100)
+  )
+  select x.id, x.realm, x.map_id, x.dungeon, x.level, x.time_ms, x.medal, x.affixes, x.party,
+         x.day, x.first_seen, x.completed_at, x.score, pg.rnk, pg.tot
+  from pg join mplus_runs x on x.id = pg.id
+  order by
+    case when p_sort = 'score' then pg.rnk end asc,
+    pg.day desc, pg.completed_at desc nulls first, pg.seen_hour desc, pg.id
+$$;
+grant execute on function latest_runs(int, int, boolean, text, text, int, int) to anon, authenticated;

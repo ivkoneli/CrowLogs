@@ -243,9 +243,11 @@ export function EmptyRunCells() {
   )
 }
 
-export function Cols() {
+// `rank`: a leading # column (the home feed's rank by score).
+export function Cols({ rank = false }) {
   return (
     <colgroup>
+      {rank && <col className="mp-col-rank" />}
       <col className="mp-col-dungeon" />
       <col className="mp-col-key" />
       <col className="mp-col-score" />
@@ -257,10 +259,15 @@ export function Cols() {
   )
 }
 
-export function Head() {
+export function Head({ rank = false }) {
   return (
     <thead>
       <tr>
+        {rank && (
+          <th className="num" title="Rank by score among the runs that match the filters">
+            #
+          </th>
+        )}
         <th>Dungeon</th>
         <th className="num">Key</th>
         <th className="num" title="M+ score: 50 + 7.5 per key level, ± up to 12.5 for the clear time">

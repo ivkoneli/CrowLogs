@@ -2688,8 +2688,16 @@ img.icon-slot.trinket {
 .mp-col-dungeon {
   width: 262px;
 }
+.mp-col-rank {
+  width: 62px;
+}
 .mp-col-key {
   width: 54px;
+}
+.lr-sort-label {
+  align-self: center;
+  padding: 0 0.4rem 0 0.2rem;
+  font-size: 0.85em;
 }
 .mp-col-score {
   width: 66px;

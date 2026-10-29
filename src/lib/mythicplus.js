@@ -423,21 +423,20 @@ export const LATEST_PAGE_SIZE = 25
 export function getLatestRuns(opts = {}) {
   return withRetry(() => loadLatestRuns(opts))
 }
-async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, board = null, offset = 0 } = {}) {
+async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, board = null, sort = 'date', offset = 0 } = {}) {
   if (!supabase) return { runs: [], total: 0 }
-  let q = supabase.from('mplus_runs').select(RUN_COLS, offset === 0 ? { count: 'exact' } : undefined)
-  if (mapId) q = q.eq('map_id', mapId)
-  if (minKey) q = q.gte('level', minKey)
-  if (timedOnly) q = q.gt('medal', 0)
-  if (board) q = q.eq('realm', board)
-  const { data, error, count } = await q
-    .order('day', { ascending: false })
-    .order('completed_at', { ascending: false, nullsFirst: true })
-    .order('seen_hour', { ascending: false })
-    .order('id', { ascending: true })
-    .range(offset, offset + LATEST_PAGE_SIZE - 1)
+  // latest_runs (schema.sql): the page plus each run's rank by score among the matching runs.
+  const { data, error } = await supabase.rpc('latest_runs', {
+    p_map: mapId,
+    p_min_key: minKey,
+    p_timed: timedOnly,
+    p_board: board,
+    p_sort: sort,
+    p_offset: offset,
+    p_limit: LATEST_PAGE_SIZE,
+  })
   if (error) throw error
-  return { runs: data || [], total: count ?? null }
+  return { runs: data || [], total: data?.[0]?.total ?? (offset === 0 ? 0 : null) }
 }
 
 // When the rankings were last rebuilt (the end of the last scrape), as a Date, or null.
