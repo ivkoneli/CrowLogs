@@ -66,9 +66,40 @@ export async function getRaidBoard({ raid, boss, difficulty, metric, filter = {}
   return { rows, total: data?.[0]?.total ?? 0 }
 }
 
+// Last profiles' bests, remembered in this browser: a profile shows them at once and
+// refreshes in the background, and a failed refresh keeps them instead of going blank.
+const BESTS_CACHE_KEY = 'crowlogs.playerBests.v1'
+const BESTS_CACHE_MAX = 40 // players kept (most recently opened)
+function readBestsCache() {
+  try {
+    return JSON.parse(localStorage.getItem(BESTS_CACHE_KEY) || '{}') || {}
+  } catch {
+    return {}
+  }
+}
+export function cachedPlayerBests(player) {
+  return readBestsCache()[(player || '').toLowerCase()]?.rows || null
+}
+function cachePlayerBests(player, rows) {
+  try {
+    const all = readBestsCache()
+    all[player.toLowerCase()] = { at: Date.now(), rows }
+    const keep = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, BESTS_CACHE_MAX)
+    localStorage.setItem(BESTS_CACHE_KEY, JSON.stringify(Object.fromEntries(keep)))
+  } catch {
+    /* storage full or blocked: caching is only a convenience */
+  }
+}
+
 // Every best of one player, with ranks: rank_all among everyone's best on that boss, and
-// rank_spec within the spec.
+// rank_spec within the spec. Saves the result for cachedPlayerBests.
 export async function getPlayerBests(player) {
+  const rows = await fetchPlayerBests(player)
+  cachePlayerBests(player, rows)
+  return rows
+}
+
+async function fetchPlayerBests(player) {
   if (!supabase) return []
   // The public role gets 3 s per query, and this one can take 2+ s on a cold cache, so a
   // busy moment times it out (the profile then showed no rankings). Retry before failing.

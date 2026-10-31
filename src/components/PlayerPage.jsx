@@ -11,7 +11,7 @@ import PlayerGear from './PlayerGear.jsx'
 import MythicPlusCard from './MythicPlusCard.jsx'
 import SpecTabs from './SpecTabs.jsx'
 import { charKey } from '../lib/characters.js'
-import { getPlayerBests, playerBestSummary } from '../lib/raidBests.js'
+import { getPlayerBests, cachedPlayerBests, playerBestSummary } from '../lib/raidBests.js'
 import { isShared } from '../lib/store.js'
 
 // Difficulty sections inside the Rankings tab (hardest first).
@@ -118,18 +118,23 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
   )
   // Server-wide bests + ranks (raid_player_bests). { player, rows } so a profile never
   // shows the previous player's bests while the next one loads.
+  // The browser's remembered copy shows at once; the fresh one replaces it when it lands,
+  // and a failed fetch keeps the remembered copy instead of an empty profile.
   const [bestsState, setBestsState] = useState({ player: null, rows: [] })
   useEffect(() => {
     if (!isShared) return
     let cancelled = false
     getPlayerBests(player)
       .then((rows) => !cancelled && setBestsState({ player, rows }))
-      .catch(() => !cancelled && setBestsState({ player, rows: [] }))
+      .catch(() => !cancelled && setBestsState({ player, rows: cachedPlayerBests(player) || [] }))
     return () => {
       cancelled = true
     }
   }, [player])
-  const bests = useMemo(() => (bestsState.player === player ? bestsState.rows : []), [bestsState, player])
+  const bests = useMemo(
+    () => (bestsState.player === player ? bestsState.rows : (isShared && cachedPlayerBests(player)) || []),
+    [bestsState, player],
+  )
   // A raider seen only on Tauri (no uploaded log, never scraped): the header comes from
   // their highest-ilvl best (their most recent gear), with the build Tauri recorded then.
   const profile = useMemo(() => {
