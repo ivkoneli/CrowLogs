@@ -70,8 +70,18 @@ export async function getRaidBoard({ raid, boss, difficulty, metric, filter = {}
 // rank_spec within the spec.
 export async function getPlayerBests(player) {
   if (!supabase) return []
-  const { data, error } = await supabase.rpc('raid_player_bests', { p_player: player })
-  if (error) throw error
+  // The public role gets 3 s per query, and this one can take 2+ s on a cold cache, so a
+  // busy moment times it out (the profile then showed no rankings). Retry before failing.
+  let data = null
+  for (let attempt = 0; ; attempt++) {
+    const res = await supabase.rpc('raid_player_bests', { p_player: player })
+    if (!res.error) {
+      data = res.data
+      break
+    }
+    if (attempt >= 2) throw res.error
+    await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+  }
   return (data || []).map((r) => ({
     ...toRecord(r, r.metric),
     raid: r.raid,

@@ -908,6 +908,10 @@ create table if not exists raid_bests (
   primary key (player_key, raid, boss, difficulty, metric, spec)
 );
 create index if not exists raid_bests_board_idx on raid_bests (raid, boss, difficulty, metric, value desc);
+-- Covering indexes for raid_player_bests' rank counts (index-only, no heap reads): without
+-- them a profile's ranks took up to 2.5 s cold and hit anon's 3 s timeout (2026-10-31).
+create index if not exists raid_bests_rank_idx on raid_bests (raid, boss, difficulty, metric, value desc) include (player_key);
+create index if not exists raid_bests_rank_spec_idx on raid_bests (raid, boss, difficulty, metric, spec, value desc) include (player_key);
 alter table raid_bests enable row level security;
 drop policy if exists "public read raid bests" on raid_bests;
 create policy "public read raid bests" on raid_bests for select using (true);
