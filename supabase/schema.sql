@@ -992,6 +992,45 @@ on conflict (player_key, raid, boss, difficulty, metric, spec) do update set
   source = excluded.source, log_id = excluded.log_id, logid = excluded.logid, started = excluded.started
 where raid_bests.value < excluded.value;
 
+-- The same seed for NEW uploads (fights saved since p_since). Elerethe Renferal is never taken
+-- from Tauri's feed (it over-credits Shimmering Feather users), so uploads are its only way
+-- onto the board; before 2026-10-31 nothing ran this and new Elerethe kills never showed up.
+-- Called by submit-log after each upload and by scrape-raids.mjs every run (last 3 days).
+-- Normal/Heroic/Mythic only, like the Tauri feed. A row only replaces a lower value.
+create or replace function seed_raid_bests_from_fights(p_since timestamptz)
+returns int language sql security definer set search_path = public as $$
+  with ins as (
+    insert into raid_bests (player_key, player, raid, boss, difficulty, metric, spec, class, race, gender,
+                            faction, guild, value, amount, duration, day, ilvl, talents, trinkets,
+                            legendaries, legendary_status, source, log_id, logid, started)
+    select distinct on (lower(f.player), f.raid, f.boss, f.difficulty, m.metric, coalesce(f.spec, c.spec, ''))
+      lower(f.player), f.player, f.raid, f.boss, f.difficulty, m.metric, coalesce(f.spec, c.spec, ''),
+      coalesce(f.class, c.class), c.race, c.gender, c.faction, c.guild,
+      m.value, m.amount, f.duration, f.day, f.ilvl,
+      (select jsonb_agg(jsonb_build_object('row', t->'row', 'col', t->'col'))
+       from jsonb_array_elements(case when jsonb_typeof(f.talents) = 'array' then f.talents else '[]'::jsonb end) t),
+      f.trinkets, nullif(f.legendaries, '[]'::jsonb), 'log', 'log', f.tauri_log, f.logid, f.started
+    from fights f
+    left join characters c on c.key = lower(f.player)
+    cross join lateral (values ('dps', f.dps, f.damage), ('hps', f.hps, f.healing)) m(metric, value, amount)
+    where f.created_at >= p_since
+      and f.kill is not false and not coalesce(f.pet, false) and not coalesce(f.discredited, false)
+      and f.raid is not null and f.boss is not null and f.difficulty in ('Normal', 'Heroic', 'Mythic')
+      and m.value > 0 and m.amount > 0
+    order by lower(f.player), f.raid, f.boss, f.difficulty, m.metric, coalesce(f.spec, c.spec, ''), m.value desc
+    on conflict (player_key, raid, boss, difficulty, metric, spec) do update set
+      value = excluded.value, amount = excluded.amount, duration = excluded.duration, day = excluded.day,
+      ilvl = excluded.ilvl, talents = excluded.talents, trinkets = excluded.trinkets,
+      legendaries = excluded.legendaries, legendary_status = excluded.legendary_status,
+      source = excluded.source, log_id = excluded.log_id, logid = excluded.logid, started = excluded.started
+    -- + 1: an upload's dps/hps is rounded, Tauri's isn't; the same kill must not replace it.
+    where raid_bests.value + 1 < excluded.value
+    returning 1
+  )
+  select count(*)::int from ins
+$$;
+revoke execute on function seed_raid_bests_from_fights(timestamptz) from public, anon, authenticated;
+
 -- Boss board: each player's best for the boss (best across difficulties when p_difficulty is
 -- null, and across specs unless p_specs narrows it), top p_limit, plus the matched total.
 -- A row whose kill is an uploaded log gets that log's id/start (row click opens it) and its

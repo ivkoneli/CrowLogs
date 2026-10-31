@@ -181,6 +181,15 @@ async function main() {
   const client = tauriClient(TAURI_API_KEY, TAURI_API_SECRET)
   if (!client.enabled) throw new Error('Missing TAURI_API_KEY / TAURI_API_SECRET')
   const cookie = getAuthCookie()
+  // Uploaded kills → rankings (Elerethe Renferal's only source). submit-log does this on each
+  // upload; this catches any it missed. First, so a Tauri outage doesn't skip it.
+  if (!DRY) {
+    await db('rpc/seed_raid_bests_from_fights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_since: new Date(Date.now() - 3 * 86_400_000).toISOString() }),
+    })
+  }
   const status = new Map((await db('raid_status?select=*')).map((s) => [s.api_realm, s]))
 
   for (const realm of API_REALMS) {

@@ -239,6 +239,15 @@ Deno.serve(async (req) => {
       const label = [first.raid, first.day].filter(Boolean).join(' · ') || str(body.label)
       await upsertLog(id, label, rows.length, ipHash)
     }
+    // Put the new kills on the rankings. Elerethe Renferal can ONLY get there this way
+    // (the Tauri feed skips it); scrape-raids.mjs re-runs this as a safety net.
+    try {
+      await fetch(`${REST}/rpc/seed_raid_bests_from_fights`, {
+        method: 'POST',
+        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_since: new Date(Date.now() - 86_400_000).toISOString() }),
+      })
+    } catch { /* the next raid scrape picks it up */ }
     return json({ inserted: deduped.length, skipped: fights.length - deduped.length, tauri: tauriInfo })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)
