@@ -23,7 +23,10 @@ for (const logid of logids) {
   const { rows: next, removeIds, matched, errors, outliers } = await applyTauriKills(client, rows)
   for (const o of outliers) console.log(`  kept the log's number — ${o}`)
   const before = new Map(rows.map((r) => [r.id, r]))
-  const changed = next.filter((r) => r.tauri_log !== before.get(r.id)?.tauri_log || r.damage !== before.get(r.id)?.damage || r.healing !== before.get(r.id)?.healing)
+  const build = (r) => JSON.stringify([r?.spec, r?.ilvl, r?.talents, r?.trinkets])
+  const rebuilt = next.filter((r) => build(r) !== build(before.get(r.id)))
+  const changed = next.filter((r) => r.tauri_log !== before.get(r.id)?.tauri_log || r.damage !== before.get(r.id)?.damage || r.healing !== before.get(r.id)?.healing || rebuilt.includes(r))
+  if (rebuilt.length) console.log(`  build filled from Tauri's kill record on ${rebuilt.length} row(s)`)
   for (const r of changed) {
     const b = before.get(r.id)
     console.log(`  ${r.boss.padEnd(22)} ${r.player.padEnd(22)} dmg ${(b.damage / 1e6).toFixed(1)}M → ${(r.damage / 1e6).toFixed(1)}M   heal ${(b.healing / 1e6).toFixed(1)}M → ${(r.healing / 1e6).toFixed(1)}M`)

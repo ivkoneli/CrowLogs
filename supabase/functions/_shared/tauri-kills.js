@@ -8,7 +8,8 @@
 // whose owner the log never names (Army of the Dead, warlock demons, …) can't be credited.
 // Tauri's server records every kill with each member's exact damage and healing, so for
 // kills its numbers replace ours. Wipes aren't recorded by Tauri and keep the log's data.
-// Item level, gear, talents and the per-spell breakdown always stay from the log/addon.
+// The per-spell breakdown stays from the log. Spec/ilvl/talents/trinkets: the addon's build
+// first, Tauri's record of the kill fills what it lacks (see withKillBuild).
 //
 // Finding the kill: `raid-rank-encounter` lists every kill of one boss on one difficulty
 // (a few hundred rows, ~0.1 s). Candidates are the kills whose fight time is within 3 s of
@@ -36,6 +37,57 @@ const CLEAN_RATIO = 1.1
 const DIFFICULTY_IDS = { Normal: [14, 3, 4], Heroic: [15, 5, 6], Mythic: [16], LFR: [17, 7] }
 // Player keys are "Name-realmslug"; Evermoon and Tauri share one API realm.
 const API_REALM = { evermoon: '[HU] Tauri WoW Server', tauri: '[HU] Tauri WoW Server', wod: '[HU] Warriors of Darkness' }
+
+// ── A member's build on the kill (shared with scripts/scrape-raids.mjs) ──────────────
+export const ICON_BASE = 'https://legion-static.tauri.hu/images/icons/large/'
+// Tauri spec ids (Blizzard's) → [class, spec].
+export const SPEC_BY_ID = {
+  250: ['Death Knight', 'Blood'], 251: ['Death Knight', 'Frost'], 252: ['Death Knight', 'Unholy'],
+  577: ['Demon Hunter', 'Havoc'], 581: ['Demon Hunter', 'Vengeance'],
+  102: ['Druid', 'Balance'], 103: ['Druid', 'Feral'], 104: ['Druid', 'Guardian'], 105: ['Druid', 'Restoration'],
+  253: ['Hunter', 'Beast Mastery'], 254: ['Hunter', 'Marksmanship'], 255: ['Hunter', 'Survival'],
+  62: ['Mage', 'Arcane'], 63: ['Mage', 'Fire'], 64: ['Mage', 'Frost'],
+  268: ['Monk', 'Brewmaster'], 270: ['Monk', 'Mistweaver'], 269: ['Monk', 'Windwalker'],
+  65: ['Paladin', 'Holy'], 66: ['Paladin', 'Protection'], 70: ['Paladin', 'Retribution'],
+  256: ['Priest', 'Discipline'], 257: ['Priest', 'Holy'], 258: ['Priest', 'Shadow'],
+  259: ['Rogue', 'Assassination'], 260: ['Rogue', 'Outlaw'], 261: ['Rogue', 'Subtlety'],
+  262: ['Shaman', 'Elemental'], 263: ['Shaman', 'Enhancement'], 264: ['Shaman', 'Restoration'],
+  265: ['Warlock', 'Affliction'], 266: ['Warlock', 'Demonology'], 267: ['Warlock', 'Destruction'],
+  71: ['Warrior', 'Arms'], 72: ['Warrior', 'Fury'], 73: ['Warrior', 'Protection'],
+}
+export const QUALITY_BY_RARITY = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
+// "Za!1212.12": class + spec letters, then the column picked on each tier counted from 0,
+// '.' for none → [{ row, col }] with col 1-3 (0 = none), the shape fights.talents uses.
+export function parseTalentCode(code) {
+  const cols = String(code || '').split('!')[1] || ''
+  if (!/^[.0-2]{1,7}$/.test(cols)) return null
+  return [...cols].map((c, i) => ({ row: i + 1, col: c === '.' ? 0 : +c + 1 }))
+}
+export const trinketOf = (t) =>
+  t?.entry
+    ? { id: t.entry, name: t.name || t.originalname || null, icon: t.icon ? `${ICON_BASE}${t.icon}.png` : null, ilvl: t.ilevel || null, quality: QUALITY_BY_RARITY[t.rarity] || null }
+    : null
+
+// Spec / ilvl / talents / trinkets from Tauri's record of this kill — exact for the pull.
+// A build the addon froze (broadcast or inspect) wins field by field; Tauri fills its gaps
+// (an inspect has no ilvl). A row with no addon build takes Tauri's over the armory's,
+// which is only "what they wear now".
+function withKillBuild(r, m) {
+  const snap = r.from_addon === true || r.class != null
+  const keep = (v) => snap && v != null && !(Array.isArray(v) && !v.length)
+  const spec = SPEC_BY_ID[m.spec]?.[1] || null
+  const talents = parseTalentCode(m.talents)
+  const trinkets = [trinketOf(m.trinket_0), trinketOf(m.trinket_1)].filter(Boolean)
+  const next = { ...r }
+  if (spec && !keep(r.spec)) {
+    if (r.spec !== spec) next.spec_icon = null // the stored icon belongs to the other spec
+    next.spec = spec
+  }
+  if (m.ilvl > 0 && !keep(r.ilvl)) next.ilvl = m.ilvl
+  if (talents && !keep(r.talents)) next.talents = talents
+  if (trinkets.length >= 2 && !(snap && r.trinkets?.length >= 2)) next.trinkets = trinkets
+  return next
+}
 
 const norm = (s) => (s || '').normalize('NFC').toLowerCase()
 const nameOf = (player) => norm(String(player).split('-')[0])
@@ -225,7 +277,7 @@ export async function applyTauriKills(client, rows) {
         healing = logHealing(r)
       }
       replaced.set(r.id, {
-        ...r,
+        ...withKillBuild(r, m),
         damage,
         healing,
         duration: log.fight_time,

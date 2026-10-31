@@ -18,8 +18,8 @@
 // Normal / Heroic / Mythic only: Tauri has no LFR. RAIDS_DEBUG=1 prints why an armory check failed.
 
 import 'dotenv/config'
-import { tauriClient } from '../supabase/functions/_shared/tauri-kills.js'
-import { getAuthCookie, fetchArmory, parseSheet, parseGear, sleep, ICON_BASE, LEGENDARY_ILVL, CLASS_BY_ID, RACE_BY_ID } from './armory.mjs'
+import { tauriClient, SPEC_BY_ID, parseTalentCode, trinketOf } from '../supabase/functions/_shared/tauri-kills.js'
+import { getAuthCookie, fetchArmory, parseSheet, parseGear, sleep, LEGENDARY_ILVL, CLASS_BY_ID, RACE_BY_ID } from './armory.mjs'
 import { matchBoss, DIFFICULTY_MAP } from '../src/lib/raids.js'
 import { foldName } from '../src/lib/rankings.js'
 
@@ -58,25 +58,9 @@ const OUTLIER_MIN_DPS = 1e6
 // Boss whose Tauri numbers aren't taken at all (see the kill loop).
 const LOG_ONLY_BOSS = 'Elerethe Renferal'
 
-// Tauri spec ids (Blizzard's) → [class, spec].
-const SPEC_BY_ID = {
-  250: ['Death Knight', 'Blood'], 251: ['Death Knight', 'Frost'], 252: ['Death Knight', 'Unholy'],
-  577: ['Demon Hunter', 'Havoc'], 581: ['Demon Hunter', 'Vengeance'],
-  102: ['Druid', 'Balance'], 103: ['Druid', 'Feral'], 104: ['Druid', 'Guardian'], 105: ['Druid', 'Restoration'],
-  253: ['Hunter', 'Beast Mastery'], 254: ['Hunter', 'Marksmanship'], 255: ['Hunter', 'Survival'],
-  62: ['Mage', 'Arcane'], 63: ['Mage', 'Fire'], 64: ['Mage', 'Frost'],
-  268: ['Monk', 'Brewmaster'], 270: ['Monk', 'Mistweaver'], 269: ['Monk', 'Windwalker'],
-  65: ['Paladin', 'Holy'], 66: ['Paladin', 'Protection'], 70: ['Paladin', 'Retribution'],
-  256: ['Priest', 'Discipline'], 257: ['Priest', 'Holy'], 258: ['Priest', 'Shadow'],
-  259: ['Rogue', 'Assassination'], 260: ['Rogue', 'Outlaw'], 261: ['Rogue', 'Subtlety'],
-  262: ['Shaman', 'Elemental'], 263: ['Shaman', 'Enhancement'], 264: ['Shaman', 'Restoration'],
-  265: ['Warlock', 'Affliction'], 266: ['Warlock', 'Demonology'], 267: ['Warlock', 'Destruction'],
-  71: ['Warrior', 'Arms'], 72: ['Warrior', 'Fury'], 73: ['Warrior', 'Protection'],
-}
 const HEALERS = new Set([105, 270, 65, 256, 257, 264])
 const ALLIANCE_RACES = new Set([1, 3, 4, 7, 11, 22, 25, 29, 30])
 const HORDE_RACES = new Set([2, 5, 6, 8, 9, 10, 26, 27, 28])
-const QUALITY_BY_RARITY = { 1: 'common', 2: 'uncommon', 3: 'rare', 4: 'epic', 5: 'legendary', 6: 'artifact', 7: 'heirloom' }
 
 // ── DB ──────────────────────────────────────────────────────────────────────
 async function db(path, init = {}) {
@@ -95,18 +79,6 @@ const upsert = (table, rows, conflict) =>
 const inList = (vals) => `(${vals.map((v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')})`
 
 // ── TAURI RECORD → ROWS ─────────────────────────────────────────────────────
-// "Za!1212.12": class + spec letters, then the column picked on each tier counted from 0,
-// '.' for none → [{ row, col }] with col 1-3 (0 = none), the shape fights.talents uses.
-function parseTalentCode(code) {
-  const cols = String(code || '').split('!')[1] || ''
-  if (!/^[.0-2]{1,7}$/.test(cols)) return null
-  return [...cols].map((c, i) => ({ row: i + 1, col: c === '.' ? 0 : +c + 1 }))
-}
-const trinketOf = (t) =>
-  t?.entry
-    ? { id: t.entry, name: t.name || t.originalname || null, icon: t.icon ? `${ICON_BASE}${t.icon}.png` : null, ilvl: t.ilevel || null, quality: QUALITY_BY_RARITY[t.rarity] || null }
-    : null
-
 // Kill time as uploaded logs show it ("10/20 13:45"), in server time.
 const DAY_FMT = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Budapest', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 function dayLabel(killtime) {

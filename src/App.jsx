@@ -192,7 +192,21 @@ export default function App() {
       if (players.length) {
         onProgress(0.45, `Fetching ${players.length} armory profile${players.length === 1 ? '' : 's'}…`)
         try {
-          const res = await requestCharacterScrape(players)
+          // One failed call used to leave a whole log without ilvl/talents/trinkets for
+          // everyone the addon didn't cover (10/31: a one-off armory/rate-limit hiccup; the
+          // same request worked minutes later). Retry before giving up.
+          let res = null
+          for (let attempt = 0; ; attempt++) {
+            try {
+              res = await requestCharacterScrape(players)
+              break
+            } catch (e) {
+              if (attempt >= 2) throw e
+              console.warn(`Armory scrape failed, retrying: ${e.message}`)
+              onProgress(0.45, 'Armory busy, retrying…')
+              await new Promise((r) => setTimeout(r, attempt ? 20000 : 5000))
+            }
+          }
           const byKey = new Map((res?.updated || []).map((c) => [charKey(c.name || c.key), c]))
           const frozen = recs.map((r) => {
             const c = byKey.get(charKey(r.player))
