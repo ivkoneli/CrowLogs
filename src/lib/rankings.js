@@ -42,7 +42,8 @@ export function playerSummary(fights, player, raid, bosses, difficulty, metric =
   return bosses.map((boss) => {
     const ranking = bossRanking(fights, raid, boss, difficulty, metric, spec)
     const idx = ranking.findIndex((r) => r.player === player)
-    if (idx >= 0) return { boss, record: ranking[idx], rank: idx + 1, total: ranking.length }
+    const top = ranking.length ? ranking[0][rate] || null : null // rank 1's value
+    if (idx >= 0) return { boss, record: ranking[idx], rank: idx + 1, total: ranking.length, top }
     // Not on the (metric > 0) leaderboard. If they still KILLED it in this spec, show
     // that kill with its (possibly 0) value, unranked — never "no kill" for a real kill
     // (e.g. an Arms warrior did 0 healing on a boss they downed). A discredited kill is
@@ -59,7 +60,7 @@ export function playerSummary(fights, player, raid, bosses, difficulty, metric =
         (!!killRec.discredited !== !!f.discredited ? !f.discredited : (f[rate] || 0) > (killRec[rate] || 0))
       if (better) killRec = f
     }
-    return { boss, record: killRec, rank: null, total: ranking.length }
+    return { boss, record: killRec, rank: null, total: ranking.length, top }
   })
 }
 

@@ -122,6 +122,8 @@ async function fetchPlayerBests(player) {
     totalAll: r.total_all,
     rankSpec: r.rank_spec,
     totalSpec: r.total_spec,
+    topAll: r.top_all ?? null,
+    topSpec: r.top_spec ?? null,
   }))
 }
 
@@ -135,10 +137,11 @@ export function playerBestSummary(bests, raid, bosses, difficulty, metric, spec 
       if (spec && b.spec !== spec) continue
       if (!best || b[metric] > best[metric]) best = b
     }
-    if (!best) return { boss, record: null, rank: null, total: 0 }
+    if (!best) return { boss, record: null, rank: null, total: 0, top: null }
+    // `top` = rank 1's value on the same board the rank is from (all specs, or this spec).
     return spec
-      ? { boss, record: best, rank: best.rankSpec, total: best.totalSpec }
-      : { boss, record: best, rank: best.rankAll, total: best.totalAll }
+      ? { boss, record: best, rank: best.rankSpec, total: best.totalSpec, top: best.topSpec }
+      : { boss, record: best, rank: best.rankAll, total: best.totalAll, top: best.topAll }
   })
 }
 

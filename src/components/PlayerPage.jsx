@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { MAIN_RAIDS } from '../lib/raids.js'
 import { playerSummary, playerProfile, playerLogs } from '../lib/rankings.js'
 import { formatDps, formatDuration } from '../parser.js'
-import { classColor, specsOf, specIconUrl } from '../lib/classes.js'
+import { classColor, specsOf, specIconUrl, roleOf } from '../lib/classes.js'
 import { MetricToggle } from './Meter.jsx'
 import TalentStrip from './TalentStrip.jsx'
 import FactionIcon from './FactionIcon.jsx'
@@ -34,7 +34,10 @@ function RaidRankCard({ fights, bests, player, raid, difficulty, metric, spec, k
     : playerSummary(fights, player, raid.name, raid.bosses, difficulty, metric, spec)
   const rate = (rec) => (metric === 'hps' ? rec.hps : rec.dps)
   const ranked = rows.filter((r) => r.record)
-  const best = ranked.length ? Math.max(...ranked.map((r) => rate(r.record)), 1) : 1
+  // Each bar is the player's share of rank 1 on that boss (300k vs a 600k #1 = half full).
+  // Rows without a known #1 (an older cached copy) fall back to their own best boss.
+  const ownBest = ranked.length ? Math.max(...ranked.map((r) => rate(r.record)), 1) : 1
+  const barPct = (r) => Math.min(100, (rate(r.record) / Math.max(r.top || ownBest, rate(r.record), 1)) * 100)
   const barBg = klass
     ? `linear-gradient(90deg, ${classColor(klass)}33, ${classColor(klass)}cc)`
     : undefined
@@ -58,13 +61,15 @@ function RaidRankCard({ fights, bests, player, raid, difficulty, metric, spec, k
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ boss, record, rank, total }) => (
+          {rows.map((row) => {
+            const { boss, record, rank, total } = row
+            return (
             <tr key={boss}>
               <td className="name-cell">
                 <div className="bar-wrap">
                   <div
                     className="bar"
-                    style={{ width: record ? `${(rate(record) / best) * 100}%` : '0%', background: record ? barBg : undefined }}
+                    style={{ width: record ? `${barPct(row)}%` : '0%', background: record ? barBg : undefined }}
                   />
                   <button className="name link" onClick={() => onSelectBoss(raid.name, boss)}>
                     {boss}
@@ -94,7 +99,8 @@ function RaidRankCard({ fights, bests, player, raid, difficulty, metric, spec, k
                 </>
               )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
       </div>
@@ -106,9 +112,10 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
   const [tab, setTab] = useState('rankings')
   // null = not picked by hand: the page opens on the hardest difficulty they have a kill on.
   const [pickedDiff, setDiff] = useState(null)
-  const [histMetric, setHistMetric] = useState('dps')
+  // null = not picked by hand: healers with healing logs open on Healing, everyone else on DPS.
+  const [pickedHistMetric, setHistMetric] = useState(null)
   const [histSpec, setHistSpec] = useState(null) // null = All specs
-  const [rankMetric, setRankMetric] = useState('dps')
+  const [pickedRankMetric, setRankMetric] = useState(null)
   const [rankSpec, setRankSpec] = useState(null) // null = All specs
   const [updating, setUpdating] = useState(false)
   const [updateMsg, setUpdateMsg] = useState(null) // { ok, msg }
@@ -153,8 +160,19 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
     return DIFF_TABS.find((d) => killed.has(d)) || DIFF_TABS[0]
   }, [logs, bests])
   const diff = pickedDiff ?? autoDiff
-  // A hand-picked difficulty belongs to the profile it was picked on.
-  useEffect(() => setDiff(null), [player])
+  const autoMetric = useMemo(() => {
+    if (roleOf(profile.class, profile.spec) !== 'healer') return 'dps'
+    const healed = bests.some((b) => b.metric === 'hps') || logs.some((l) => l.hps > 0)
+    return healed ? 'hps' : 'dps'
+  }, [profile.class, profile.spec, bests, logs])
+  const rankMetric = pickedRankMetric ?? autoMetric
+  const histMetric = pickedHistMetric ?? autoMetric
+  // A hand-picked difficulty / metric belongs to the profile it was picked on.
+  useEffect(() => {
+    setDiff(null)
+    setRankMetric(null)
+    setHistMetric(null)
+  }, [player])
 
   // All of the class's specs (not just ones with logs) for the spec sub-tabs.
   const classSpecs = useMemo(

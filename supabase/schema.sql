@@ -1082,13 +1082,17 @@ grant execute on function raid_board(text, text, text, text, text[], text, text,
 
 -- A player's bests on every boss, with their rank among all players (rank_all: everyone's
 -- best across specs) and within that spec (rank_spec), for the profile's Rankings tab.
+-- top_all / top_spec: rank 1's value on that board (the profile's bars are a share of it).
+-- (top_* added 2026-11-03; a changed return type needs the drop.)
+drop function if exists raid_player_bests(text);
 create or replace function raid_player_bests(p_player text)
 returns table (
   raid text, boss text, difficulty text, metric text, spec text, class text, race text,
   gender smallint, faction text, guild text, value double precision, amount bigint,
   duration int, day text, ilvl smallint, talents jsonb, trinkets jsonb, legendaries jsonb,
   legendary_status text, logid text, started bigint,
-  rank_all int, total_all int, rank_spec int, total_spec int
+  rank_all int, total_all int, rank_spec int, total_spec int,
+  top_all double precision, top_spec double precision
 )
 language sql stable set search_path = public as $$
   select rb.raid, rb.boss, rb.difficulty, rb.metric, rb.spec, rb.class, rb.race, rb.gender,
@@ -1107,7 +1111,13 @@ language sql stable set search_path = public as $$
                 and b.player_key <> rb.player_key)::int,
          (select count(*) from raid_bests b
           where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
-            and b.metric = rb.metric and b.spec = rb.spec)::int
+            and b.metric = rb.metric and b.spec = rb.spec)::int,
+         (select max(b.value) from raid_bests b
+          where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
+            and b.metric = rb.metric),
+         (select max(b.value) from raid_bests b
+          where b.raid = rb.raid and b.boss = rb.boss and b.difficulty = rb.difficulty
+            and b.metric = rb.metric and b.spec = rb.spec)
   from raid_bests rb
   left join lateral (
     select x.logid, x.started from fights x
