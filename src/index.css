@@ -3345,6 +3345,33 @@ img.icon-slot.trinket.legendary {
   pointer-events: none;
   font-size: 0.8rem;
 }
+/* Damage: spells on the left, targets on the right; stacked when the window is narrow. */
+.spell-panel.wide {
+  width: 760px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+}
+.spell-panel.wide .sb-block {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+.spell-panel.wide .sb-block + .sb-block {
+  border-left: 1px solid var(--border);
+  padding-left: 1rem;
+}
+@media (max-width: 800px) {
+  .spell-panel.wide .sb-block + .sb-block {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+}
+.sb-bar.target {
+  background: #c7a6ff;
+}
 .sb-head {
   display: flex;
   align-items: baseline;

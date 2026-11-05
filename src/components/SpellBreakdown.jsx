@@ -121,8 +121,15 @@ export function SpellPanel({ fightId, metric, total, durationMs, name, anchor })
       </table>
     )
 
-  return createPortal(
-    <div className="spell-panel" ref={ref} style={pos} role="tooltip">
+  // Damage by target, beside the spells. Only logs imported from 2026-11-05 have it. On a
+  // kill whose total came from Tauri it's still the log's own view, like the spells.
+  const targets = metric !== 'hps' && state.spells?.targets?.length ? state.spells.targets : null
+  const shownTargets = targets ? targets.slice(0, MAX_ROWS) : []
+  const restTargets = targets ? targets.slice(MAX_ROWS).reduce((s, r) => s + r[2], 0) : 0
+  const topTarget = shownTargets[0]?.[2] || 1
+
+  const spellsBlock = (
+    <div className="sb-block">
       <div className="sb-head">
         <span className="sb-title">{label} by spell</span>
         <span className="sb-who">{name}</span>
@@ -136,6 +143,53 @@ export function SpellPanel({ fightId, metric, total, durationMs, name, anchor })
         </div>
       )}
       {body}
+    </div>
+  )
+
+  return createPortal(
+    <div className={`spell-panel${targets ? ' wide' : ''}`} ref={ref} style={pos} role="tooltip">
+      {spellsBlock}
+      {targets && (
+        <div className="sb-block">
+          <div className="sb-head">
+            <span className="sb-title">Damage by target</span>
+          </div>
+          <div className="sb-cols">
+            <span>Target</span>
+            <span>%</span>
+            <span>Total</span>
+            {secs > 0 && <span>DPS</span>}
+          </div>
+          <table className="sb-table">
+            <tbody>
+              {shownTargets.map(([npc, target, amount, units], i) => (
+                <tr key={`${npc}-${target}-${i}`}>
+                  <td className="sb-name">
+                    <div className="sb-bar target" style={{ width: `${(amount / topTarget) * 100}%` }} />
+                    <span className="sb-label">
+                      {target}
+                      {units > 1 && <span className="sb-pet"> ×{units}</span>}
+                    </span>
+                  </td>
+                  <td className="sb-pct">{((amount / sum) * 100).toFixed(1)}%</td>
+                  <td className="sb-amt">{compact(amount)}</td>
+                  {secs > 0 && <td className="sb-rate">{compact(amount / secs)}</td>}
+                </tr>
+              ))}
+              {restTargets > 0 && (
+                <tr className="sb-rest">
+                  <td className="sb-name">
+                    <span className="sb-label">{targets.length - MAX_ROWS} more</span>
+                  </td>
+                  <td className="sb-pct">{((restTargets / sum) * 100).toFixed(1)}%</td>
+                  <td className="sb-amt">{compact(restTargets)}</td>
+                  {secs > 0 && <td className="sb-rate">{compact(restTargets / secs)}</td>}
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>,
     document.body,
   )

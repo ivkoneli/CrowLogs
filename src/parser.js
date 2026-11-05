@@ -94,6 +94,33 @@ function tally(map, id, name, school, petName, amount) {
   else map.set(key, [Number(id) || 0, name || 'Unknown', amount, Number(school) || 0, petName || null])
 }
 
+// Per-target breakdown kept per fight row: the top N targets by damage, the rest as "Other".
+const MAX_TARGETS = 20
+
+// Add `amount` to a player's per-target tally. Keyed by the target's NAME, so a boss's many
+// adds of one kind (Dragons' Shades of Taerar) are one line; `units` counts how many
+// different ones were hit. Damage to players is never tallied (see the damage branch).
+function tallyTarget(map, guid, name, amount) {
+  const key = name || 'Unknown'
+  let cur = map.get(key)
+  if (!cur) {
+    cur = { npc: npcIdOf(guid) || 0, name: key, amount: 0, units: new Set() }
+    map.set(key, cur)
+  }
+  cur.amount += amount
+  cur.units.add(guid)
+}
+
+// Map → compact sorted array [[npcId, name, amount, units], …], the tail summed as "Other".
+function targetList(map) {
+  const all = [...map.values()].map((t) => [t.npc, t.name, t.amount, t.units.size]).sort((a, b) => b[2] - a[2])
+  if (all.length <= MAX_TARGETS) return all
+  const kept = all.slice(0, MAX_TARGETS - 1)
+  const rest = all.slice(MAX_TARGETS - 1)
+  kept.push([0, 'Other', rest.reduce((s, r) => s + r[2], 0), rest.reduce((s, r) => s + r[3], 0)])
+  return kept
+}
+
 // Map → compact sorted array [[spellId, name, amount, school, petName|null], …].
 function spellList(map) {
   const all = [...map.values()].sort((a, b) => b[2] - a[2])
@@ -226,7 +253,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, lo
   const credit = (guid, name) => {
     let p = players.get(name)
     if (!p) {
-      p = { player: name, guid, pet: false, damage: 0, hits: 0, healing: 0, potions: 0, dmgSpells: new Map(), healSpells: new Map() }
+      p = { player: name, guid, pet: false, damage: 0, hits: 0, healing: 0, potions: 0, dmgSpells: new Map(), healSpells: new Map(), dmgTargets: new Map() }
       players.set(name, p)
     }
     return p
@@ -277,6 +304,7 @@ function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, lo
       const petName = isPetGuid(srcGuid) && !who.pet ? f[2] : null
       if (ev.event === 'SWING_DAMAGE') tally(p.dmgSpells, MELEE.id, MELEE.name, MELEE.school, petName, amount)
       else tally(p.dmgSpells, f[SPELL_ID], f[SPELL_NAME], f[SPELL_SCHOOL], petName, amount)
+      tallyTarget(p.dmgTargets, f[5], f[6], amount)
       if (firstActivity === null) firstActivity = ev.ts
       lastActivity = ev.ts
     } else if (HEAL_EVENTS.has(ev.event)) {
@@ -336,7 +364,8 @@ function buildRecords({ raid, boss, difficulty, encounterID, groupSize, kill, lo
   return [...players.values()]
     .filter((p) => p.damage > 0 || p.healing > 0)
     .map((p) => {
-      const spells = { dmg: spellList(p.dmgSpells), heal: spellList(p.healSpells) }
+      // `targets`: damage per target (see targetList). Always the log's own view of the pull.
+      const spells = { dmg: spellList(p.dmgSpells), heal: spellList(p.healSpells), targets: targetList(p.dmgTargets) }
       return {
         id: `${raid}::${boss}::${difficulty}::${p.player}::${startedMs}`,
         raid,

@@ -141,7 +141,24 @@ function cleanSpells(v: unknown, damage: number, healing: number) {
   const o = v as Record<string, unknown>
   const dmg = cleanSpellList(o.dmg, damage)
   const heal = cleanSpellList(o.heal, healing)
-  return dmg.length || heal.length ? { dmg, heal } : null
+  const targets = cleanTargetList(o.targets, damage)
+  if (!dmg.length && !heal.length) return null
+  return targets.length ? { dmg, heal, targets } : { dmg, heal }
+}
+
+// Damage per target: [[npcId, name, amount, units], …] (parser.js targetList). Same caps
+// and the same "can't claim more than the row's total" rule as the spell lists.
+const MAX_TARGETS = 25
+function cleanTargetList(v: unknown, total: number) {
+  if (!Array.isArray(v)) return []
+  const out = v.slice(0, MAX_TARGETS).flatMap((r) => {
+    if (!Array.isArray(r)) return []
+    const amount = Math.max(num(r[2]), 0)
+    if (amount <= 0) return []
+    return [[num(r[0]), (str(r[1]) || 'Unknown').slice(0, 80), amount, Math.max(Math.min(num(r[3]), 10000), 0)]]
+  })
+  const sum = out.reduce((s, r) => s + (r[2] as number), 0)
+  return sum > total * 1.001 + 1 ? [] : out
 }
 
 // A re-import whose kill now matched Tauri: drop that kill's separate pet rows.
