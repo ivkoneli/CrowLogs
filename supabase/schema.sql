@@ -1274,3 +1274,13 @@ language sql stable set search_path = public as $$
 $$;
 grant execute on function latest_runs(int, int, boolean, text, text, int, int) to anon, authenticated;
 
+-- Keep the visibility map fresh on the tables the public pages read with index-only scans.
+-- Postgres' defaults wait for ~20% of a table to change; the weekly full M+ re-scrape and
+-- hourly fills left mplus_runs with 77k of 90k rows needing a heap check, and the home
+-- feed (latest_runs) passed anon's 3 s timeout (2026-11-09).
+alter table mplus_runs set (autovacuum_vacuum_scale_factor = 0.01, autovacuum_vacuum_insert_scale_factor = 0.01, autovacuum_analyze_scale_factor = 0.02);
+alter table raid_bests set (autovacuum_vacuum_scale_factor = 0.01, autovacuum_vacuum_insert_scale_factor = 0.01, autovacuum_analyze_scale_factor = 0.02);
+-- Backstop: a nightly vacuum, and one right after the Wednesday full M+ pass (04:47 UTC).
+select cron.schedule('vacuum-public-tables', '15 3 * * *', $$vacuum (analyze) mplus_runs; vacuum (analyze) raid_bests$$);
+select cron.schedule('vacuum-after-full-mplus', '30 5 * * 3', $$vacuum (analyze) mplus_runs$$);
+
