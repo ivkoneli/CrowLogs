@@ -426,16 +426,26 @@ export function getLatestRuns(opts = {}) {
 async function loadLatestRuns({ mapId = null, minKey = null, timedOnly = false, board = null, sort = 'date', offset = 0 } = {}) {
   if (!supabase) return { runs: [], total: 0 }
   // latest_runs (schema.sql): the page plus each run's rank by score among the matching runs.
-  const { data, error } = await supabase.rpc('latest_runs', {
-    p_map: mapId,
-    p_min_key: minKey,
-    p_timed: timedOnly,
-    p_board: board,
-    p_sort: sort,
-    p_offset: offset,
-    p_limit: LATEST_PAGE_SIZE,
-  })
-  if (error) throw error
+  // Retried: the public role gets 3 s per query, and a busy or un-vacuumed moment can pass
+  // it (2026-11-09: the feed showed no runs at all until mplus_runs was vacuumed).
+  let data = null
+  for (let attempt = 0; ; attempt++) {
+    const res = await supabase.rpc('latest_runs', {
+      p_map: mapId,
+      p_min_key: minKey,
+      p_timed: timedOnly,
+      p_board: board,
+      p_sort: sort,
+      p_offset: offset,
+      p_limit: LATEST_PAGE_SIZE,
+    })
+    if (!res.error) {
+      data = res.data
+      break
+    }
+    if (attempt >= 2) throw res.error
+    await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+  }
   return { runs: data || [], total: data?.[0]?.total ?? (offset === 0 ? 0 : null) }
 }
 

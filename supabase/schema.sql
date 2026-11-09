@@ -1273,3 +1273,4 @@ language sql stable set search_path = public as $$
     pg.day desc, pg.completed_at desc nulls first, pg.seen_hour desc, pg.id
 $$;
 grant execute on function latest_runs(int, int, boolean, text, text, int, int) to anon, authenticated;
+
