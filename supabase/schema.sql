@@ -717,8 +717,8 @@ language sql stable set search_path = extensions, public as $$
     select d.guild from (select distinct guild from mplus_guilds) d, gq
     where not gq.exact and length(gq.g) >= 2 and name_fold(d.guild) like '%' || gq.esc || '%'
   ),
-  ranked as (
-    select s.realm, s.name_lower, s.name, s.class, s.spec, s.score, s.best, s.guild, s.max_key,
+  ranked as ( -- narrow on purpose: carrying `best` (jsonb) through the sorts spilled ~35 MB to disk per call
+    select s.realm, s.name_lower, s.name, s.max_key,
            row_number() over (order by s.score desc, s.name_lower, s.realm) as rk,
            case when s.prev_score <> s.score then
              row_number() over (order by s.prev_score desc nulls last, s.name_lower, s.realm) end as prev_rk
@@ -742,17 +742,25 @@ language sql stable set search_path = extensions, public as $$
       (select ((f.pos - 1) / lim.n) * lim.n from f, lim
        where p_find_name is not null and f.realm = p_find_realm and f.name_lower = lower(p_find_name)),
       greatest(coalesce(p_offset, 0), 0)) as o
+  ),
+  page as ( -- the rows of this page only; their full rows are fetched below by primary key
+    select f.realm, f.name_lower, f.rk, f.prev_rk, f.total, f.pos
+    from f, lim, start
+    where f.pos > start.o and f.pos <= start.o + lim.n
+    order by f.pos
+    limit 50
   )
-  select f.rk, f.total, f.realm, f.name, f.class,
-         case when f.spec = '' and p_class is not null then coalesce(
+  select p.rk, p.total, m.realm, m.name, m.class,
+         case when m.spec = '' and p_class is not null then coalesce(
            (select ms.spec from mplus_scores ms
-            where ms.realm = f.realm and ms.name_lower = f.name_lower and ms.spec <> ''
+            where ms.realm = m.realm and ms.name_lower = m.name_lower and ms.spec <> ''
             order by ms.score desc limit 1), '')
-         else f.spec end,
-         f.score, f.best, f.guild, f.prev_rk
-  from f, lim, start
-  where f.pos > start.o and f.pos <= start.o + lim.n
-  order by f.pos
+         else m.spec end,
+         m.score, m.best, m.guild, p.prev_rk
+  from page p
+  join mplus_scores m on m.realm = p.realm and m.name_lower = p.name_lower
+                     and m.spec = case when p_class is null then '' else coalesce(nullif(p_spec, ''), '') end
+  order by p.pos
 $$;
 grant execute on function mplus_leaderboard(text, text, text, int, int, text, text, text, text, int) to anon, authenticated;
 
@@ -912,6 +920,11 @@ create index if not exists raid_bests_board_idx on raid_bests (raid, boss, diffi
 -- them a profile's ranks took up to 2.5 s cold and hit anon's 3 s timeout (2026-10-31).
 create index if not exists raid_bests_rank_idx on raid_bests (raid, boss, difficulty, metric, value desc) include (player_key);
 create index if not exists raid_bests_rank_spec_idx on raid_bests (raid, boss, difficulty, metric, spec, value desc) include (player_key);
+-- Everything raid_board filters and ranks on, so it never reads the wide heap rows to rank.
+create index if not exists raid_bests_board_cover_idx on raid_bests (raid, boss, metric, difficulty, value desc)
+  include (player_key, spec, class, faction, log_id);
+-- raid_board's "is this kill discredited" check: a handful of rows at most.
+create index if not exists fights_discredited_idx on fights (tauri_log) where discredited;
 alter table raid_bests enable row level security;
 drop policy if exists "public read raid bests" on raid_bests;
 create policy "public read raid bests" on raid_bests for select using (true);
@@ -1049,34 +1062,46 @@ returns table (
   logid text, started bigint, total int
 )
 language sql stable set search_path = public as $$
+  -- Ranked on a few narrow columns (index-only via raid_bests_board_cover_idx); the wide rows
+  -- (talents/trinkets/…) are read for the returned page only. Reading every candidate's full
+  -- row was ~4,600 scattered heap pages per board and ran into anon's timeout on a cold
+  -- cache (2026-11-16).
   with cand as (
-    select rb.*, f.logid as f_logid, f.started as f_started, f.legendaries as f_leg,
-           coalesce(f.discredited, false) as disc
+    select rb.player_key, rb.difficulty, rb.spec, rb.value
     from raid_bests rb
-    left join lateral (
-      select x.logid, x.started, x.legendaries, x.discredited from fights x
-      where rb.log_id is not null and x.tauri_log = rb.log_id and lower(x.player) = rb.player_key
-      limit 1
-    ) f on true
     where rb.raid = p_raid and rb.boss = p_boss and rb.metric = p_metric
       and (p_difficulty is null or rb.difficulty = p_difficulty)
       and (p_specs is null or rb.spec = any (p_specs))
       and (p_class is null or rb.class = p_class)
       and (p_faction is null or rb.faction = p_faction)
       and (p_realm is null or split_part(rb.player_key, '-', 2) = lower(p_realm))
+      and not exists (
+        select 1 from fights x
+        where x.discredited and x.tauri_log = rb.log_id and lower(x.player) = rb.player_key)
   ), best as (
-    select distinct on (player_key) * from cand where not disc order by player_key, value desc
+    select distinct on (player_key) * from cand order by player_key, value desc
+  ), page as (
+    select b.*, (count(*) over ())::int as total
+    from best b
+    order by b.value desc, b.player_key
+    limit least(greatest(p_limit, 1), 1000)
+    offset greatest(coalesce(p_offset, 0), 0)
   )
-  select b.player, b.class, b.spec, b.race, b.gender, b.faction, b.guild, b.value, b.amount,
-         b.duration, b.day, b.difficulty, b.ilvl, b.talents, b.trinkets,
-         case when jsonb_array_length(coalesce(b.f_leg, '[]'::jsonb)) > 0 then b.f_leg else b.legendaries end,
-         case when jsonb_array_length(coalesce(b.f_leg, '[]'::jsonb)) > 0 then 'log' else b.legendary_status end,
-         b.source, coalesce(b.logid, b.f_logid), coalesce(b.started, b.f_started),
-         (count(*) over ())::int
-  from best b
-  order by b.value desc
-  limit least(greatest(p_limit, 1), 1000)
-  offset greatest(coalesce(p_offset, 0), 0)
+  select rb.player, rb.class, rb.spec, rb.race, rb.gender, rb.faction, rb.guild, rb.value, rb.amount,
+         rb.duration, rb.day, rb.difficulty, rb.ilvl, rb.talents, rb.trinkets,
+         case when jsonb_array_length(coalesce(f.legendaries, '[]'::jsonb)) > 0 then f.legendaries else rb.legendaries end,
+         case when jsonb_array_length(coalesce(f.legendaries, '[]'::jsonb)) > 0 then 'log' else rb.legendary_status end,
+         rb.source, coalesce(rb.logid, f.logid), coalesce(rb.started, f.started),
+         p.total
+  from page p
+  join raid_bests rb on rb.player_key = p.player_key and rb.raid = p_raid and rb.boss = p_boss
+                    and rb.difficulty = p.difficulty and rb.metric = p_metric and rb.spec = p.spec
+  left join lateral (
+    select x.logid, x.started, x.legendaries from fights x
+    where rb.log_id is not null and x.tauri_log = rb.log_id and lower(x.player) = rb.player_key
+    limit 1
+  ) f on true
+  order by p.value desc, p.player_key
 $$;
 grant execute on function raid_board(text, text, text, text, text[], text, text, text, int, int) to anon, authenticated;
 
