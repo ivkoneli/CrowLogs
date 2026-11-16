@@ -190,6 +190,11 @@ export default function ImportPanel({ onImported, shared }) {
               `${file.name} is ${(file.size / 1048576).toFixed(0)} MB — over the ~${MAX_LOG_MB} MB limit and likely to exhaust memory. ` +
                 `Delete your WoWCombatLog.txt so the game starts a fresh one, then upload a single raid night.`,
             )
+            reportFailure('log-too-large', new Error(`File over the ${MAX_LOG_MB} MB limit`), {
+              file: file.name,
+              size: file.size,
+              sizeMb: Math.round(file.size / 1048576),
+            })
             continue
           }
           const res = await parseFileInWorker(file, (pct, label) =>
