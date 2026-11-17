@@ -3408,6 +3408,15 @@ img.icon-slot.trinket.legendary {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
+/* Whole-fight total + rate under the column headers (class color set inline). */
+.sb-cols.sb-totals {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
 .sb-cols span:not(:first-child),
 .sb-pct,
 .sb-amt,

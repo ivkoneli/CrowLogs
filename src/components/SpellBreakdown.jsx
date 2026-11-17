@@ -46,7 +46,7 @@ function compact(n) {
   return formatDps(n)
 }
 
-export function SpellPanel({ fightId, metric, total, durationMs, name, anchor }) {
+export function SpellPanel({ fightId, metric, total, durationMs, name, color, anchor }) {
   const [state, setState] = useState({ loading: true, spells: null, error: null })
   const ref = useRef(null)
   const [pos, setPos] = useState({ left: -9999, top: -9999 })
@@ -83,6 +83,17 @@ export function SpellPanel({ fightId, metric, total, durationMs, name, anchor })
   const top = shown[0]?.[2] || 1
   const secs = durationMs > 0 ? durationMs / 1000 : 0
   const label = metric === 'hps' ? 'Healing' : 'Damage'
+
+  // The player's whole-fight total and rate, under the Total / DPS headers, in class color.
+  // Only drawn when there's a breakdown to sit above.
+  const totals = (
+    <div className="sb-cols sb-totals" style={color ? { color } : undefined}>
+      <span />
+      <span />
+      <span>{compact(sum)}</span>
+      {secs > 0 && <span>{compact(sum / secs)}</span>}
+    </div>
+  )
 
   let body
   if (state.loading) body = <div className="sb-note">Loading breakdown…</div>
@@ -142,6 +153,7 @@ export function SpellPanel({ fightId, metric, total, durationMs, name, anchor })
           {secs > 0 && <span>{metric === 'hps' ? 'HPS' : 'DPS'}</span>}
         </div>
       )}
+      {shown.length > 0 && totals}
       {body}
     </div>
   )
@@ -160,6 +172,7 @@ export function SpellPanel({ fightId, metric, total, durationMs, name, anchor })
             <span>Total</span>
             {secs > 0 && <span>DPS</span>}
           </div>
+          {totals}
           <table className="sb-table">
             <tbody>
               {shownTargets.map(([npc, target, amount, units], i) => (

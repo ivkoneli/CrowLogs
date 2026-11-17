@@ -109,6 +109,7 @@ export function MeterRow({
             total={total}
             durationMs={duration}
             name={name}
+            color={klass ? classColor(klass) : null}
             anchor={hover.anchor}
           />
         )}
