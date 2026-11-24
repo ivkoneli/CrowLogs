@@ -19,7 +19,8 @@ function Label({ full, short }) {
   )
 }
 
-export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
+// `showTime` false drops Duration / When (the log page: every row would repeat the same pull).
+export function MeterHead({ nameLabel = 'Player', metric = 'dps', showTime = true }) {
   return (
     <thead>
       <tr>
@@ -35,10 +36,12 @@ export function MeterHead({ nameLabel = 'Player', metric = 'dps' }) {
         <th className="talents-col">
           <Label full="Legendaries" short="Legendary" />
         </th>
-        <th className="num">
-          <Label full="Duration" short="Time" />
-        </th>
-        <th className="num">When</th>
+        {showTime && (
+          <th className="num">
+            <Label full="Duration" short="Time" />
+          </th>
+        )}
+        {showTime && <th className="num">When</th>}
       </tr>
     </thead>
   )
@@ -96,6 +99,7 @@ export function MeterRow({
   total = 0,
   // Extra control rendered after the name's tags (the log page's admin-only toggle).
   action = null,
+  showTime = true,
 }) {
   const hover = useSpellHover(!!fightId)
   return (
@@ -182,8 +186,8 @@ export function MeterRow({
       <td className="talents-col">
         <LegendarySlots legendaries={legendaries} />
       </td>
-      <td className="num muted">{formatDuration(duration)}</td>
-      <td className="num muted">{when}</td>
+      {showTime && <td className="num muted">{formatDuration(duration)}</td>}
+      {showTime && <td className="num muted">{when}</td>}
     </tr>
   )
 }

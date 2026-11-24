@@ -169,7 +169,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
               )}
             </h3>
             <span className="kicker">
-              {enc.difficulty} · {formatDuration(enc.duration)} · {rows.length}{' '}
+              {enc.difficulty} · {enc.day && `${enc.day} · `}{formatDuration(enc.duration)} · {rows.length}{' '}
               {rows.length === 1 ? 'player' : 'players'}
             </span>
             {!enc.kill && enc.bossPct != null && (
@@ -195,7 +195,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
           </div>
           <div className="table-scroll">
             <table className="meter boss-meter">
-              <MeterHead metric={metric} />
+              <MeterHead metric={metric} showTime={false} />
               <tbody>
                 {rows.map((r, i) => (
                   <MeterRow
@@ -244,6 +244,7 @@ export default function LogPage({ fights, logId, focus, onSelectPlayer, onEncoun
                     total={metric === 'hps' ? r.healing : r.damage}
                     duration={r.duration}
                     when={enc.day}
+                    showTime={false}
                     onClick={() => onSelectPlayer(r.player)}
                   />
                 ))}

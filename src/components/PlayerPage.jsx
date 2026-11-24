@@ -115,6 +115,7 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
   // null = not picked by hand: healers with healing logs open on Healing, everyone else on DPS.
   const [pickedHistMetric, setHistMetric] = useState(null)
   const [histSpec, setHistSpec] = useState(null) // null = All specs
+  const [killsOnly, setKillsOnly] = useState(false)
   const [pickedRankMetric, setRankMetric] = useState(null)
   const [rankSpec, setRankSpec] = useState(null) // null = All specs
   const [updating, setUpdating] = useState(false)
@@ -188,7 +189,11 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
 
   // History logs filtered by the selected spec, newest-first (playerLogs already sorts
   // by time). The metric toggle only changes which value column shows, not the order.
-  const histLogs = useMemo(() => (histSpec ? logs.filter((l) => l.spec === histSpec) : logs), [logs, histSpec])
+  // "Kills only" drops wipes; a pull with no kill flag (older imports) counts as a kill.
+  const histLogs = useMemo(
+    () => logs.filter((l) => (!histSpec || l.spec === histSpec) && (!killsOnly || l.kill !== false)),
+    [logs, histSpec, killsOnly],
+  )
 
   // Group the (spec-filtered) history by the log each encounter came from — one
   // collapsible section per import (raid · difficulty · date), newest first — so a
@@ -363,10 +368,14 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                       onChange={setHistMetric}
                       healLabel={histSpec ? healLabelFor(histSpec) : 'Healing'}
                     />
+                    <label className="hist-kills-only">
+                      <input type="checkbox" checked={killsOnly} onChange={(e) => setKillsOnly(e.target.checked)} />
+                      Kills only
+                    </label>
                   </div>
                   {histGroups.length === 0 ? (
                     <div className="empty-state">
-                      <p>No {histSpec} logs for {player} yet.</p>
+                      <p>No {histSpec ? `${histSpec} ` : ''}{killsOnly ? 'kills' : 'logs'} for {player} yet.</p>
                     </div>
                   ) : (
                     histGroups.map((g) => {
@@ -408,7 +417,11 @@ export default function PlayerPage({ fights, characters, player, onSelectBoss, o
                                     <td className="name-cell">
                                       <button className="name link boss-link">{log.boss}</button>
                                       <span className="spec-tag">{log.difficulty}</span>
-                                      {log.kill === false && <span className="result-badge wipe sm">Wipe</span>}
+                                      {log.kill === false ? (
+                                        <span className="result-badge wipe sm">Wipe</span>
+                                      ) : (
+                                        <span className="result-badge kill sm">Kill</span>
+                                      )}
                                       {log.discredited && (
                                         <span
                                           className="result-badge unranked sm"

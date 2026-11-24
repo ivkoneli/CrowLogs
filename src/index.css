@@ -1863,6 +1863,19 @@ img.icon-slot.trinket {
   gap: 0.6rem;
   margin-bottom: 1rem;
 }
+.hist-kills-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.hist-kills-only input {
+  accent-color: #4cd07d;
+  cursor: pointer;
+}
 .spec-tabs {
   display: flex;
   gap: 0.4rem;
