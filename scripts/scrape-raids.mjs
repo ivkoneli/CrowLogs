@@ -76,6 +76,21 @@ const upsert = (table, rows, conflict) =>
         body: JSON.stringify(rows),
       })
     : null
+
+// Every row of a GET, page by page. The API returns at most 1,000 rows per request and says
+// nothing when it cuts a result short: the stored-bests lookup below (100 players ≈ 1,550
+// rows) lost about a third of them, and kills then overwrote higher bests (fixed 2026-11-24).
+// `order` must be a unique ordering so pages don't overlap or skip.
+const PAGE_ROWS = 1000
+async function dbAll(path, order) {
+  const out = []
+  for (let offset = 0; ; offset += PAGE_ROWS) {
+    const rows = await db(`${path}&order=${order}&limit=${PAGE_ROWS}&offset=${offset}`)
+    out.push(...rows)
+    if (rows.length < PAGE_ROWS) return out
+  }
+}
+const BEST_ORDER = 'player_key,raid,boss,difficulty,metric,spec'
 const inList = (vals) => `(${vals.map((v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')})`
 
 // ── TAURI RECORD → ROWS ─────────────────────────────────────────────────────
@@ -271,7 +286,7 @@ async function main() {
     const keys = [...new Set([...bestCand.values()].map(keyOf))]
     for (let i = 0; i < keys.length; i += 100) {
       const q = `raid_bests?select=player_key,raid,boss,difficulty,metric,spec,value&player_key=in.${encodeURIComponent(inList(keys.slice(i, i + 100)))}`
-      for (const s of await db(q)) stored.set([s.player_key, s.raid, s.boss, s.difficulty, s.metric, s.spec].join('|'), s.value)
+      for (const s of await dbAll(q, BEST_ORDER)) stored.set([s.player_key, s.raid, s.boss, s.difficulty, s.metric, s.spec].join('|'), s.value)
     }
     const newBests = [...bestCand.entries()].filter(([k, r]) => !(stored.get(k) >= r.value)).map(([, r]) => r)
 
@@ -307,7 +322,7 @@ async function main() {
     const finalKeys = [...new Set(newBests.map(keyOf))].filter((k) => !keys.includes(k))
     for (let i = 0; i < finalKeys.length; i += 100) {
       const q = `raid_bests?select=player_key,raid,boss,difficulty,metric,spec,value&player_key=in.${encodeURIComponent(inList(finalKeys.slice(i, i + 100)))}`
-      for (const s of await db(q)) stored.set([s.player_key, s.raid, s.boss, s.difficulty, s.metric, s.spec].join('|'), s.value)
+      for (const s of await dbAll(q, BEST_ORDER)) stored.set([s.player_key, s.raid, s.boss, s.difficulty, s.metric, s.spec].join('|'), s.value)
     }
 
     let legOk = 0
